@@ -32,7 +32,7 @@ The model files are large and the memory/runtime impact on the S23 has not been 
 - **Voice/listening:** one-shot dictation and the explicitly started foreground listening service request Android’s on-device speech recognizer. Shiv stores only recognized event fields, not audio or transcripts. Offline speech availability depends on Android’s installed language model.
 - **Camera:** only opens after you tap the photo button; bundled ML Kit image labels provide a simple local guess. It is not a rich visual description model, and photo analysis has not been verified on your phone.
 - **Calendar/notifications:** calendar sync is read-only. Optional Notification Listener access inspects notification text in memory and stores only recognized events.
-- **Action tiers:** the Settings screen stores configurable minimum tiers for supported actions; raising event, reminder, memory/profile, reschedule, or draft actions to ASK_FIRST triggers a confirmation. Sending a message, deleting data, and other destructive/people-facing actions remain confirmation-gated. Android permission grants (such as notification access) are also controlled by Android Settings.
+- **Action tiers:** the Settings screen stores configurable minimum tiers; raising chat-created events/reminders, memory/profile changes, rescheduling, or reply drafts to ASK_FIRST triggers a confirmation. Sending a message and deleting data remain confirmation-gated. Calendar/notification/listening ingestion is still permission-gated by Android and is not yet routed through every configurable tier setting.
 
 ## Privacy, recording, and encryption
 

@@ -32,7 +32,8 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     val profile = dao.profile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val actionLog = dao.actionLog().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val drafts = dao.drafts().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val actionTiers = dao.actionTiers().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // Keep permission gates current even while the user is on another tab.
+    val actionTiers = dao.actionTiers().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val reminderLeadMinutes = MutableStateFlow(Brain.DEFAULT_LEAD_MINUTES)
     val pendingAction = MutableStateFlow<PendingShivAction?>(null)
     val lastCalendarSync = MutableStateFlow<String?>(null)
