@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -266,10 +267,15 @@ private fun MemoryTab(vm: ShivViewModel, modifier: Modifier = Modifier) {
 private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies: (Boolean) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lead by vm.reminderLeadMinutes.collectAsStateWithLifecycle()
+    val modelStatus by vm.modelStatus.collectAsStateWithLifecycle()
+    val modelFiles by vm.modelFiles.collectAsStateWithLifecycle()
+    val actionTiers by vm.actionTiers.collectAsStateWithLifecycle()
+    val backupStatus by vm.backupStatus.collectAsStateWithLifecycle()
     val synced by vm.lastCalendarSync.collectAsStateWithLifecycle()
     val actionLog by vm.actionLog.collectAsStateWithLifecycle()
     val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) vm.syncCalendar(context) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    var listening by remember { mutableStateOf(context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).getBoolean("listening", false)) }
     val audioPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) {
         startListening(context); listening = true
         context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).edit().putBoolean("listening", true).apply()
@@ -283,10 +289,24 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
             } else audioPermission.launch(Manifest.permission.RECORD_AUDIO)
         } else listeningNotice = "Listening mode needs notification access so Android can show its ongoing status."
     }
-    var listening by remember { mutableStateOf(context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).getBoolean("listening", false)) }
     val enabledListeners = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners").orEmpty()
     val notificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     val exactAlarms = Build.VERSION.SDK_INT < 31 || (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+    var modelRole by remember { mutableStateOf<String?>(null) }
+    var backupDialogMode by remember { mutableStateOf<String?>(null) }
+    var backupUri by remember { mutableStateOf<Uri?>(null) }
+    var backupPassword by remember { mutableStateOf("") }
+    val backupCreate = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri != null) { backupUri = uri; backupDialogMode = "export" }
+    }
+    val backupOpen = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) { backupUri = uri; backupDialogMode = "restore" }
+    }
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val role = modelRole
+        if (uri != null && role != null) vm.importModel(uri, role)
+        modelRole = null
+    }
 
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Permissions & privacy", style = MaterialTheme.typography.headlineSmall) }
@@ -311,7 +331,7 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Listening mode", style = MaterialTheme.typography.titleMedium)
-                Text("Uses on-device speech recognition while a visible notification is active. Shiv saves only events it recognizes; it does not write audio or transcripts to disk.")
+                Text("Uses on-device speech recognition while a visible notification is active. Shiv saves only extracted event details, never raw audio or transcripts. Get other people’s consent before recording/listening; recording laws vary. This cannot record the other side of a phone call, and Android may restrict microphone use during calls.")
                 listeningNotice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Button(onClick = {
                     if (listening) {
@@ -341,22 +361,52 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Permission tiers", style = MaterialTheme.typography.titleMedium)
-                TierExplanation(ActionTier.FREE.name, "Reminders, local notes, saved memories, and alarms.")
-                TierExplanation(ActionTier.ACT_THEN_TELL.name, "Rescheduling an event and saving a reply draft; Shiv tells you after.")
-                TierExplanation(ActionTier.ASK_FIRST.name, "Opening a message draft or deleting an event, memory, or all Shiv data. Shiv waits for your Confirm tap.")
+                Text("Choose the minimum safety level for each action. You can make actions stricter; destructive and people-facing actions always require confirmation.", style = MaterialTheme.typography.bodySmall)
+                val controls = listOf(
+                    Triple("CREATE_EVENT", "Save an event or reminder", ActionTier.FREE),
+                    Triple("SET_REMINDER", "Change reminder timing rules", ActionTier.FREE),
+                    Triple("SAVE_MEMORY", "Save a personal memory or rule", ActionTier.FREE),
+                    Triple("SAVE_PROFILE", "Update your local profile", ActionTier.FREE),
+                    Triple("RESCHEDULE", "Reschedule an event", ActionTier.ACT_THEN_TELL),
+                    Triple("DRAFT_REPLY", "Save a reply draft", ActionTier.ACT_THEN_TELL),
+                    Triple("READ_CALENDAR", "Read calendar events", ActionTier.FREE),
+                    Triple("READ_NOTIFICATIONS", "Notice notification details", ActionTier.ASK_FIRST),
+                    Triple("DELETE_DATA", "Delete data", ActionTier.ASK_FIRST),
+                    Triple("SEND_MESSAGE", "Prepare a message to another person", ActionTier.ASK_FIRST)
+                )
+                controls.forEach { (key, title, base) ->
+                    TierSettingRow(title, base, actionTiers.firstOrNull { it.actionKey == key }?.tier?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() } ?: base) { vm.saveTier(key, it) }
+                }
             } }
         }
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Storage & AI", style = MaterialTheme.typography.titleMedium)
-                Text("Encrypted Room database with SQLCipher. Photo labels and speech recognition run on-device. No internet permission, account, API key, or paid model is used in this beta.")
-                Text("Listening mode uses your selected speech-recognition service. Shiv requests Android’s on-device recognizer only; install an offline language model if needed.", style = MaterialTheme.typography.bodySmall)
+                Text("Local AI models", style = MaterialTheme.typography.titleMedium)
+                Text("Status: $modelStatus")
+                Text("Fast model: ${if (modelFiles.first) "installed" else "not installed"} · Chat model: ${if (modelFiles.second) "installed" else "not installed"}")
+                Text("Import .litertlm model files from your phone. Shiv copies them into private app storage. Model files stay on this device; there is no AI network permission or API key.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { modelRole = "fast"; modelPicker.launch(arrayOf("*/*")) }) { Text("Choose fast model") }
+                    OutlinedButton(onClick = { modelRole = "chat"; modelPicker.launch(arrayOf("*/*")) }) { Text("Choose chat model") }
+                }
+                Text("Room + SQLCipher database is encrypted with a random key wrapped by Android Keystore. Photo labels and speech recognition use on-device components.", style = MaterialTheme.typography.bodySmall)
             } }
         }
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Samsung background setting", style = MaterialTheme.typography.titleMedium)
                 Text("To keep alarms and listening reliable: Settings → Battery → Background usage limits → Never sleeping apps → add Shiv. Samsung may still pause apps in power-saving mode.")
+            } }
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Encrypted backup & restore", style = MaterialTheme.typography.titleMedium)
+                Text("A passphrase encrypts your chats, profile, memories, events, rules, drafts, action history, and tier settings. The backup is independent of your phone’s Keystore key.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { backupCreate.launch("Shiv-Encrypted-Backup.shivbackup") }) { Text("Create backup · FREE") }
+                    OutlinedButton(onClick = { backupOpen.launch(arrayOf("*/*")) }) { Text("Restore · ASK_FIRST") }
+                }
+                backupStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             } }
         }
         item { Text("Recent action history", style = MaterialTheme.typography.titleLarge) }
@@ -371,6 +421,27 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
             OutlinedButton(onClick = { vm.askDeleteEverything() }, modifier = Modifier.fillMaxWidth()) { Text("Erase all Shiv data · ASK_FIRST") }
         }
     }
+    backupDialogMode?.let { mode ->
+        AlertDialog(
+            onDismissRequest = { backupDialogMode = null; backupPassword = ""; backupUri = null },
+            title = { Text(if (mode == "export") "Protect your backup" else "Restore encrypted backup") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(if (mode == "export") "Choose a passphrase with at least 12 characters. Shiv does not save or recover it." else "Restoring replaces the current local Shiv data. This cannot be undone. Enter the backup passphrase to confirm.")
+                    OutlinedTextField(value = backupPassword, onValueChange = { backupPassword = it }, label = { Text("Backup passphrase") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                }
+            },
+            confirmButton = {
+                Button(enabled = backupPassword.length >= (if (mode == "export") 12 else 1), onClick = {
+                    val uri = backupUri
+                    val secret = backupPassword.toCharArray()
+                    backupDialogMode = null; backupPassword = ""; backupUri = null
+                    if (uri != null) if (mode == "export") vm.exportBackup(uri, secret) else vm.restoreBackup(uri, secret)
+                }) { Text(if (mode == "export") "Save encrypted backup" else "Replace data and restore") }
+            },
+            dismissButton = { TextButton(onClick = { backupDialogMode = null; backupPassword = ""; backupUri = null }) { Text("Cancel") } }
+        )
+    }
 }
 
 @Composable
@@ -381,6 +452,22 @@ private fun TierChip(tier: String) {
 @Composable
 private fun TierExplanation(tier: String, description: String) {
     Row(verticalAlignment = Alignment.CenterVertically) { TierChip(tier); Spacer(Modifier.width(8.dp)); Text(description, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall) }
+}
+
+@Composable
+private fun TierSettingRow(title: String, minimum: ActionTier, selected: ActionTier, onSelect: (ActionTier) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Box {
+            TextButton(onClick = { expanded = true }) { Text(selected.name) }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                ActionTier.entries.filter { it.ordinal >= minimum.ordinal }.forEach { tier ->
+                    DropdownMenuItem(text = { Text(tier.name) }, onClick = { onSelect(tier); expanded = false })
+                }
+            }
+        }
+    }
 }
 
 private fun hasPermission(context: Context, permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

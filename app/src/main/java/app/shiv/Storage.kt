@@ -61,29 +61,48 @@ data class ReplyDraft(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "action_tiers")
+data class ActionTierSetting(@PrimaryKey val actionKey: String, val tier: String)
+
 @Dao
 interface ShivDao {
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") fun messages(): Flow<List<ChatMessage>>
-    @Insert suspend fun addMessage(value: ChatMessage)
+    @Upsert suspend fun addMessage(value: ChatMessage)
+    @Query("SELECT * FROM chat_messages ORDER BY createdAt") suspend fun allMessages(): List<ChatMessage>
     @Upsert suspend fun saveProfile(value: UserProfile)
     @Query("SELECT * FROM user_profile WHERE id = 1") fun profile(): Flow<UserProfile?>
     @Query("SELECT * FROM user_profile WHERE id = 1") suspend fun profileOnce(): UserProfile?
     @Query("SELECT * FROM memories ORDER BY createdAt DESC") fun memories(): Flow<List<MemoryFact>>
+    @Query("SELECT * FROM memories ORDER BY createdAt") suspend fun allMemories(): List<MemoryFact>
     @Query("SELECT * FROM memories ORDER BY createdAt DESC LIMIT 100") suspend fun latestMemories(): List<MemoryFact>
     @Upsert suspend fun saveMemory(value: MemoryFact)
     @Query("DELETE FROM memories WHERE id = :id") suspend fun deleteMemory(id: String)
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
+    @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
     @Query("SELECT * FROM events WHERE source = 'CALENDAR'") suspend fun calendarEvents(): List<EventRecord>
     @Upsert suspend fun saveEvent(value: EventRecord)
     @Query("DELETE FROM events WHERE id = :id") suspend fun deleteEvent(id: String)
     @Query("DELETE FROM events WHERE source = 'CALENDAR'") suspend fun clearCalendarEvents()
-    @Insert suspend fun logAction(value: ActionLogEntry)
+    @Upsert suspend fun logAction(value: ActionLogEntry)
+    @Query("SELECT * FROM action_log ORDER BY createdAt") suspend fun allActions(): List<ActionLogEntry>
+    @Query("SELECT * FROM reminder_rules ORDER BY ruleKey") suspend fun allRules(): List<ReminderRule>
     @Query("SELECT * FROM action_log ORDER BY createdAt DESC LIMIT 200") fun actionLog(): Flow<List<ActionLogEntry>>
     @Query("SELECT * FROM reminder_rules WHERE ruleKey = :key") suspend fun reminderRule(key: String): ReminderRule?
     @Upsert suspend fun saveRule(value: ReminderRule)
     @Query("SELECT * FROM reply_drafts ORDER BY createdAt DESC") fun drafts(): Flow<List<ReplyDraft>>
-    @Insert suspend fun saveDraft(value: ReplyDraft)
+    @Query("SELECT * FROM reply_drafts ORDER BY createdAt") suspend fun allDrafts(): List<ReplyDraft>
+    @Upsert suspend fun saveDraft(value: ReplyDraft)
+    @Query("SELECT * FROM action_tiers ORDER BY actionKey") fun actionTiers(): Flow<List<ActionTierSetting>>
+    @Query("SELECT * FROM action_tiers ORDER BY actionKey") suspend fun allActionTiers(): List<ActionTierSetting>
+    @Upsert suspend fun saveActionTier(value: ActionTierSetting)
+    @Upsert suspend fun saveMessages(values: List<ChatMessage>)
+    @Upsert suspend fun saveMemories(values: List<MemoryFact>)
+    @Upsert suspend fun saveEvents(values: List<EventRecord>)
+    @Upsert suspend fun saveActions(values: List<ActionLogEntry>)
+    @Upsert suspend fun saveRules(values: List<ReminderRule>)
+    @Upsert suspend fun saveDrafts(values: List<ReplyDraft>)
+    @Upsert suspend fun saveActionTiers(values: List<ActionTierSetting>)
     @Query("DELETE FROM chat_messages") suspend fun clearMessages()
     @Query("DELETE FROM user_profile") suspend fun clearProfile()
     @Query("DELETE FROM memories") suspend fun clearMemories()
@@ -91,17 +110,23 @@ interface ShivDao {
     @Query("DELETE FROM action_log") suspend fun clearLog()
     @Query("DELETE FROM reminder_rules") suspend fun clearRules()
     @Query("DELETE FROM reply_drafts") suspend fun clearDrafts()
+    @Query("DELETE FROM action_tiers") suspend fun clearActionTiers()
 }
 
 @Database(
-    entities = [ChatMessage::class, UserProfile::class, MemoryFact::class, EventRecord::class, ActionLogEntry::class, ReminderRule::class, ReplyDraft::class],
-    version = 1,
+    entities = [ChatMessage::class, UserProfile::class, MemoryFact::class, EventRecord::class, ActionLogEntry::class, ReminderRule::class, ReplyDraft::class, ActionTierSetting::class],
+    version = 2,
     exportSchema = true
 )
 abstract class ShivDatabase : RoomDatabase() {
     abstract fun dao(): ShivDao
 
     companion object {
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS action_tiers (actionKey TEXT NOT NULL, tier TEXT NOT NULL, PRIMARY KEY(actionKey))")
+            }
+        }
         @Volatile private var instance: ShivDatabase? = null
         fun get(context: Context): ShivDatabase = instance ?: synchronized(this) {
             instance ?: run {
@@ -110,6 +135,7 @@ abstract class ShivDatabase : RoomDatabase() {
                 val factory = SupportOpenHelperFactory(key)
                 Room.databaseBuilder(context, ShivDatabase::class.java, "shiv-memory.db")
                     .openHelperFactory(factory)
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { instance = it }
             }

@@ -12,6 +12,16 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 
 enum class ActionTier { FREE, ACT_THEN_TELL, ASK_FIRST }
 
@@ -34,10 +44,124 @@ data class SmsDraft(val person: String, val body: String)
  * The single boundary for all assistant intelligence. Beta reasoning and event/photo understanding
  * are local, deterministic functions; no network request or raw audio/photo persistence occurs here.
  */
-class Brain {
+interface BrainPort {
+    suspend fun reply(input: String, context: String): String
+}
+
+/** The only class allowed to call a generative model. All inference runs locally. */
+class Brain(private val appContext: Context? = null) : BrainPort {
     companion object {
         const val REMINDER_LEAD_KEY = "default_lead_minutes"
         const val DEFAULT_LEAD_MINUTES = 10
+    }
+
+    private val modelLock = kotlinx.coroutines.sync.Mutex()
+    @Volatile private var loadedEngine: Engine? = null
+    @Volatile private var loadedPath: String? = null
+    @Volatile var modelStatus: String = "No local chat model installed"
+        private set
+    @Volatile var lastInferenceMillis: Long? = null
+        private set
+
+    /** Copy the selected .litertlm file into private app storage; no model download is performed. */
+    suspend fun importModel(uri: android.net.Uri, role: String): String = withContext(Dispatchers.IO) {
+        modelLock.lock()
+        try {
+            val context = requireNotNull(appContext) { "Brain requires an application context" }
+            require(role == "fast" || role == "chat")
+            val models = File(context.filesDir, "models").apply { mkdirs() }
+            val target = File(models, "$role.litertlm")
+            val temporary = File(models, "$role.litertlm.importing")
+            val previous = File(models, "$role.litertlm.previous")
+            context.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Could not open the selected model" }.use { source -> temporary.outputStream().use { source.copyTo(it) } }
+            }
+            require(temporary.length() > 1_000_000L) { temporary.delete(); "The selected file is too small to be a model" }
+            closeEngine()
+            previous.delete()
+            if (target.exists()) check(target.renameTo(previous)) { temporary.delete(); "Could not safely replace the existing model" }
+            if (!temporary.renameTo(target)) {
+                previous.renameTo(target)
+                temporary.delete()
+                error("Could not safely install the selected model")
+            }
+            previous.delete()
+            modelStatus = "${role.replaceFirstChar(Char::uppercase)} model imported (${target.length() / 1_000_000} MB)"
+            target.absolutePath
+        } finally { modelLock.unlock() }
+    }
+
+    fun installedModels(): Pair<Boolean, Boolean> {
+        val root = appContext?.let { File(it.filesDir, "models") } ?: return false to false
+        return File(root, "fast.litertlm").isFile to File(root, "chat.litertlm").isFile
+    }
+
+    override suspend fun reply(input: String, context: String): String = withContext(Dispatchers.IO) {
+        modelLock.lock()
+        try {
+            val root = appContext?.let { File(it.filesDir, "models") }
+            val started = System.currentTimeMillis()
+            val fast = root?.let { File(it, "fast.litertlm") }?.takeIf { it.isFile }?.absolutePath
+            val chat = root?.let { File(it, "chat.litertlm") }?.takeIf { it.isFile }?.absolutePath
+            if (fast == null && chat == null) return@withContext "I’m here, but my on-device language model hasn’t been installed yet. Your event and reminder tools still work; add a local model in Settings when you’re ready."
+            // One mutex and a single cached engine ensure inference never overlaps. The small model
+            // first routes urgency/quiet decisions; the larger model is loaded only for conversation.
+            var route = fast?.let { runModel(it, "Classify this user message. Return exactly one word: QUIET if no reply is appropriate, URGENT if immediate safety/time-critical, COMMITMENT if a promise/event, MEMORY if a personal fact, otherwise CHAT. Message: ${input.take(500)}", 12) }
+            val validRoutes = setOf("QUIET", "URGENT", "COMMITMENT", "MEMORY", "CHAT")
+            if (fast != null && (route?.trim()?.uppercase(Locale.ROOT) ?: "") !in validRoutes) {
+                route = runModel(fast, "Return only one of these exact words: QUIET, URGENT, COMMITMENT, MEMORY, CHAT. Message: ${input.take(500)}", 12)
+                if ((route?.trim()?.uppercase(Locale.ROOT) ?: "") !in validRoutes) {
+                    modelStatus = "Fast router returned an invalid result; safely stayed quiet"
+                    return@withContext ""
+                }
+            }
+            if (route?.trim()?.equals("QUIET", ignoreCase = true) == true) {
+                modelStatus = "Fast router chose silence"
+                return@withContext ""
+            }
+            val path = chat ?: fast!!
+            val prompt = """You are Shiv, a loyal, warm, concise personal manager. Vary your natural wording; be precise for schedules and warnings. Never claim an action happened unless the app did it. Use only the supplied private context. Do not invent facts.\n\nPRIVATE CONTEXT (on this phone only):\n$context\n\nUser: $input\nReply in at most 90 words."""
+            val result = runModel(path, prompt, 128)
+            lastInferenceMillis = System.currentTimeMillis() - started
+            modelStatus = "${File(path).name} · ready · ${lastInferenceMillis} ms"
+            result.trim().takeIf { it.isNotBlank() }
+                ?: "I didn’t get a usable answer from my local model, so I’m staying quiet for now."
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            modelStatus = "Local model unavailable: ${failure.javaClass.simpleName}"
+            "My on-device model couldn’t answer just now. Your saved data is safe; try again after checking model setup."
+        } finally { modelLock.unlock() }
+    }
+
+    private suspend fun runModel(path: String, prompt: String, maxTokens: Int): String {
+        val engine = getEngine(path)
+        val output = StringBuilder()
+        engine.createConversation(ConversationConfig(
+            systemInstruction = Contents.of("You are Shiv, a private on-device personal manager. Be honest and do not invent or claim actions."),
+            samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.65),
+            maxOutputToken = maxTokens
+        )).use { conversation -> conversation.sendMessageAsync(prompt).collect { output.append(it.toString()) } }
+        return output.toString()
+    }
+
+    private suspend fun getEngine(path: String): Engine {
+        loadedEngine?.takeIf { loadedPath == path && it.isInitialized() }?.let { return it }
+        closeEngine()
+        val engine = try {
+            Engine(EngineConfig(modelPath = path, backend = Backend.GPU(), cacheDir = appContext?.cacheDir?.path)).also { it.initialize() }
+        } catch (_: Exception) {
+            Engine(EngineConfig(modelPath = path, backend = Backend.CPU(), cacheDir = appContext?.cacheDir?.path)).also { it.initialize() }
+        }
+        loadedEngine = engine
+        loadedPath = path
+        return engine
+    }
+
+    private fun closeEngine() {
+        runCatching { loadedEngine?.close() }
+        loadedEngine = null
+        loadedPath = null
     }
 
     fun answer(
@@ -86,6 +210,21 @@ class Brain {
             else -> "$salutationGot it. I’m on your side. Want me to turn that into a reminder or a note?"
         }
         return BrainReply(withRecall(conversational, message, profile, memories), memory = fact)
+    }
+
+    suspend fun respond(
+        input: String,
+        profile: UserProfile?,
+        memories: List<MemoryFact>,
+        reminderLeadMinutes: Int,
+        contextSnapshot: String
+    ): BrainReply {
+        val parsed = answer(input, profile, memories, reminderLeadMinutes)
+        // Deterministic actions are parsed without a model call. Free conversation uses the local LLM.
+        if (parsed.event != null || parsed.reminderLeadMinutes != null || parsed.reschedule != null ||
+            parsed.draft != null || parsed.sms != null || parsed.deleteEverything || parsed.forgetPhrase != null) return parsed
+        val naturalReply = reply(input, contextSnapshot)
+        return parsed.copy(text = naturalReply)
     }
 
     private fun withRecall(reply: String, input: String, profile: UserProfile?, memories: List<MemoryFact>): String {

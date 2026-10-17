@@ -11,7 +11,9 @@
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
     </queries>
-    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Shiv" android:usesCleartextTraffic="false">
+    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Shiv" android:usesCleartextTraffic="false" android:allowBackup="false">
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

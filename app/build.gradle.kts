@@ -43,5 +43,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("com.google.mlkit:image-labeling:17.0.9")
+    // On-device inference only. Model files are imported by the user and are never bundled.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
