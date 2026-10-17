@@ -53,18 +53,20 @@ class EncryptedBackup(context: Context) {
         val messages = readArray(json, "messages", ::readMessage)
         val memories = readArray(json, "memories", ::readMemory)
         val events = readArray(json, "events", ::readEvent)
+        val pendingEvents = readArray(json, "pendingEvents", ::readPendingEvent)
         val actions = readArray(json, "actions", ::readAction)
         val rules = readArray(json, "rules", ::readRule)
         val drafts = readArray(json, "drafts", ::readDraft)
         val tiers = readArray(json, "actionTiers", ::readTier)
+        val settings = json.optJSONObject("settings")?.let(::readSettings) ?: ShivSettings()
 
         // Replace existing data only after the file has decrypted and every record has parsed.
         database.withTransaction {
-            dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents()
-            dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers()
+            dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearPendingEvents()
+            dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers(); dao.clearSettings()
             dao.saveProfile(profile)
-            dao.saveMessages(messages); dao.saveMemories(memories); dao.saveEvents(events)
-            dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers)
+            dao.saveMessages(messages); dao.saveMemories(memories); dao.saveEvents(events); dao.savePendingEvents(pendingEvents)
+            dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers); dao.saveSettings(settings)
         }
     }
 
@@ -75,10 +77,12 @@ class EncryptedBackup(context: Context) {
         .put("messages", jsonArrayTyped(dao.allMessages(), ::messageJson))
         .put("memories", jsonArrayTyped(dao.allMemories(), ::memoryJson))
         .put("events", jsonArrayTyped(dao.allEvents(), ::eventJson))
+        .put("pendingEvents", jsonArrayTyped(dao.allPendingEvents(), ::pendingEventJson))
         .put("actions", jsonArrayTyped(dao.allActions(), ::actionJson))
         .put("rules", jsonArrayTyped(dao.allRules(), ::ruleJson))
         .put("drafts", jsonArrayTyped(dao.allDrafts(), ::draftJson))
         .put("actionTiers", jsonArrayTyped(dao.allActionTiers(), ::tierJson))
+        .put("settings", settingsJson(dao.settingsOnce() ?: ShivSettings()))
 
     private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
         val spec = PBEKeySpec(password, salt, 310_000, 256)
@@ -91,18 +95,22 @@ class EncryptedBackup(context: Context) {
     private fun messageJson(v: ChatMessage) = JSONObject().put("id", v.id).put("text", v.text).put("fromUser", v.fromUser).put("createdAt", v.createdAt).put("tier", v.tier)
     private fun memoryJson(v: MemoryFact) = JSONObject().put("id", v.id).put("text", v.text).put("createdAt", v.createdAt)
     private fun eventJson(v: EventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("source", v.source).put("createdAt", v.createdAt)
+    private fun pendingEventJson(v: PendingEventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("createdAt", v.createdAt)
     private fun actionJson(v: ActionLogEntry) = JSONObject().put("id", v.id).put("action", v.action).put("tier", v.tier).put("outcome", v.outcome).put("createdAt", v.createdAt)
     private fun ruleJson(v: ReminderRule) = JSONObject().put("ruleKey", v.ruleKey).put("value", v.value).put("updatedAt", v.updatedAt)
     private fun draftJson(v: ReplyDraft) = JSONObject().put("id", v.id).put("person", v.person).put("body", v.body).put("createdAt", v.createdAt)
     private fun tierJson(v: ActionTierSetting) = JSONObject().put("actionKey", v.actionKey).put("tier", v.tier)
+    private fun settingsJson(v: ShivSettings) = JSONObject().put("id", v.id).put("proactiveEnabled", v.proactiveEnabled).put("quietStartMinute", v.quietStartMinute).put("quietEndMinute", v.quietEndMinute).put("maxDailyInterruptions", v.maxDailyInterruptions)
     private fun readProfile(o: JSONObject) = UserProfile(o.optInt("id", 1), o.getString("name"), o.getString("notes"), o.getLong("updatedAt"))
     private fun readMessage(o: JSONObject) = ChatMessage(o.getString("id"), o.getString("text"), o.getBoolean("fromUser"), o.getLong("createdAt"), o.optString("tier").takeUnless { it == "null" || it.isEmpty() })
     private fun readMemory(o: JSONObject) = MemoryFact(o.getString("id"), o.getString("text"), o.getLong("createdAt"))
     private fun readEvent(o: JSONObject) = EventRecord(o.getString("id"), o.getString("title"), o.getLong("startsAt"), o.optString("place").takeUnless { it == "null" || it.isEmpty() }, o.optString("person").takeUnless { it == "null" || it.isEmpty() }, o.optString("source", "CHAT"), o.getLong("createdAt"))
+    private fun readPendingEvent(o: JSONObject) = PendingEventRecord(o.getString("id"), o.getString("title"), o.getLong("startsAt"), o.optString("place").takeUnless { it == "null" || it.isEmpty() }, o.optString("person").takeUnless { it == "null" || it.isEmpty() }, o.getLong("createdAt"))
     private fun readAction(o: JSONObject) = ActionLogEntry(o.getString("id"), o.getString("action"), o.getString("tier"), o.getString("outcome"), o.getLong("createdAt"))
     private fun readRule(o: JSONObject) = ReminderRule(o.getString("ruleKey"), o.getString("value"), o.getLong("updatedAt"))
     private fun readDraft(o: JSONObject) = ReplyDraft(o.getString("id"), o.getString("person"), o.getString("body"), o.getLong("createdAt"))
     private fun readTier(o: JSONObject) = ActionTierSetting(o.getString("actionKey"), o.getString("tier"))
+    private fun readSettings(o: JSONObject) = ShivSettings(o.optInt("id", 1), o.optBoolean("proactiveEnabled", true), o.optInt("quietStartMinute", 1320), o.optInt("quietEndMinute", 480), o.optInt("maxDailyInterruptions", 3).coerceIn(0, 20))
     private fun <T> readArray(root: JSONObject, key: String, read: (JSONObject) -> T): List<T> {
         val array = root.optJSONArray(key) ?: return emptyList()
         return (0 until array.length()).map { index -> read(array.getJSONObject(index)) }

@@ -25,26 +25,31 @@ sealed class PendingShivAction(val title: String, val explanation: String) {
 
 class ShivViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = ShivRepository(app).dao
-    private val brain = Brain(app.applicationContext)
+    private val brain = BrainProvider.get(app.applicationContext)
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = dao.events(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val pendingEvents = dao.pendingEvents(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val memories = dao.memories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val profile = dao.profile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val actionLog = dao.actionLog().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val drafts = dao.drafts().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     // Keep permission gates current even while the user is on another tab.
     val actionTiers = dao.actionTiers().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val settings = dao.settings().stateIn(viewModelScope, SharingStarted.Eagerly, ShivSettings())
     val reminderLeadMinutes = MutableStateFlow(Brain.DEFAULT_LEAD_MINUTES)
     val pendingAction = MutableStateFlow<PendingShivAction?>(null)
     val lastCalendarSync = MutableStateFlow<String?>(null)
     val modelStatus = MutableStateFlow("No local chat model installed")
     val modelFiles = MutableStateFlow(false to false)
+    val brainRuntimeStatus = brain.runtimeStatus
     val backupStatus = MutableStateFlow<String?>(null)
 
     init {
         viewModelScope.launch {
             reminderLeadMinutes.value = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
             if (dao.profileOnce() == null) dao.saveProfile(UserProfile())
+            if (dao.settingsOnce() == null) dao.saveSettings(ShivSettings())
+            ProactiveWorker.schedule(getApplication())
             refreshModelStatus()
         }
     }
@@ -53,6 +58,19 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             dao.saveActionTier(ActionTierSetting(actionKey, tier.name))
             dao.logAction(ActionLogEntry(action = "Changed action safety tier: $actionKey", tier = tier.name, outcome = "Saved in encrypted local database"))
+        }
+    }
+
+    fun saveSettings(value: ShivSettings) {
+        val safe = value.copy(
+            quietStartMinute = value.quietStartMinute.coerceIn(0, 1439),
+            quietEndMinute = value.quietEndMinute.coerceIn(0, 1439),
+            maxDailyInterruptions = value.maxDailyInterruptions.coerceIn(0, 20)
+        )
+        viewModelScope.launch {
+            dao.saveSettings(safe)
+            dao.logAction(ActionLogEntry(action = "Updated proactive assistant settings", tier = ActionTier.FREE.name, outcome = "Quiet ${safe.quietStartMinute}-${safe.quietEndMinute}; max ${safe.maxDailyInterruptions}/day"))
+            ProactiveWorker.checkSoon(getApplication())
         }
     }
 
@@ -107,7 +125,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                 appendLine("Current time: ${java.time.ZonedDateTime.now()}")
                 appendLine("Next 48 hours of events:")
                 events.value.filter { it.startsAt in System.currentTimeMillis()..(System.currentTimeMillis() + 48 * 60 * 60 * 1000L) }
-                    .take(12).forEach { appendLine("- ${it.title} at ${java.time.Instant.ofEpochMilli(it.startsAt)}; ${it.person.orEmpty()} ${it.place.orEmpty()}") }
+                    .take(12).forEach { appendLine("- id=${it.id}; ${it.title} at ${java.time.Instant.ofEpochMilli(it.startsAt)}; ${it.person.orEmpty()} ${it.place.orEmpty()}") }
                 appendLine("Relevant personal memories:")
                 memories.value.take(8).forEach { appendLine("- ${it.text}") }
                 appendLine("Saved rules:")
@@ -145,7 +163,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             }
             parsed.reschedule?.let { request ->
                 val match = events.value.filter { it.startsAt > System.currentTimeMillis() }
-                    .firstOrNull { it.title.contains(request.search, true) || it.person?.contains(request.search, true) == true || request.search.contains(it.title, true) }
+                    .firstOrNull { it.id == request.search || it.title.contains(request.search, true) || it.person?.contains(request.search, true) == true || request.search.contains(it.title, true) }
                 if (match == null) answer = "I couldn’t find an upcoming event matching ‘${request.search}’. Nothing was changed."
                 else if (configuredTier("RESCHEDULE", ActionTier.ACT_THEN_TELL) == ActionTier.ASK_FIRST) {
                     pendingAction.value = PendingShivAction.Reschedule(match, request.newStart)
@@ -240,6 +258,28 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     fun askDeleteMemory(memory: MemoryFact) { pendingAction.value = PendingShivAction.DeleteMemory(memory) }
     fun askDeleteEverything() { pendingAction.value = PendingShivAction.DeleteEverything }
 
+    fun confirmPendingEvent(candidate: PendingEventRecord) {
+        viewModelScope.launch {
+            if (candidate.startsAt <= System.currentTimeMillis()) {
+                dao.deletePendingEvent(candidate.id)
+                dao.logAction(ActionLogEntry(action = "Expired a listening event confirmation", tier = ActionTier.ASK_FIRST.name, outcome = "Event time passed"))
+                return@launch
+            }
+            val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
+            dao.saveEvent(event)
+            dao.deletePendingEvent(candidate.id)
+            AlarmScheduler.schedule(getApplication(), event, reminderLeadMinutes.value)
+            dao.logAction(ActionLogEntry(action = "Saved a listening event after confirmation", tier = ActionTier.ASK_FIRST.name, outcome = event.title))
+        }
+    }
+
+    fun ignorePendingEvent(candidate: PendingEventRecord) {
+        viewModelScope.launch {
+            dao.deletePendingEvent(candidate.id)
+            dao.logAction(ActionLogEntry(action = "Ignored a listening event candidate", tier = ActionTier.ASK_FIRST.name, outcome = "Not saved"))
+        }
+    }
+
     fun cancelPending() {
         val action = pendingAction.value ?: return
         pendingAction.value = null
@@ -277,6 +317,8 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                 viewModelScope.launch {
                     dao.upcomingEvents(0).forEach { AlarmScheduler.cancel(getApplication(), it) }
                     dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers()
+                    dao.clearPendingEvents()
+                    dao.clearSettings(); dao.saveSettings(ShivSettings())
                     reminderLeadMinutes.value = Brain.DEFAULT_LEAD_MINUTES
                 }
                 null
@@ -288,6 +330,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val count = CalendarSyncer.sync(context.applicationContext, dao)
             lastCalendarSync.value = "Synced $count upcoming calendar events on this phone."
+            ProactiveWorker.checkSoon(context.applicationContext)
         }
     }
 

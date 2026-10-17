@@ -64,6 +64,25 @@ data class ReplyDraft(
 @Entity(tableName = "action_tiers")
 data class ActionTierSetting(@PrimaryKey val actionKey: String, val tier: String)
 
+@Entity(tableName = "shiv_settings")
+data class ShivSettings(
+    @PrimaryKey val id: Int = 1,
+    val proactiveEnabled: Boolean = true,
+    val quietStartMinute: Int = 22 * 60,
+    val quietEndMinute: Int = 8 * 60,
+    val maxDailyInterruptions: Int = 3
+)
+
+@Entity(tableName = "pending_events", indices = [Index("startsAt")])
+data class PendingEventRecord(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val startsAt: Long,
+    val place: String? = null,
+    val person: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface ShivDao {
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") fun messages(): Flow<List<ChatMessage>>
@@ -80,6 +99,12 @@ interface ShivDao {
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
     @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
+    @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
+    @Query("SELECT * FROM pending_events WHERE id = :id") suspend fun pendingEvent(id: String): PendingEventRecord?
+    @Query("SELECT * FROM pending_events ORDER BY startsAt") suspend fun allPendingEvents(): List<PendingEventRecord>
+    @Insert suspend fun addPendingEvent(value: PendingEventRecord)
+    @Query("DELETE FROM pending_events WHERE id = :id") suspend fun deletePendingEvent(id: String)
+    @Query("DELETE FROM pending_events") suspend fun clearPendingEvents()
     @Query("SELECT * FROM events WHERE source = 'CALENDAR'") suspend fun calendarEvents(): List<EventRecord>
     @Upsert suspend fun saveEvent(value: EventRecord)
     @Query("DELETE FROM events WHERE id = :id") suspend fun deleteEvent(id: String)
@@ -95,10 +120,18 @@ interface ShivDao {
     @Upsert suspend fun saveDraft(value: ReplyDraft)
     @Query("SELECT * FROM action_tiers ORDER BY actionKey") fun actionTiers(): Flow<List<ActionTierSetting>>
     @Query("SELECT * FROM action_tiers ORDER BY actionKey") suspend fun allActionTiers(): List<ActionTierSetting>
+    @Query("SELECT tier FROM action_tiers WHERE actionKey = :key") suspend fun actionTier(key: String): String?
     @Upsert suspend fun saveActionTier(value: ActionTierSetting)
+    @Query("SELECT * FROM shiv_settings WHERE id = 1") fun settings(): Flow<ShivSettings?>
+    @Query("SELECT * FROM shiv_settings WHERE id = 1") suspend fun settingsOnce(): ShivSettings?
+    @Upsert suspend fun saveSettings(value: ShivSettings)
+    @Query("DELETE FROM shiv_settings") suspend fun clearSettings()
+    @Query("SELECT COUNT(*) FROM action_log WHERE action = :action AND createdAt >= :since") suspend fun countActionsSince(action: String, since: Long): Int
+    @Query("SELECT EXISTS(SELECT 1 FROM action_log WHERE action = 'Proactive notification' AND outcome = :eventId)") suspend fun wasProactiveSent(eventId: String): Boolean
     @Upsert suspend fun saveMessages(values: List<ChatMessage>)
     @Upsert suspend fun saveMemories(values: List<MemoryFact>)
     @Upsert suspend fun saveEvents(values: List<EventRecord>)
+    @Upsert suspend fun savePendingEvents(values: List<PendingEventRecord>)
     @Upsert suspend fun saveActions(values: List<ActionLogEntry>)
     @Upsert suspend fun saveRules(values: List<ReminderRule>)
     @Upsert suspend fun saveDrafts(values: List<ReplyDraft>)
@@ -114,8 +147,8 @@ interface ShivDao {
 }
 
 @Database(
-    entities = [ChatMessage::class, UserProfile::class, MemoryFact::class, EventRecord::class, ActionLogEntry::class, ReminderRule::class, ReplyDraft::class, ActionTierSetting::class],
-    version = 2,
+    entities = [ChatMessage::class, UserProfile::class, MemoryFact::class, EventRecord::class, ActionLogEntry::class, ReminderRule::class, ReplyDraft::class, ActionTierSetting::class, ShivSettings::class, PendingEventRecord::class],
+    version = 4,
     exportSchema = true
 )
 abstract class ShivDatabase : RoomDatabase() {
@@ -127,6 +160,18 @@ abstract class ShivDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS action_tiers (actionKey TEXT NOT NULL, tier TEXT NOT NULL, PRIMARY KEY(actionKey))")
             }
         }
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS shiv_settings (id INTEGER NOT NULL, proactiveEnabled INTEGER NOT NULL, quietStartMinute INTEGER NOT NULL, quietEndMinute INTEGER NOT NULL, maxDailyInterruptions INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("INSERT OR IGNORE INTO shiv_settings (id, proactiveEnabled, quietStartMinute, quietEndMinute, maxDailyInterruptions) VALUES (1, 1, 1320, 480, 3)")
+            }
+        }
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS pending_events (id TEXT NOT NULL, title TEXT NOT NULL, startsAt INTEGER NOT NULL, place TEXT, person TEXT, createdAt INTEGER NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pending_events_startsAt ON pending_events(startsAt)")
+            }
+        }
         @Volatile private var instance: ShivDatabase? = null
         fun get(context: Context): ShivDatabase = instance ?: synchronized(this) {
             instance ?: run {
@@ -136,6 +181,8 @@ abstract class ShivDatabase : RoomDatabase() {
                 Room.databaseBuilder(context, ShivDatabase::class.java, "shiv-memory.db")
                     .openHelperFactory(factory)
                     .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

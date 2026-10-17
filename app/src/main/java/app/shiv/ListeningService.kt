@@ -64,10 +64,18 @@ class ListeningService : Service() {
         val event = brain.extractEvent(transcript, source = "LISTENING") ?: return
         scope.launch {
             val dao = ShivDatabase.get(applicationContext).dao()
+            val tier = dao.actionTier("CREATE_EVENT")?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() } ?: ActionTier.FREE
+            if (tier == ActionTier.ASK_FIRST) {
+                PendingEventConfirmation.request(applicationContext, event)
+                dao.logAction(ActionLogEntry(action = "Requested confirmation for a listening event", tier = ActionTier.ASK_FIRST.name, outcome = "Candidate not saved automatically"))
+                return@launch
+            }
             dao.saveEvent(event)
-            dao.logAction(ActionLogEntry(action = "Saved an event from listening mode", tier = ActionTier.FREE.name, outcome = event.title))
+            dao.logAction(ActionLogEntry(action = "Saved an event from listening mode", tier = tier.name, outcome = event.title))
             val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
             AlarmScheduler.schedule(applicationContext, event, lead)
+            if (tier == ActionTier.ACT_THEN_TELL) ReminderReceiver.showNotification(applicationContext, "Saved event: ${event.title}", event.startsAt)
+            ProactiveWorker.checkSoon(applicationContext)
         }
         // No transcript or audio buffer is written to disk or the database.
     }
