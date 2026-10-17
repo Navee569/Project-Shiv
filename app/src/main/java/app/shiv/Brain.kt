@@ -556,9 +556,10 @@ private class PrioritizedInferenceQueue(private val onChanged: () -> Unit) {
         block: suspend () -> T
     ): T {
         val result = CompletableDeferred<T>()
-        val task = Task(priority, sequence.getAndIncrement(), System.currentTimeMillis(), staleAfterMillis) {
+        val createdAt = System.currentTimeMillis()
+        val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis) {
             if (result.isCancelled) return@Task
-            if (System.currentTimeMillis() - task.createdAt > task.staleAfterMillis) {
+            if (System.currentTimeMillis() - createdAt > staleAfterMillis) {
                 result.complete(staleValue())
             } else {
                 try { result.complete(block()) }
