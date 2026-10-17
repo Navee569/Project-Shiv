@@ -8,6 +8,10 @@ plugins {
 android {
     namespace = "app.shiv"
     compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     defaultConfig {
         applicationId = "app.shiv"
         minSdk = 26
@@ -47,3 +51,4 @@ dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
