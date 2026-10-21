@@ -12,7 +12,7 @@
 **Previous documentation/cleanup revision:** `1c80c7b5332293190dc151c69040e76b9a83c358`  
 **CI artifact correction commit:** `51ac55702374d96d122a5c22982773ea351f6b80`  
 **Failed run under investigation:** [39635257720](https://github.com/Navee569/Project-Shiv/actions/runs/39635257720)  
-**Fresh verification run:** Pending result retrieval; no successful build is claimed.
+**Latest completed verification run:** [39637748925](https://github.com/Navee569/Project-Shiv/actions/runs/39637748925) — FAILURE on branch head `8734e908f968d2d6205d90f1fe92278ee948f118`. **Corrective source revision:** `afe08a0fb3e94d6ee483fbfba0c3857d45b93116`. Follow-up runs [39639306213](https://github.com/Navee569/Project-Shiv/actions/runs/39639306213) and [39639315700](https://github.com/Navee569/Project-Shiv/actions/runs/39639315700) were queued for the corrective revision; no successful build is yet claimed.
 
 > This report distinguishes repository inspection from commands actually executed. The available session can read and commit through GitHub but does not expose a local Android SDK/Gradle execution session. Do not claim a build, unit tests, lint, APK inspection, or device test passed unless a fresh CI run or a suitable local environment supplies evidence.
 
@@ -106,3 +106,44 @@ The independent QA report keeps M0 **NOT ACCEPTED**. Findings and follow-up acti
 - No successful run for this latest commit has yet been verified.
 - No APK checksum, package metadata, test counts, lint outcome, or physical-device result is claimed.
 - M0 remains **NOT ACCEPTED** until the latest applicable run finishes, artifacts are inspected, and independent QA retests the findings.
+
+
+## Latest M0 regression result and corrective work — 2026-10-21
+
+### Failed run preserved in history
+
+The latest completed baseline run before these corrections was [39637748925](https://github.com/Navee569/Project-Shiv/actions/runs/39637748925), run number 19. The branch head tested by that run was `8734e908f968d2d6205d90f1fe92278ee948f118`; the pull-request workflow checked out synthetic merge revision `2b690adc16b403d63fdc7807c0d43da7b2ae7eee`.
+
+Observed task results:
+- SDK setup and SDK platform/build-tools installation: SUCCESS.
+- Toolchain recording and Gradle project discovery: SUCCESS.
+- `:app:assembleDebug`: FAILURE at `:app:kspDebugKotlin`.
+- `:app:testDebugUnitTest`: SKIPPED.
+- `:app:lintDebug`: SKIPPED.
+- Artifact upload action: ran successfully, but reported no matching files; no artifact was uploaded.
+- APK checksum, package metadata, test counts, and lint findings: unavailable because no APK/report artifact was produced.
+- Android Studio sync/run configuration and device launch: NOT VERIFIED.
+
+The recorded compiler diagnostics identify two independent source/toolchain issues:
+1. LiteRT-LM 0.18.0 and transitive Kotlin libraries expose Kotlin metadata newer than the configured Kotlin 2.0.21 compiler can read.
+2. `app/src/main/java/app/shiv/ProactiveWorker.kt` contains malformed source content, causing unmatched-parenthesis, unexpected-token, and missing-brace diagnostics. The corrupted content was already present at the original baseline and is now replaced by a clean implementation; this is not represented as a verified successful compile until CI confirms it.
+
+### Corrective commits on `dev/m0-baseline-discovery`
+
+- `8fc3edca704f852a159bf06ce85dfeac3155d3f0` — align Kotlin Android/Compose plugins to 2.2.21 and KSP to 2.2.21-2.0.5. These versions are within the published Kotlin Gradle Plugin compatibility range for the existing Gradle 8.9 / AGP 8.7.3 combination.
+- `469da444f6e25b75607f3c44567c9652fd02d7f2` — pin LiteRT-LM to 0.16.1, avoiding the 0.18.0 dependency's Kotlin 2.4 metadata while retaining the on-device inference dependency.
+- `afe08a0fb3e94d6ee483fbfba0c3857d45b93116` — replace the corrupted `ProactiveWorker.kt` content with valid Kotlin implementing quiet-hours checks, daily interruption limits, duplicate-event suppression, notifications, and periodic/one-time WorkManager scheduling.
+
+The worker rewrite and dependency/toolchain changes are source corrections, not build verification. API compatibility, KSP processing, Room generation, APK assembly, unit tests, and lint must be proven by the follow-up CI run.
+
+### Follow-up CI state at report update
+
+The GitHub Actions API listed two runs for corrective source revision `afe08a0fb3e94d6ee483fbfba0c3857d45b93116`:
+- [Run 39639306213](https://github.com/Navee569/Project-Shiv/actions/runs/39639306213), run number 23 — pending at inspection.
+- [Run 39639315700](https://github.com/Navee569/Project-Shiv/actions/runs/39639315700), run number 24 — pending at inspection.
+
+No completed job steps or artifacts were available from those pending runs at the time of this update. Their final results must be inspected before recording build/test/lint outcomes. If either run is cancelled by concurrency, use the surviving completed run or re-run the full verification on the same corrective source revision.
+
+### Current M0 decision
+
+M0 remains **NOT ACCEPTED**. The Android Studio configuration issue is still blocked by lack of an Android Studio/device execution environment. APK verification, unit-test counts, lint findings, and artifact provenance remain unverified until a corrected CI run completes successfully and produces inspectable outputs. Independent QA must retest the resulting revision before acceptance.
