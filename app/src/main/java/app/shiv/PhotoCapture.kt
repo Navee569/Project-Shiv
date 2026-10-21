@@ -53,16 +53,29 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 controller.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
                     override fun onCaptureSuccess(imageProxy: androidx.camera.core.ImageProxy) {
-                        val mediaImage = imageProxy.image
-                        if (mediaImage == null) {
-                            imageProxy.close(); working = false; cameraError = "The camera returned an empty photo."; return
-                        }
-                        val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                        Brain().describePhoto(input) { description ->
-                            imageProxy.close()
-                            working = false
-                            onDescription(description)
-                            onClose()
+                        val completion = PhotoCaptureCompletion(
+                            closeImage = { imageProxy.close() },
+                            onComplete = { error ->
+                                working = false
+                                if (error != null) {
+                                    cameraError = "The photo couldn’t be processed. Please try again."
+                                }
+                            }
+                        )
+                        try {
+                            val mediaImage = imageProxy.image
+                            if (mediaImage == null) {
+                                completion.finish(IllegalStateException("Camera returned an empty image"))
+                                return
+                            }
+                            val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                            Brain().describePhoto(input) { description ->
+                                completion.finish()
+                                onDescription(description)
+                                onClose()
+                            }
+                        } catch (exception: Exception) {
+                            completion.finish(exception)
                         }
                     }
                     override fun onError(exception: ImageCaptureException) {
