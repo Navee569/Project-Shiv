@@ -17,7 +17,7 @@ internal class PhotoCaptureCompletion(
         var finalError = error
         try {
             closeImage()
-        } catch (closeError: Throwable) {
+        } catch (closeError: Exception) {
             if (finalError == null) finalError = closeError
         }
         onComplete(finalError)
