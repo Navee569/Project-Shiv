@@ -10,12 +10,12 @@ From the repository root on Windows:
 
 ```powershell
 java -version
-.`gradlew.bat --version
-.`gradlew.bat projects
-.`gradlew.bat :app:tasks --all
-.`gradlew.bat :app:assembleDebug
-.`gradlew.bat :app:testDebugUnitTest
-.`gradlew.bat :app:lintDebug
+`gradlew.bat --version
+`gradlew.bat projects
+`gradlew.bat :app:tasks --all
+`gradlew.bat :app:assembleDebug
+`gradlew.bat :app:testDebugUnitTest
+`gradlew.bat :app:lintDebug
 ```
 
 On macOS/Linux:
