@@ -154,3 +154,51 @@ M0 remains **NOT ACCEPTED**. The Android Studio configuration issue is still blo
 - Commit `4fea57277b8d5e32691df5f79d605252747f964c` moves the suspendable `dao.wasProactiveSent(...)` call out of a non-suspending list predicate in `ProactiveWorker.kt`. This avoids a Kotlin suspend-context compile error identified during static review of the new worker.
 - CI runs for this code revision were observed as pending at the next inspection: [39639467167](https://github.com/Navee569/Project-Shiv/actions/runs/39639467167) (push, run 27) and [39639472921](https://github.com/Navee569/Project-Shiv/actions/runs/39639472921) (pull request, run 28). No completed results or artifacts were available at that inspection.
 - The earlier runs for intermediate commits were cancelled by subsequent branch updates. The run for source revision `4fea57277b8d5e32691df5f79d605252747f964c` remains the relevant target for validating the corrected source. M0 remains **NOT ACCEPTED** pending completed build, unit-test, lint, artifact, and separate IDE/device evidence.
+
+
+## M0 verification update — 2026-10-21, after run 31
+
+This section supersedes earlier statements in this document that described run 31's build as pending. Preserve the earlier entries as historical records.
+
+### Completed run 31
+
+- Run: [39640948661](https://github.com/Navee569/Project-Shiv/actions/runs/39640948661)
+- Run number: 31
+- Event: push
+- Tested branch revision: `d8938f9590dd0649feffd9578fb2ca8e81100ac2`
+- Final conclusion: **FAILURE**
+- Job: Build, unit tests, and lint
+- Java: OpenJDK 17.0.20.1
+- Gradle: 8.9
+- `./gradlew projects`: BUILD SUCCESSFUL; root project `Shiv`, module `:app`
+- SDK setup and Android SDK Platform 35 / Build Tools 35.0.0 installation: SUCCESS
+- `:app:assembleDebug`: FAILURE at `:app:compileDebugKotlin`
+- `:app:testDebugUnitTest`: SKIPPED
+- `:app:lintDebug`: SKIPPED
+- Artifact upload step: action completed, but no files matched; no artifact uploaded.
+
+### Compiler findings from run 31
+
+The Room/KSP failure from the previous run is no longer the failing task after updating Room runtime, KTX, and compiler from 2.6.1 to 2.7.2. The build progressed through `:app:kspDebugKotlin` and then failed at Kotlin compilation with these observed errors:
+
+- `Brain.kt:260:99`: unresolved reference `text` in the LiteRT-LM async response collector.
+- `Brain.kt:326:23`: unresolved reference `salutationGot`.
+- `Brain.kt:343:48`: missing required `allowNotifications` argument to `generateDecision`.
+- `PhotoCapture.kt:6:29` and `PhotoCapture.kt:27:32`: unresolved `CameraController`.
+
+No APK, test report, lint report, or verification artifact was produced by run 31. No test count or lint finding count is available.
+
+### Source corrections after run 31
+
+- Commit `0a0fd2d5a423c1543881aae170dbd673b24048f8` — updated the LiteRT-LM streamed response handling to append the message's string representation, fixed string interpolation for the optional salutation, and passed `allowNotifications = false` for chat-driven decisions.
+- Commit `b835d9e531dce1c2ad78d9ce11ca9bb7e9028858` — changed the `CameraController` import in `PhotoCapture.kt` to `androidx.camera.view.CameraController`.
+
+These changes are not considered verified until the subsequent CI run completes.
+
+### Next verification target
+
+The branch head after the application fixes is `b835d9e531dce1c2ad78d9ce11ca9bb7e9028858`. A subsequent status-only commit may become the workflow checkout head while retaining these application changes. Verify the exact source revision and final outcome from the next completed run.
+
+### Acceptance
+
+M0 remains **NOT ACCEPTED**. The latest completed build failed; unit tests and lint were skipped; no APK or reports were uploaded; and Android Studio/device verification remains blocked. Do not advance to the next milestone until a corrected completed run and independent QA evidence satisfy the mandatory criteria.
