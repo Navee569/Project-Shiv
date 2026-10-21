@@ -3,6 +3,7 @@ package app.shiv
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.view.CameraController
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -17,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     val context = LocalContext.current
