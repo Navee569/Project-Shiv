@@ -50,18 +50,23 @@ class ProactiveWorker(context: Context, params: WorkerParameters) :
         }
 
         val nowMillis = now.timeInMillis
-        val event = dao.upcomingEvents(nowMillis).firstOrNull {
-            it.startsAt <= nowMillis + NUDGE_WINDOW_MILLIS &&
-                !dao.wasProactiveSent(it.id)
-        } ?: return Result.success()
+        var event: EventRecord? = null
+        for (candidate in dao.upcomingEvents(nowMillis)) {
+            if (candidate.startsAt > nowMillis + NUDGE_WINDOW_MILLIS) break
+            if (!dao.wasProactiveSent(candidate.id)) {
+                event = candidate
+                break
+            }
+        }
+        val upcomingEvent = event ?: return Result.success()
 
-        val minutesUntil = ((event.startsAt - nowMillis + 59_999L) / 60_000L)
+        val minutesUntil = ((upcomingEvent.startsAt - nowMillis + 59_999L) / 60_000L)
             .coerceAtLeast(1L)
         val details = buildString {
             append("Starts in ")
             append(minutesUntil)
             append(if (minutesUntil == 1L) " minute" else " minutes")
-            event.place?.takeIf(String::isNotBlank)?.let {
+            upcomingEvent.place?.takeIf(String::isNotBlank)?.let {
                 append(" · ")
                 append(it)
             }
@@ -80,19 +85,19 @@ class ProactiveWorker(context: Context, params: WorkerParameters) :
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(event.title.ifBlank { "Upcoming event" })
+            .setContentTitle(upcomingEvent.title.ifBlank { "Upcoming event" })
             .setContentText(details)
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))
             .setAutoCancel(true)
             .build()
 
         return try {
-            notifications.notify(event.id.hashCode(), notification)
+            notifications.notify(upcomingEvent.id.hashCode(), notification)
             dao.logAction(
                 ActionLogEntry(
                     action = "Proactive notification",
                     tier = ActionTier.FREE.name,
-                    outcome = event.id
+                    outcome = upcomingEvent.id
                 )
             )
             Result.success()
