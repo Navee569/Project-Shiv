@@ -12,8 +12,8 @@ internal class PhotoCaptureCompletion(
 ) {
     private val completed = AtomicBoolean(false)
 
-    fun finish(error: Throwable? = null) {
-        if (!completed.compareAndSet(false, true)) return
+    fun finish(error: Throwable? = null): Boolean {
+        if (!completed.compareAndSet(false, true)) return false
         var finalError = error
         try {
             closeImage()
@@ -21,5 +21,6 @@ internal class PhotoCaptureCompletion(
             if (finalError == null) finalError = closeError
         }
         onComplete(finalError)
+        return true
     }
 }
