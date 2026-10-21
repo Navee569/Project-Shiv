@@ -75,3 +75,4 @@ jobs:
             app/build/reports/**
             app/build/test-results/**
             app/build/outputs/apk/debug/output-metadata.json
+            app/build/outputs/apk/debug/*.apk
