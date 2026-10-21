@@ -147,3 +147,10 @@ No completed job steps or artifacts were available from those pending runs at th
 ### Current M0 decision
 
 M0 remains **NOT ACCEPTED**. The Android Studio configuration issue is still blocked by lack of an Android Studio/device execution environment. APK verification, unit-test counts, lint findings, and artifact provenance remain unverified until a corrected CI run completes successfully and produces inspectable outputs. Independent QA must retest the resulting revision before acceptance.
+
+
+### Additional source correction after this report update
+
+- Commit `4fea57277b8d5e32691df5f79d605252747f964c` moves the suspendable `dao.wasProactiveSent(...)` call out of a non-suspending list predicate in `ProactiveWorker.kt`. This avoids a Kotlin suspend-context compile error identified during static review of the new worker.
+- CI runs for this code revision were observed as pending at the next inspection: [39639467167](https://github.com/Navee569/Project-Shiv/actions/runs/39639467167) (push, run 27) and [39639472921](https://github.com/Navee569/Project-Shiv/actions/runs/39639472921) (pull request, run 28). No completed results or artifacts were available at that inspection.
+- The earlier runs for intermediate commits were cancelled by subsequent branch updates. The run for source revision `4fea57277b8d5e32691df5f79d605252747f964c` remains the relevant target for validating the corrected source. M0 remains **NOT ACCEPTED** pending completed build, unit-test, lint, artifact, and separate IDE/device evidence.
