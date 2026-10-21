@@ -70,9 +70,10 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                             }
                             val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                             Brain().describePhoto(input) { description ->
-                                completion.finish()
-                                onDescription(description)
-                                onClose()
+                                if (completion.finish()) {
+                                    onDescription(description)
+                                    onClose()
+                                }
                             }
                         } catch (exception: Exception) {
                             completion.finish(exception)
