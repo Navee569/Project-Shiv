@@ -8,9 +8,10 @@
 **Pull request:** [#1 — M0 baseline verification](https://github.com/Navee569/Project-Shiv/pull/1)  
 **Original QA baseline commit:** `88626b1159243b0358e0736b5b2b16c7573ef64f`  
 **PR merge revision from failed run:** `3bb9663f1784fd5a03f3e10861678c30acdfafbc` (merge revision, not the branch head)  
-**Corrective commit:** `b759ab6b54398d890946feb8da6cf6f0498e09e1`  
+**CI fix commit:** `b759ab6b54398d890946feb8da6cf6f0498e09e1`  
+**Latest documentation/cleanup revision:** `1c80c7b5332293190dc151c69040e76b9a83c358`  
 **Failed run under investigation:** [39635257720](https://github.com/Navee569/Project-Shiv/actions/runs/39635257720)  
-**Fresh verification run:** Pending retrieval; no result is claimed in this report.
+**Fresh verification run:** Pending result retrieval; no successful build is claimed.
 
 > This report distinguishes repository inspection from commands actually executed. The available session can read and commit through GitHub but does not expose a local Android SDK/Gradle execution session. Do not claim a build, unit tests, lint, APK inspection, or device test passed unless a fresh CI run or a suitable local environment supplies evidence.
 
@@ -18,7 +19,7 @@
 
 ### M0 CI setup failure correction
 
-**Finding:** The failed workflow's Android SDK setup step failed before SDK platform installation, toolchain recording, assembly, unit tests, or lint. The job summary shows those steps skipped; artifact upload succeeded but is not build evidence.
+**Finding:** The failed workflow's Android SDK setup step failed before SDK platform installation, toolchain recording, assembly, unit tests, or lint. The job summary shows those steps skipped; artifact upload succeeded but is not build evidence. The follow-up correction run was later observed as cancelled after branch activity; re-check Actions for a fresh run and do not infer success.
 
 **Root cause:** The exact `android-actions/setup-android@v3/action.yml` declares `packages` default as `tools platform-tools`. Google no longer serves the legacy `tools` SDK package, and sdkmanager returns `Failed to find package 'tools'`.
 
@@ -65,7 +66,8 @@ M0 remains **NOT ACCEPTED** until a fresh run on the corrected source revision v
 - Base revision recorded on PR: `96e5dd78eedb8f12cf1e2aee758364284de03276`
 - Original QA branch-head revision: `88626b1159243b0358e0736b5b2b16c7573ef64f`
 - Failed run's PR merge revision: `3bb9663f1784fd5a03f3e10861678c30acdfafbc`
-- Corrective commit: `b759ab6b54398d890946feb8da6cf6f0498e09e1`
+- CI correction commit: `b759ab6b54398d890946feb8da6cf6f0498e09e1`
+- Latest branch revision after duplicate-workflow cleanup: `1c80c7b5332293190dc151c69040e76b9a83c358`
 - Corrected file: `.github/workflows/android-ci.yml`
 - Failed workflow run: https://github.com/Navee569/Project-Shiv/actions/runs/39635257720
 - Pull request: https://github.com/Navee569/Project-Shiv/pull/1
