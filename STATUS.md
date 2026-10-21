@@ -87,3 +87,20 @@ At each milestone completion or handoff, update this file (or a linked milestone
 10. Next milestone and blocking dependencies.
 
 Never mark a milestone complete merely because code was committed, CI continued, or artifact upload succeeded.
+
+
+## Independent QA findings — 2026-10-21
+
+The independent QA report keeps M0 **NOT ACCEPTED**. Findings and follow-up actions:
+
+- **SHIV-M0-001 (S2):** The CI artifact paths previously omitted the APK itself. Corrected in commit `51ac55702374d96d122a5c22982773ea351f6b80` by adding `app/build/outputs/apk/debug/*.apk` while retaining metadata, reports, tests, and the existing build/test/lint steps. This correction is committed but still requires a completed CI run and artifact inspection.
+- **SHIV-M0-002 (S1):** Baseline build/test/lint verification was pending in run [39636975888](https://github.com/Navee569/Project-Shiv/actions/runs/39636975888) at the time of the QA report. The SDK setup and SDK platform/build-tools installation had succeeded; toolchain recording had completed; debug assembly was still running. No test/lint pass is inferred. Re-check this run and the run triggered by the APK-artifact correction.
+- **SHIV-M0-003 (S2):** Android Studio run configuration remains unverified. Requires Gradle sync and actual run-configuration resolution; no source-level inference is treated as a pass.
+
+### Current verification state after artifact fix
+
+- Latest reported workflow correction commit: `51ac55702374d96d122a5c22982773ea351f6b80`.
+- Workflow file re-read after commit; the APK glob is present.
+- No successful run for this latest commit has yet been verified.
+- No APK checksum, package metadata, test counts, lint outcome, or physical-device result is claimed.
+- M0 remains **NOT ACCEPTED** until the latest applicable run finishes, artifacts are inspected, and independent QA retests the findings.
