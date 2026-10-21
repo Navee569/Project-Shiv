@@ -18,7 +18,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 
-@ExperimentalGetImage
 @Composable
 fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     val context = LocalContext.current
@@ -52,6 +51,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
             Button(onClick = {
                 working = true
                 controller.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+                    @ExperimentalGetImage
                     override fun onCaptureSuccess(imageProxy: androidx.camera.core.ImageProxy) {
                         val mediaImage = imageProxy.image
                         if (mediaImage == null) {
