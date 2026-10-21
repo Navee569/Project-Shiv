@@ -54,4 +54,39 @@ class PhotoCaptureCompletionTest {
         assertEquals(1, callbacks)
         assertSame(failure, observedError)
     }
+    @Test
+    fun lateSuccessCallbackHasNoSideEffectsAfterFailureWins() {
+        var closes = 0
+        var completionCallbacks = 0
+        var successSideEffects = 0
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { completionCallbacks++ }
+        )
+
+        val failureWon = completion.finish(IllegalStateException("synchronous failure"))
+        val lateSuccessWon = completion.finish()
+        if (lateSuccessWon) successSideEffects++
+
+        assertEquals(true, failureWon)
+        assertEquals(false, lateSuccessWon)
+        assertEquals(1, closes)
+        assertEquals(1, completionCallbacks)
+        assertEquals(0, successSideEffects)
+    }
+
+    @Test
+    fun processingFailureRemainsPrimaryWhenClosingAlsoFails() {
+        val processingFailure = IllegalArgumentException("processing failed")
+        var observedError: Throwable? = null
+        val completion = PhotoCaptureCompletion(
+            closeImage = { throw IllegalStateException("close failed") },
+            onComplete = { error -> observedError = error }
+        )
+
+        completion.finish(processingFailure)
+
+        assertSame(processingFailure, observedError)
+    }
+
 }
