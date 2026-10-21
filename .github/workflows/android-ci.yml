@@ -39,6 +39,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # setup-android@v3 defaults to the retired `tools` SDK package.
+          # Install only the supported platform-tools package here.
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
       - name: Install Android SDK platform and build tools
         run: |
