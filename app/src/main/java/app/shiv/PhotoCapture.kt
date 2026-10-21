@@ -18,7 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 
-@OptIn(ExperimentalGetImage::class)
+@ExperimentalGetImage
 @Composable
 fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     val context = LocalContext.current
