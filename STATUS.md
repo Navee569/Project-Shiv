@@ -9,7 +9,8 @@
 **Original QA baseline commit:** `88626b1159243b0358e0736b5b2b16c7573ef64f`  
 **PR merge revision from failed run:** `3bb9663f1784fd5a03f3e10861678c30acdfafbc` (merge revision, not the branch head)  
 **CI fix commit:** `b759ab6b54398d890946feb8da6cf6f0498e09e1`  
-**Latest documentation/cleanup revision:** `1c80c7b5332293190dc151c69040e76b9a83c358`  
+**Previous documentation/cleanup revision:** `1c80c7b5332293190dc151c69040e76b9a83c358`  
+**CI artifact correction commit:** `51ac55702374d96d122a5c22982773ea351f6b80`  
 **Failed run under investigation:** [39635257720](https://github.com/Navee569/Project-Shiv/actions/runs/39635257720)  
 **Fresh verification run:** Pending result retrieval; no successful build is claimed.
 
@@ -67,7 +68,8 @@ M0 remains **NOT ACCEPTED** until a fresh run on the corrected source revision v
 - Original QA branch-head revision: `88626b1159243b0358e0736b5b2b16c7573ef64f`
 - Failed run's PR merge revision: `3bb9663f1784fd5a03f3e10861678c30acdfafbc`
 - CI correction commit: `b759ab6b54398d890946feb8da6cf6f0498e09e1`
-- Latest branch revision after duplicate-workflow cleanup: `1c80c7b5332293190dc151c69040e76b9a83c358`
+- Duplicate-workflow cleanup revision: `1c80c7b5332293190dc151c69040e76b9a83c358`
+- CI artifact correction revision: `51ac55702374d96d122a5c22982773ea351f6b80`
 - Corrected file: `.github/workflows/android-ci.yml`
 - Failed workflow run: https://github.com/Navee569/Project-Shiv/actions/runs/39635257720
 - Pull request: https://github.com/Navee569/Project-Shiv/pull/1
