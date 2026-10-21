@@ -6,9 +6,11 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +25,12 @@ object PendingEventConfirmation {
         val dao = ShivDatabase.get(context.applicationContext).dao()
         dao.addPendingEvent(PendingEventRecord(id = event.id, title = event.title, startsAt = event.startsAt, place = event.place, person = event.person))
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Event confirmation", NotificationManager.IMPORTANCE_HIGH))
         val confirm = Intent(context, PendingEventReceiver::class.java).apply {
@@ -38,7 +46,11 @@ object PendingEventConfirmation {
             .addAction(0, "Confirm & save", action)
             .setAutoCancel(true)
             .build()
-        runCatching { NotificationManagerCompat.from(context).notify(event.id.hashCode(), notification) }
+        try {
+            NotificationManagerCompat.from(context).notify(event.id.hashCode(), notification)
+        } catch (_: SecurityException) {
+            // Permission may be revoked after the explicit check.
+        }
     }
 
     internal fun isSaveAction(action: String?) = action == ACTION_SAVE
