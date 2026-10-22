@@ -38,7 +38,7 @@ class EncryptedBackup(context: Context) {
                     raw.write(salt)
                     raw.write(iv)
                     val encrypted = CipherOutputStream(raw, cipher)
-                    val bounded = BoundedOutputStream(encrypted, MAX_BACKUP_BYTES - HEADER_AND_TAG_BYTES)
+                    val bounded = BoundedOutputStream(encrypted, MAX_BACKUP_PLAINTEXT_BYTES)
                     val writer = JsonWriter(java.io.OutputStreamWriter(bounded, Charsets.UTF_8))
                     writer.isLenient = false
                     try {
@@ -219,8 +219,6 @@ class EncryptedBackup(context: Context) {
 
     private companion object {
         val MAGIC = "SHIVBK01".toByteArray(Charsets.US_ASCII)
-        const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
-        const val HEADER_AND_TAG_BYTES = 8 + 16 + 12 + 16
         const val PAGE_SIZE = 128
     }
 }
