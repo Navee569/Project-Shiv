@@ -233,3 +233,33 @@ The exception policy is explicit: an exception from `onComplete` propagates to i
 - Physical-device/emulator install and launch, permission denial, camera preview/capture, ML Kit result, and real ImageProxy lifetime: BLOCKED / NOT VERIFIED.
 - Real CameraX/ML Kit integration is not claimed by helper-level unit tests.
 - M0 remains **NOT ACCEPTED**; do not begin the next milestone.
+
+
+## Independent QA follow-up — 2026-10-22 — SHIV-M0-004 to SHIV-M0-006
+
+QA report: `Project_Shiv_M0_Independent_Regression_Retest_1f53acc.txt`, testing exact SHA `1f53acc34887245c94b30fd9b4ae20032476ce56`.
+
+### Verified CI for SHA 1f53acc
+
+- Push run [39708040012](https://github.com/Navee569/Project-Shiv/actions/runs/39708040012) and PR run [39708044974](https://github.com/Navee569/Project-Shiv/actions/runs/39708044974): both SUCCESS on the exact same SHA.
+- Toolchain: Temurin OpenJDK 17.0.20.1, Gradle 8.9, Android platform 35, build-tools 35.0.0; Gradle project discovery recognized root `Shiv` and module `:app`.
+- `:app:assembleDebug`, `:app:testDebugUnitTest`, and `:app:lintDebug`: all SUCCESS.
+- JUnit XML in both artifacts: 6 tests, 6 passed, 0 failures, 0 errors, 0 skipped.
+- Lint: 0 errors, 27 warnings; categories unchanged from the previous tested revision: GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, MissingApplicationIcon 1. `UnsafeOptInUsageError` absent.
+- Push artifact ID 12395862458, ZIP SHA-256 `c2b45080b8945abb83fc55e7e12c90f20e0d7959c28baba30f572b40b48aed76`.
+- PR artifact ID 12396501321, ZIP SHA-256 `e2acd16b2f3241bda109915a89035997de854f4e0144ac318d02f5911bf36dbc`. QA independently computed both ZIP digests and confirmed matches.
+- APK metadata: applicationId `app.shiv`, debug variant, versionCode 1, versionName 0.1.0, minSdk 26. Push APK SHA-256 `2e9a6b43fede47beb14cea0bf04ce9c15e8bd8a9498f45267118cb9980a19605`; PR APK SHA-256 `8bd952bd444876ea9a2e3e2cee81204f00bb07116f29a77d53dca4e37d38cc81`. The two APK hashes differ despite equal file size; no bit-for-bit reproducibility claim is made.
+
+### SHIV-M0-004 — normal success-first gate test
+
+QA found no test of a normal successful `finishSuccess` call that proved both success effects execute exactly once and later terminal calls are rejected. Added a deterministic test to `PhotoCaptureCompletionTest.kt` that checks first success accepted, both effect counters equal one, second success and late terminal failure rejected, cleanup and completion each once, and no terminal error. This source change is not verified until CI runs on its new SHA.
+
+### SHIV-M0-005 — documentation freshness
+
+This dated update records the prior exact-SHA CI, test, lint, artifact and APK evidence without relabeling it as evidence for the new source revision. The next CI run must verify the test addition's new exact SHA before its test count or build status is called current.
+
+### SHIV-M0-006 — runtime verification remains blocked
+
+Android Studio sync/run configuration, APK binary manifest and launcher resolution, physical-device/emulator installation and launch, camera permission denial, preview, capture, ML Kit description, and real asynchronous ImageProxy lifetime remain NOT VERIFIED or BLOCKED. Helper tests are not represented as real CameraX/ML Kit integration evidence.
+
+**M0 decision: NOT ACCEPTED.** Do not approve or merge PR #1 or start the next milestone until the new exact-SHA CI passes, independent QA retests it, and all mandatory IDE/manifest/device requirements are satisfied.

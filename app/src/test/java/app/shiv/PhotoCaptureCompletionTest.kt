@@ -118,4 +118,37 @@ class PhotoCaptureCompletionTest {
         assertSame(processingFailure, observedError)
     }
 
+
+    @Test
+    fun normalSuccessFirstRunsSuccessEffectsExactlyOnce() {
+        var closes = 0
+        var completionCallbacks = 0
+        var descriptions = 0
+        var closeRequests = 0
+        var observedError: Throwable? = IllegalStateException("sentinel")
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { error -> completionCallbacks++; observedError = error }
+        )
+
+        val firstSuccessAccepted = completion.finishSuccess {
+            descriptions++
+            closeRequests++
+        }
+        val secondSuccessAccepted = completion.finishSuccess {
+            descriptions++
+            closeRequests++
+        }
+        val laterTerminalAccepted = completion.finish(IllegalStateException("late failure"))
+
+        assertEquals(true, firstSuccessAccepted)
+        assertEquals(false, secondSuccessAccepted)
+        assertEquals(false, laterTerminalAccepted)
+        assertEquals(1, descriptions)
+        assertEquals(1, closeRequests)
+        assertEquals(1, closes)
+        assertEquals(1, completionCallbacks)
+        assertEquals(null, observedError)
+    }
+
 }
