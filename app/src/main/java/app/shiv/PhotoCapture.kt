@@ -33,6 +33,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeAdapter by remember { mutableStateOf<PhotoCaptureAnalysisAdapter?>(null) }
+    var captureGeneration by remember { mutableIntStateOf(0) }
     val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         granted = result && permitted()
         error = if (granted) null else "Camera permission is required. Allow access in app settings and try again."
@@ -78,14 +79,18 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 granted = true
                 error = null
                 working = true
+                captureGeneration += 1
+                val generation = captureGeneration
                 cameraController.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
                     override fun onCaptureSuccess(proxy: androidx.camera.core.ImageProxy) {
                         val done = PhotoCaptureCompletion(
                             closeImage = { proxy.close() },
                             onComplete = { failure ->
-                                working = false
-                                if (failure != null) error = "The photo couldn’t be processed. Please try again."
+                                if (generation == captureGeneration) {
+                                    working = false
+                                    if (failure != null) error = "The photo couldn’t be processed. Please try again."
+                                }
                             }
                         )
                         activeAdapter?.abandonUi()
@@ -94,8 +99,10 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                             onDescription = onDescription,
                             onClose = onClose,
                             onAnalysisUnresolved = {
-                                working = false
-                                error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
+                                if (generation == captureGeneration) {
+                                    working = false
+                                    error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
+                                }
                             }
                         )
                         activeAdapter = adapter
@@ -112,8 +119,10 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                         } catch (failure: Exception) { adapter.failed(failure) }
                     }
                     override fun onError(exception: ImageCaptureException) {
-                        working = false
-                        error = "The photo couldn’t be captured. Please try again."
+                        if (generation == captureGeneration) {
+                            working = false
+                            error = "The photo couldn’t be captured. Please try again."
+                        }
                     }
                 })
             }, enabled = !working) {
