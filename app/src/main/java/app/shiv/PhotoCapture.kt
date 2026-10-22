@@ -78,6 +78,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 }
                 granted = true
                 error = null
+                activeAdapter?.abandonUi()
                 working = true
                 captureGeneration += 1
                 val generation = captureGeneration
