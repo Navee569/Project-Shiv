@@ -1,42 +1,79 @@
 package app.shiv
 
-import java.util.concurrent.atomic.AtomicBoolean
-
 /**
- * Owns the terminal cleanup for one captured image. The caller must not finish until
- * asynchronous image processing has stopped reading the underlying media image.
+ * Owns image release and capture completion as separate, thread-safe transitions.
+ *
+ * The image may be released as soon as ML Kit task terminality is established. The UI/capture
+ * completion callback may happen later. A close failure is retained and reported at final
+ * completion even when release was attempted earlier.
  */
 internal class PhotoCaptureCompletion(
     private val closeImage: () -> Unit,
     private val onComplete: (Throwable?) -> Unit
 ) {
-    private val completed = AtomicBoolean(false)
+    private val lock = Any()
+    private var imageReleaseAttempted = false
+    private var completionStarted = false
+    private var imageCloseFailure: Exception? = null
+
+    private data class FinishOutcome(val error: Throwable?)
 
     /**
-     * Runs success-side effects only when this call owns terminal completion.
-     * Exceptions from onComplete deliberately propagate; terminal ownership and
-     * the image-close attempt remain committed, and success effects are skipped.
+     * Attempts ImageProxy release once. Returns a close failure only to the caller that performs
+     * the attempt; the failure is retained and included in the eventual completion callback.
+     */
+    fun releaseImage(): Throwable? = synchronized(lock) {
+        releaseImageLocked()
+    }
+
+    private fun releaseImageLocked(): Throwable? {
+        if (imageReleaseAttempted) return null
+        imageReleaseAttempted = true
+        return try {
+            closeImage()
+            null
+        } catch (failure: Exception) {
+            imageCloseFailure = failure
+            failure
+        }
+    }
+
+    /**
+     * Runs success effects only if this call owns completion and no processing/cleanup error
+     * exists. If onComplete throws, terminal state remains committed and success effects are skipped.
      */
     fun finishSuccess(onSuccess: () -> Unit): Boolean {
-        if (!finish()) return false
-        onSuccess()
+        val outcome = finishInternal(null) ?: return false
+        if (outcome.error == null) onSuccess()
         return true
     }
 
-    fun finish(error: Throwable? = null): Boolean {
-        if (!completed.compareAndSet(false, true)) return false
-        var finalError = error
-        try {
-            closeImage()
-        } catch (closeError: Exception) {
-            if (finalError == null) finalError = closeError
-            else if (finalError !== closeError) finalError.addSuppressed(closeError)
+    fun finish(error: Throwable? = null): Boolean = finishInternal(error) != null
+
+    /** Null means another caller already owns completion. */
+    private fun finishInternal(error: Throwable?): FinishOutcome? {
+        val outcome = synchronized(lock) {
+            if (completionStarted) return null
+            completionStarted = true
+            releaseImageLocked()
+            var primary = error
+            val closeFailure = imageCloseFailure
+            if (closeFailure != null) {
+                if (primary == null) primary = closeFailure
+                else if (primary !== closeFailure) {
+                    try {
+                        primary.addSuppressed(closeFailure)
+                    } catch (_: Exception) {
+                        // Preserve the primary processing failure if diagnostic attachment fails.
+                    }
+                }
+            }
+            FinishOutcome(primary)
         }
-        onComplete(finalError)
-        return true
+        onComplete(outcome.error)
+        return outcome
     }
 }
-
 
 /**
  * Production bridge between Brain's asynchronous analysis lifecycle and CameraX capture ownership.
