@@ -163,7 +163,7 @@ internal class MlKitPhotoLabeler(
                     onComplete()
                 }
             }
-        } catch (registrationFailure: Throwable) {
+        } catch (registrationFailure: Exception) {
             ListenerRegistrationFallback.schedule(
                 awaitTask = {
                     var terminalResult: List<ImageLabel>? = null
@@ -198,8 +198,15 @@ internal class MlKitPhotoLabeler(
                 onSuccess = onSuccess,
                 onFailure = onFailure,
                 onComplete = onComplete,
-                onSchedulingFailure = {
-                    Log.e("ShivPhotoLabeler", "Fallback could not establish task terminality; image ownership is retained", it)
+                onSchedulingFailure = { failure ->
+                    Log.e("ShivPhotoLabeler", "Fallback could not establish task terminality; image ownership is retained", failure)
+                    if (failure is TaskTerminalityUnresolvedException || failure is RejectedExecutionException) {
+                        try {
+                            PhotoLabelingExecutors.mainCallback.execute { onTaskUnresolved(failure) }
+                        } catch (dispatchFailure: RejectedExecutionException) {
+                            Log.e("ShivPhotoLabeler", "Could not dispatch unresolved-task warning", dispatchFailure)
+                        }
+                    }
                 }
             )
         }
