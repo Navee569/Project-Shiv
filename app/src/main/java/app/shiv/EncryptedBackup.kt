@@ -56,7 +56,7 @@ class EncryptedBackup(context: Context) {
                 throw failure
             }
         } finally {
-            passphrase.fill('\\u0000')
+            passphrase.fill('\u0000')
         }
     }
 
@@ -94,7 +94,7 @@ class EncryptedBackup(context: Context) {
             dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers); dao.saveSettings(settings)
         }
         } finally {
-            passphrase.fill('\\u0000')
+            passphrase.fill('\u0000')
         }
     }
 
