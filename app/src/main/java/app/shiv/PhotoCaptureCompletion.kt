@@ -153,3 +153,15 @@ internal class PhotoCaptureAnalysisAdapter(
         if (ownsResult) completion.finish(failure)
     }
 }
+
+
+/** Prevents late callbacks from an older capture from mutating newer capture UI state. */
+internal class CaptureGenerationGate {
+    private val lock = Any()
+    private var currentGeneration = 0L
+    fun begin(): Long = synchronized(lock) { ++currentGeneration }
+    fun isCurrent(generation: Long): Boolean = synchronized(lock) { currentGeneration == generation }
+    fun runIfCurrent(generation: Long, effect: () -> Unit): Boolean = synchronized(lock) {
+        if (currentGeneration != generation) false else { effect(); true }
+    }
+}

@@ -33,7 +33,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeAdapter by remember { mutableStateOf<PhotoCaptureAnalysisAdapter?>(null) }
-    var captureGeneration by remember { mutableIntStateOf(0) }
+    val captureGeneration = remember { CaptureGenerationGate() }
     val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         granted = result && permitted()
         error = if (granted) null else "Camera permission is required. Allow access in app settings and try again."
@@ -80,8 +80,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 error = null
                 activeAdapter?.abandonUi()
                 working = true
-                captureGeneration += 1
-                val generation = captureGeneration
+                val generation = captureGeneration.begin()
                 cameraController.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
                     override fun onCaptureSuccess(proxy: androidx.camera.core.ImageProxy) {
@@ -89,21 +88,29 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                         val done = PhotoCaptureCompletion(
                             closeImage = { proxy.close() },
                             onComplete = { failure ->
-                                if (generation == captureGeneration && uiActive.get()) {
-                                    working = false
-                                    if (failure != null) error = "The photo couldn’t be processed. Please try again."
+                                captureGeneration.runIfCurrent(generation) {
+                                    if (uiActive.get()) {
+                                        working = false
+                                        if (failure != null) error = "The photo couldn’t be processed. Please try again."
+                                    }
                                 }
                             }
                         )
                         activeAdapter?.abandonUi()
                         val adapter = PhotoCaptureAnalysisAdapter(
                             completion = done,
-                            onDescription = onDescription,
-                            onClose = onClose,
+                            onDescription = { description ->
+                                captureGeneration.runIfCurrent(generation) { if (uiActive.get()) onDescription(description) }
+                            },
+                            onClose = {
+                                captureGeneration.runIfCurrent(generation) { if (uiActive.get()) onClose() }
+                            },
                             onAnalysisUnresolved = {
-                                if (generation == captureGeneration) {
-                                    working = false
-                                    error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
+                                captureGeneration.runIfCurrent(generation) {
+                                    if (uiActive.get()) {
+                                        working = false
+                                        error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
+                                    }
                                 }
                             },
                             onUiAbandoned = { uiActive.set(false) }
@@ -122,7 +129,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                         } catch (failure: Exception) { adapter.failed(failure) }
                     }
                     override fun onError(exception: ImageCaptureException) {
-                        if (generation == captureGeneration) {
+                        captureGeneration.runIfCurrent(generation) {
                             working = false
                             error = "The photo couldn’t be captured. Please try again."
                         }

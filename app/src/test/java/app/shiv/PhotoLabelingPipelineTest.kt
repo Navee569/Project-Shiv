@@ -362,17 +362,14 @@ class PhotoLabelingPipelineTest {
         PhotoLabelingPipeline.run("image", controlled) { results.add(it) }
         val ready = CountDownLatch(2)
         val start = CountDownLatch(1)
+        val workerFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val listener = Thread {
-            ready.countDown()
-            start.await()
-            success("listener result")
-            complete()
+            try { ready.countDown(); check(start.await(3, TimeUnit.SECONDS)); success("listener result"); complete() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
         }
         val fallback = Thread {
-            ready.countDown()
-            start.await()
-            success("fallback result")
-            complete()
+            try { ready.countDown(); check(start.await(3, TimeUnit.SECONDS)); success("fallback result"); complete() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
         }
         listener.start()
         fallback.start()
@@ -382,6 +379,7 @@ class PhotoLabelingPipelineTest {
         fallback.join(3000)
         assertFalse(listener.isAlive)
         assertFalse(fallback.isAlive)
+        assertEquals(null, workerFailure.get())
         assertEquals(1, labeler.closes)
         assertEquals(1, results.size)
         assertTrue(results.single().isSuccess)
@@ -422,6 +420,106 @@ class PhotoLabelingPipelineTest {
             awaitOnce = { "terminal-result" }
         )
         assertEquals("terminal-result", terminal)
+    }
+
+    @Test
+    fun labelerAndImageRemainOwnedUntilActualTaskTerminality() {
+        lateinit var success: (String) -> Unit
+        lateinit var complete: () -> Unit
+        var closes = 0
+        var consumed = 0
+        val results = mutableListOf<Result<String>>()
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                success = onSuccess; complete = onComplete
+            }
+            override fun close() { closes++ }
+        }
+        PhotoLabelingPipeline.run("image", labeler, onImageConsumed = { consumed++ }) { results.add(it) }
+        success("result before terminality")
+        assertEquals(0, closes); assertEquals(0, consumed); assertTrue(results.isEmpty())
+        complete()
+        assertEquals(1, closes); assertEquals(1, consumed)
+        assertEquals("result before terminality", results.single().getOrNull())
+    }
+
+    @Test
+    fun productionPipelineAdapterRetainsImageAfterUnresolvedNoticeUntilTaskTerminality() {
+        var imageCloses = 0
+        var completions = 0
+        var descriptions = 0
+        var unresolved = 0
+        lateinit var success: (String) -> Unit
+        lateinit var complete: () -> Unit
+        val adapter = PhotoCaptureAnalysisAdapter(
+            completion = PhotoCaptureCompletion({ imageCloses++ }, { completions++ }),
+            onDescription = { descriptions++ }, onClose = {}, onAnalysisUnresolved = { unresolved++ }
+        )
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                success = onSuccess; complete = onComplete
+            }
+            override fun close() {}
+        }
+        PhotoLabelingPipeline.run("image", labeler, onImageConsumed = adapter::imageConsumed) { result ->
+            result.fold(adapter::descriptionReady, adapter::failed)
+        }
+        adapter.analysisUnresolved(TaskTerminalityUnresolvedException(java.util.concurrent.TimeoutException("bounded wait elapsed")))
+        assertEquals(1, unresolved); assertEquals(0, imageCloses); assertEquals(0, completions)
+        success("late result"); complete()
+        assertEquals(1, imageCloses); assertEquals(1, completions); assertEquals(0, descriptions)
+    }
+
+    @Test
+    fun productionAdapterPipelineDeduplicatesPartiallyAttachedListenerFallbackRace() {
+        val fallbackQueue = mutableListOf<Runnable>()
+        lateinit var listenerSuccess: (String) -> Unit
+        lateinit var listenerComplete: () -> Unit
+        var labelerCloses = 0
+        var imageCloses = 0
+        var completions = 0
+        var descriptions = 0
+        var closeRequests = 0
+        val adapter = PhotoCaptureAnalysisAdapter(
+            completion = PhotoCaptureCompletion({ imageCloses++ }, { completions++ }),
+            onDescription = { descriptions++ }, onClose = { closeRequests++ }
+        )
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                listenerSuccess = onSuccess; listenerComplete = onComplete
+                assertTrue(ListenerRegistrationFallback.schedule(
+                    awaitTask = { "fallback result" },
+                    registrationFailure = IllegalStateException("listener attached then registration threw"),
+                    waiter = Executor { fallbackQueue.add(it) },
+                    onSuccess = onSuccess, onFailure = onFailure, onComplete = onComplete
+                ))
+            }
+            override fun close() { labelerCloses++ }
+        }
+        val results = java.util.Collections.synchronizedList(mutableListOf<Result<String>>())
+        PhotoLabelingPipeline.run("image", labeler, callbackExecutor = Executor { it.run() }, onImageConsumed = adapter::imageConsumed) { result ->
+            results.add(result); result.fold(adapter::descriptionReady, adapter::failed)
+        }
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val workerFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+        val fallbackThread = Thread {
+            try { ready.countDown(); check(start.await(3, TimeUnit.SECONDS)); fallbackQueue.single().run() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
+        }
+        val listenerThread = Thread {
+            try { ready.countDown(); check(start.await(3, TimeUnit.SECONDS)); listenerSuccess("listener result"); listenerComplete() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
+        }
+        fallbackThread.start(); listenerThread.start()
+        assertTrue(ready.await(3, TimeUnit.SECONDS))
+        start.countDown()
+        fallbackThread.join(3000); listenerThread.join(3000)
+        assertFalse(fallbackThread.isAlive); assertFalse(listenerThread.isAlive)
+        assertEquals(null, workerFailure.get())
+        assertEquals(1, labelerCloses); assertEquals(1, imageCloses)
+        assertEquals(1, completions); assertEquals(1, results.size)
+        assertEquals(1, descriptions); assertEquals(1, closeRequests)
     }
 
     @Test

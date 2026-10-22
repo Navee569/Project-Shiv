@@ -169,14 +169,66 @@ grep -Fx '1' "$REPORT/boot-completed.txt" || {
 }
 printf 'Android boot completed: sys.boot_completed=1\n' | tee "$REPORT/boot-ready.txt"
 
+capture_launch_diagnostics() {
+  local phase="$1"
+  local prefix="$REPORT/launch-diagnostics-$phase"
+  {
+    echo "timestamp=$(timestamp)"
+    echo "serial=$DEVICE_SERIAL"
+    echo "launch output:"
+    cat "$REPORT/launch.txt" 2>/dev/null || true
+    echo "app PID:"
+    timeout 12s adb -s "$DEVICE_SERIAL" shell pidof app.shiv 2>&1 || true
+    echo "process list:"
+    timeout 12s adb -s "$DEVICE_SERIAL" shell ps -A 2>&1 || true
+    echo "activity state:"
+    timeout 15s adb -s "$DEVICE_SERIAL" shell dumpsys activity activities 2>&1 || true
+    echo "top activity:"
+    timeout 15s adb -s "$DEVICE_SERIAL" shell dumpsys activity top 2>&1 || true
+    echo "window state:"
+    timeout 12s adb -s "$DEVICE_SERIAL" shell dumpsys window windows 2>&1 || true
+    echo "app memory:"
+    timeout 12s adb -s "$DEVICE_SERIAL" shell dumpsys meminfo app.shiv 2>&1 || true
+  } >"$prefix-state.txt" 2>&1
+  timeout 15s adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 6000 >"$prefix-logcat.txt" 2>&1 || true
+  timeout 12s adb -s "$DEVICE_SERIAL" logcat -b crash -d -v threadtime >"$prefix-crash.txt" 2>&1 || true
+  echo "Captured live launch diagnostics: $prefix-*"
+}
+
 run_bounded install 180 adb -s "$DEVICE_SERIAL" install -r app/build/outputs/apk/debug/app-debug.apk
 grep -F "Success" "$REPORT/install.txt"
 run_bounded pm-clear 30 adb -s "$DEVICE_SERIAL" shell pm clear app.shiv
 grep -F "Success" "$REPORT/pm-clear.txt"
 run_bounded force-stop 30 adb -s "$DEVICE_SERIAL" shell am force-stop app.shiv
 run_bounded logcat-clear 20 adb -s "$DEVICE_SERIAL" logcat -c
-run_bounded launch 60 adb -s "$DEVICE_SERIAL" shell am start -W -n app.shiv/.MainActivity
-grep -E "Status: ok" "$REPORT/launch.txt"
+launch_command_status=0
+if run_bounded launch 60 adb -s "$DEVICE_SERIAL" shell am start -W -n app.shiv/.MainActivity; then
+  launch_command_status=0
+else
+  launch_command_status=$?
+fi
+if [ "$launch_command_status" -ne 0 ] || ! grep -Eq '^Status: ok
+sleep 5
+run_bounded process 20 adb -s "$DEVICE_SERIAL" shell pidof app.shiv
+test -s "$REPORT/process.txt"
+if ! grep -Eq '[0-9]+' "$REPORT/process.txt"; then
+  echo "Application PID was empty." >&2
+  exit 1
+fi
+run_bounded activities 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities
+grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
+run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -d -t 6000
+run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d
+if grep -E "FATAL EXCEPTION|Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
+  echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
+  exit 1
+fi
+printf 'PASS: install, clear-data, cold-launch, PID, activity, crash and ANR assertions completed.\n' | tee "$REPORT/smoke-summary.txt"
+ "$REPORT/launch.txt"; then
+  capture_launch_diagnostics failure
+  echo "Cold launch failed: am start must return Status: ok. A timeout is not accepted." >&2
+  exit 1
+fi
 sleep 5
 run_bounded process 20 adb -s "$DEVICE_SERIAL" shell pidof app.shiv
 test -s "$REPORT/process.txt"

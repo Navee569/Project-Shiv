@@ -264,6 +264,19 @@ jobs:
           (output_path.parent / "apk-size.txt").write_text(f"APK bytes: {len(binary)}\n")
           print(json.dumps(evidence, indent=2))
           PY
+      - name: Upload exact-run debug APK binary
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-debug-apk-${{ github.event_name }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/output-metadata.json
+            app/build/reports/apk-verification/apk-evidence.json
+            app/build/reports/apk-verification/apk-sha256.txt
+            app/build/reports/apk-verification/apk-size.txt
+            app/build/reports/apk-verification/manifest-inspection-final.txt
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -236,15 +236,14 @@ class PhotoCaptureCompletionTest {
             closeImage = { closes.incrementAndGet() },
             onComplete = { callbacks.incrementAndGet() }
         )
+        val workerFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val releaseThread = Thread {
-            ready.countDown()
-            start.await()
-            completion.releaseImage()
+            try { ready.countDown(); check(start.await(3, java.util.concurrent.TimeUnit.SECONDS)); completion.releaseImage() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
         }
         val finishThread = Thread {
-            ready.countDown()
-            start.await()
-            completion.finish()
+            try { ready.countDown(); check(start.await(3, java.util.concurrent.TimeUnit.SECONDS)); completion.finish() }
+            catch (failure: Throwable) { workerFailure.compareAndSet(null, failure) }
         }
         releaseThread.start()
         finishThread.start()
@@ -254,6 +253,7 @@ class PhotoCaptureCompletionTest {
         finishThread.join(3000)
         assertEquals(false, releaseThread.isAlive)
         assertEquals(false, finishThread.isAlive)
+        assertEquals(null, workerFailure.get())
         assertEquals(1, closes.get())
         assertEquals(1, callbacks.get())
     }
@@ -272,6 +272,31 @@ class PhotoCaptureCompletionTest {
         assertEquals(false, completion.finish())
         assertEquals(1, closes)
         assertEquals(1, callbacks)
+    }
+
+    @Test
+    fun olderCaptureCompletionCannotResetNewerCaptureWorkingState() {
+        val gate = CaptureGenerationGate()
+        val old = gate.begin()
+        var working = true
+        val current = gate.begin()
+        assertEquals(false, gate.runIfCurrent(old) { working = false })
+        assertEquals(true, working)
+        assertEquals(true, gate.runIfCurrent(current) { working = false })
+        assertEquals(false, working)
+    }
+
+    @Test
+    fun staleCaptureCannotRunDescriptionOrCloseEffectsAfterNewCaptureBegins() {
+        val gate = CaptureGenerationGate()
+        val old = gate.begin()
+        var descriptions = 0
+        var closes = 0
+        gate.begin()
+        assertEquals(false, gate.runIfCurrent(old) { descriptions++ })
+        assertEquals(false, gate.runIfCurrent(old) { closes++ })
+        assertEquals(0, descriptions)
+        assertEquals(0, closes)
     }
 
     @Test
