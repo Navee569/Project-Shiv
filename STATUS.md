@@ -441,3 +441,21 @@ Passing run artifacts:
 
 Emulator serial resolution now has an executable CI test for zero, one, and multiple online devices. Photo fallback tests cover terminal callback-executor rejection via a main-thread completion executor, waiter-capacity rejection without releasing an active image, saturation/pending state, failed task propagation, callback exceptions, late completion, and exactly-once image cleanup.
 
+
+
+## Independent QA retest — 2026-10-22 — source SHA `04175279087fba63423fecafdbe311fe568f17bc`
+
+**Verdict: NOT ACCEPTED.** PR #1 remains open, draft, and unmerged. Source/head SHA: `04175279087fba63423fecafdbe311fe568f17bc`; PR base SHA: `96e5dd78eedb8f12cf1e2aee758364284de03276`; PR synthetic merge SHA: `98543eaa915ad2314003199f6e967352afe95822`. These identifiers are distinct.
+
+- Push workflow [39798977912](https://github.com/Navee569/Project-Shiv/actions/runs/39798977912): APK assembly and manifest gate passed; lint passed with 0 errors and 26 warnings; unit-test Kotlin compilation failed. Push KVM, device selection, shell syntax, and emulator install/cold-launch smoke passed.
+- PR workflow [39798987928](https://github.com/Navee569/Project-Shiv/actions/runs/39798987928): failed at KVM validation and unit-test compilation; downstream emulator gates were skipped. It checked out synthetic merge SHA `98543eaa915ad2314003199f6e967352afe95822`.
+- Unit tests did not execute on this SHA. Compiler error: `PhotoLabelingPipelineTest.kt:394:44`, cannot infer type parameter and missing `awaitOnce`. Preserve the real-thread interrupt restoration test and ensure worker-thread assertions propagate to JUnit.
+- KVM validation was inconsistent between push and PR runner instances. The PR log showed mode `0666` but still reported access failure. Remediation must capture runner identity/ACL and test an actual read-write open as the workflow user; do not bypass KVM or allow software-emulation fallback.
+- Push artifact 12434808168: ZIP digest `sha256:77a5c1f3f5fb7ada2373c5dbeb134a72b7564e560368387e4b037d23ed1a5e2a`; extracted APK SHA-256 `aac421b005ad1c5620a0317ef7763c3edcffb4f08287551b6373f2789421878e`, size 136043155 bytes. Metadata matched applicationId `app.shiv`, versionCode 1, versionName `0.1.0`, minSdk 26, launcher `app.shiv.MainActivity`, label `Shiv`, and icon present. The PR artifact is separate and built from the synthetic merge SHA.
+- Lint warnings: GradleDependency 15; ObsoleteSdkInt 6; Recycle 2; InlinedApi 1; OldTargetApi 1; DataExtractionRules 1.
+
+### Remediation in progress
+
+The interrupt test now uses `awaitOnce = { ... }` and captures any raw worker-thread failure so JUnit can fail reliably. The KVM gate now records identity, groups, device metadata and ACL where available, applies mode 0666 after udev processing, and attempts a real read-write open as the workflow user. These changes are not verified until fresh exact-SHA push and PR runs complete and their reports/artifacts are inspected.
+
+M0 remains **NOT ACCEPTED**. No lifecycle/concurrency tests count as passing for the failed test-compilation SHA.

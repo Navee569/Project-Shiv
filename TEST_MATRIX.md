@@ -270,3 +270,24 @@ Source SHA `8dec101f5f399a135d9b5bfed0ae84356e8b063b`; PR #1 merge SHA `ed6edc59
 
 The evidence demonstrates the KVM fix on the present runner and exact revision. Historical ADB-offline, broken-pipe, and workflow-cancellation records remain separately classified; a cancelled run is never counted as a pass.
 
+
+
+## Latest independent QA matrix — 2026-10-22 — source SHA `04175279087fba63423fecafdbe311fe568f17bc`
+
+This section supersedes older results when assessing the tested SHA. The remediation commit requires fresh push and PR evidence.
+
+| Gate | Push run 39798977912 | PR run 39798987928 |
+|---|---|---|
+| Branch source/head SHA | `04175279087fba63423fecafdbe311fe568f17bc` | Source head same; workflow checked out synthetic merge SHA `98543eaa915ad2314003199f6e967352afe95822` |
+| Debug APK assembly | PASS | PASS |
+| APK manifest / launcher gate | PASS | PASS |
+| Unit-test Kotlin source compilation | FAIL at `PhotoLabelingPipelineTest.kt:394` | FAIL |
+| Unit tests executed | No — compile failed | No — compile failed |
+| Debug lint | PASS, 0 errors / 26 warnings | Not confirmed as a pass |
+| KVM validation | PASS | FAIL despite `ls -l` displaying mode 0666 |
+| Device selection / shell syntax | PASS | SKIPPED downstream of KVM failure |
+| Emulator install / cold launch | PASS | SKIPPED downstream of KVM failure |
+| APK artifact provenance | PASS; push APK independently hashed | Separate PR synthetic-merge artifact; never substitute for push artifact |
+| Overall M0 | NOT ACCEPTED | NOT ACCEPTED |
+
+The test-source compile error must be fixed without weakening the real-thread interrupt-restoration assertion. KVM validation must prove actual access as the workflow user and fail closed if unavailable. Re-run both event types on the new source SHA before changing any current gate to PASS.

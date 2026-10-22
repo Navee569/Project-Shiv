@@ -6,9 +6,11 @@ This log records confirmed defects separately from unverified risks. Do not labe
 
 | ID | Severity | Area | Finding | Evidence | Status / next action |
 |---|---|---|---|---|---|
-| SHIV-M0-001 | Blocker | Build verification | The debug build, unit tests, and lint have not been executed in this development session, so baseline build health is unverified. | Repository inspection only; no Gradle execution facility exposed in this session. | Open. Run Android CI and capture actual task results. |
-| SHIV-M0-002 | High | Automated tests | The inspected branch does not contain `app/src/test` or `app/src/androidTest` directories. | GitHub contents API returned 404 for both paths on the inspected branch. | Open. Add focused deterministic tests after baseline build is verified. |
-| SHIV-M0-003 | High | Local AI | Presence of `Brain.kt` and a LiteRT-LM dependency does not prove the runtime can load a compatible model or infer offline. | Source and dependency declaration inspected; no inference execution performed. | Open. Verify APIs, model format, import path, and on-device offline inference. |
+| M0-TEST-COMP-001 | Blocker | Unit-test compilation | `PhotoLabelingPipelineTest.kt:394` invokes `InterruptSafeAwait.await` without required `awaitOnce`; test compilation fails and no tests execute. | Exact-SHA push run 39798977912 and PR run 39798987928; independent QA report dated 2026-10-22. | Remediation prepared: use the named argument and propagate worker-thread failures to JUnit. Keep open until fresh exact-SHA test task passes. |
+| M0-CI-KVM-001 | High | Emulator CI | KVM permission check is inconsistent across push and PR hosted-runner instances. PR reported inaccessible KVM although `ls -l` showed mode 0666. | Push run 39798977912 passed KVM/smoke; PR run 39798987928 failed KVM and skipped downstream emulator checks. | Remediation prepared: diagnostic identity/ACL output and actual read-write open as workflow user. Keep open until both event runs pass without software fallback. |
+| M0-COVERAGE-001 | High | Photo lifecycle tests | Lifecycle/concurrency behavior is unverified while test-source compilation fails. | No unit tests executed on source SHA `04175279087fba63423fecafdbe311fe568f17bc`. | Keep open until full suite compiles/passes and adapter races/terminality cases are independently reviewed. |
+| M0-DOC-001 | Medium | Verification records | Historical docs did not reflect the latest exact-SHA failures. | Independent QA report for SHA `04175279087fba63423fecafdbe311fe568f17bc`. | Latest exact-SHA results added to STATUS.md, TEST_MATRIX.md and DEFECT_LOG.md; refresh after remediation workflows complete. |
+| SHIV-M0-003 | High | Local AI | Presence of `Brain.kt` and a LiteRT-LM dependency does not prove compatible model loading or offline inference. | Source/dependency inspection only; no real inference execution. | Open. Verify model/runtime compatibility and on-device offline inference. |
 
 ## Confirmed defects
 
@@ -51,3 +53,13 @@ A follow-up candidate adds bounded ADB command execution and focused fallback sc
 - **Historical signatures remain distinct.** Earlier device-offline periods and PR install `Broken pipe (32)` are reported as observations, not asserted to be identical to the install-timeout root cause. Intermediary cancelled workflows remain cancelled.
 
 Current exact-run artifacts and APK hashes are recorded in STATUS.md and TEST_MATRIX.md. PR #1 remains open, draft, and unmerged.
+
+
+## Independent QA retest — 2026-10-22 — SHA `04175279087fba63423fecafdbe311fe568f17bc`
+
+- **M0-TEST-COMP-001 — BLOCKER:** test-source compilation fails at `PhotoLabelingPipelineTest.kt:394:44` because `awaitOnce` is omitted. Preserve the real-thread interrupt-restoration test and surface worker failures.
+- **M0-CI-KVM-001 — HIGH:** KVM passes on push but fails on PR despite displayed mode 0666. Add runner identity/ACL diagnostics and verify actual read-write opening as the workflow user. Never skip KVM or silently fall back to software emulation.
+- **M0-COVERAGE-001 — HIGH:** lifecycle/concurrency tests are unverified because compilation failed before test execution.
+- **M0-DOC-001 — MEDIUM:** current exact-SHA evidence has been recorded, but the three milestone documents must be refreshed after the new push and PR runs.
+
+M0 remains **NOT ACCEPTED** until all required gates pass on the same new source SHA and independent QA verifies both workflows and artifacts.

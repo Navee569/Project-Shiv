@@ -389,20 +389,30 @@ class PhotoLabelingPipelineTest {
 
     @Test fun interruptSafeAwaitRestoresRealThreadInterruptStatus() {
         val restored = java.util.concurrent.atomic.AtomicBoolean(false)
+        val workerFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val thread = Thread {
-            var attempts = 0
-            val value = InterruptSafeAwait.await {
-                attempts++
-                if (attempts == 1) throw InterruptedException("controlled interruption")
-                "terminal"
+            try {
+                var attempts = 0
+                val value = InterruptSafeAwait.await(
+                    awaitOnce = {
+                        attempts++
+                        if (attempts == 1) throw InterruptedException("controlled interruption")
+                        "terminal"
+                    }
+                )
+                assertEquals("terminal", value)
+            } catch (failure: Throwable) {
+                // Assertions on a raw Thread do not automatically fail the JUnit test.
+                workerFailure.set(failure)
+            } finally {
+                restored.set(Thread.currentThread().isInterrupted)
             }
-            assertEquals("terminal", value)
-            restored.set(Thread.currentThread().isInterrupted)
         }
         thread.start()
         thread.join(3000)
-        assertFalse(thread.isAlive)
-        assertTrue(restored.get())
+        assertFalse("interrupt-safe await worker did not finish", thread.isAlive)
+        assertEquals("worker failed", null, workerFailure.get())
+        assertTrue("worker interrupt flag was not restored", restored.get())
     }
 
 
