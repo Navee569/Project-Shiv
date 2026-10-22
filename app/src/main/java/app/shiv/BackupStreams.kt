@@ -7,7 +7,6 @@ import java.io.OutputStream
 import java.io.IOException
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
-import javax.crypto.AEADBadTagException
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
