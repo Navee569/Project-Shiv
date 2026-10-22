@@ -13,6 +13,10 @@ run_bounded() {
   seconds="$2"
   shift 2
   output="$REPORT/${label}.txt"
+  if [ "$label" = "install" ]; then
+    run_monitored_install "$seconds" "$@"
+    return $?
+  fi
   printf 'Running %s (timeout %ss):' "$label" "$seconds" | tee "$REPORT/${label}-command.txt"
   printf ' %q' "$@" | tee -a "$REPORT/${label}-command.txt"
   printf '\n' | tee -a "$REPORT/${label}-command.txt"
@@ -60,6 +64,60 @@ capture_diagnostics() {
   echo "Captured $out"
 }
 
+# Capture bounded snapshots while package installation is active. Postmortem
+# collection after emulator teardown cannot explain a live install stall.
+snapshot_command() {
+  label="$1"; seconds="$2"; shift 2
+  base="$REPORT/install-live-${snapshot_index}-${label}"
+  printf '%s\n' "$*" > "${base}-command.txt"
+  if timeout "${seconds}s" "$@" > "${base}.txt" 2>&1; then status=0; else status=$?; fi
+  printf 'timestamp=%s exit=%s timeout=%ss\n' "$(timestamp)" "$status" "$seconds" > "${base}-status.txt"
+}
+
+capture_install_snapshot() {
+  snapshot_index="$1"
+  printf 'Install live snapshot %s at %s\n' "$snapshot_index" "$(timestamp)" | tee "$REPORT/install-live-${snapshot_index}-timestamp.txt"
+  snapshot_command adb-version 5 adb version
+  snapshot_command adb-server-status 5 adb server-status
+  snapshot_command adb-devices 5 adb devices -l
+  snapshot_command adb-selected-state 5 adb -s "$DEVICE_SERIAL" get-state
+  snapshot_command boot-properties 8 adb -s "$DEVICE_SERIAL" shell sh -c 'getprop sys.boot_completed; getprop init.svc.bootanim; getprop dev.bootcomplete'
+  snapshot_command package-installer 12 adb -s "$DEVICE_SERIAL" shell dumpsys package installer
+  snapshot_command guest-logcat 12 adb -s "$DEVICE_SERIAL" logcat -d -v threadtime -t 1200
+  snapshot_command adb-server-processes 5 sh -c "ps -eo pid,ppid,stat,etime,%cpu,%mem,rss,args | grep -E '[a]db|[e]mulator|[q]emu'"
+  snapshot_command adb-port-5037 5 sh -c 'ss -ltnp | grep ":5037"'
+  snapshot_command host-memory 5 free -h
+  snapshot_command host-disk 5 df -h /
+}
+
+run_monitored_install() {
+  seconds="$1"; shift
+  install_log="$REPORT/install.txt"
+  timeout "${seconds}s" "$@" >"$install_log" 2>&1 &
+  install_pid=$!
+  snapshot_index=0
+  while :; do
+    process_state=""
+    if process_state="$(ps -o stat= -p "$install_pid" 2>/dev/null)"; then :; fi
+    case "$process_state" in ""|Z*) break ;; esac
+    sleep 20
+    process_state=""
+    if process_state="$(ps -o stat= -p "$install_pid" 2>/dev/null)"; then :; fi
+    case "$process_state" in ""|Z*) break ;; esac
+    snapshot_index=$((snapshot_index + 1))
+    capture_install_snapshot "$snapshot_index"
+  done
+  if wait "$install_pid"; then
+    printf 'install exit=0\n' | tee "$REPORT/install-status.txt"
+    cat "$install_log"
+  else
+    status=$?
+    printf 'install exit=%s timeout=%ss\n' "$status" "$seconds" | tee "$REPORT/install-status.txt" >&2
+    cat "$install_log" >&2
+    return "$status"
+  fi
+}
+
 capture_diagnostics initial
 # One global deadline and at most three reconnect attempts. This prevents the
 # runner from repeatedly polling a stable offline transport for the full boot timeout.
@@ -89,36 +147,38 @@ while :; do
 done
 
 run_bounded adb-devices-before 10 adb devices -l
-if ! grep -E 'emulator-[0-9]+[[:space:]]+device([[:space:]]|$)' "$REPORT/adb-devices-before.txt"; then
-  echo "No online emulator device found; refusing to install or launch." >&2
+mapfile -t online_emulators < <(awk '$1 ~ /^emulator-[0-9]+$/ && $2 == "device" { print $1 }' "$REPORT/adb-devices-before.txt")
+if [ "${#online_emulators[@]}" -ne 1 ]; then
+  echo "Expected exactly one online emulator, found ${#online_emulators[@]}; refusing to continue." >&2
   exit 1
 fi
-run_bounded boot-completed 30 adb shell getprop sys.boot_completed
+DEVICE_SERIAL="${online_emulators[0]}"
+printf 'Selected emulator serial: %s\n' "$DEVICE_SERIAL" | tee "$REPORT/selected-device.txt"run_bounded boot-completed 30 adb -s "$DEVICE_SERIAL" shell getprop sys.boot_completed
 grep -Fx '1' "$REPORT/boot-completed.txt" || {
   echo "ADB is online but Android boot is not complete." >&2
   exit 1
 }
 printf 'Android boot completed: sys.boot_completed=1\n' | tee "$REPORT/boot-ready.txt"
 
-run_bounded install 180 adb install -r app/build/outputs/apk/debug/app-debug.apk
+run_bounded install 180 adb -s "$DEVICE_SERIAL" install -r app/build/outputs/apk/debug/app-debug.apk
 grep -F "Success" "$REPORT/install.txt"
-run_bounded pm-clear 30 adb shell pm clear app.shiv
+run_bounded pm-clear 30 adb -s "$DEVICE_SERIAL" shell pm clear app.shiv
 grep -F "Success" "$REPORT/pm-clear.txt"
-run_bounded force-stop 30 adb shell am force-stop app.shiv
-run_bounded logcat-clear 20 adb logcat -c
-run_bounded launch 60 adb shell am start -W -n app.shiv/.MainActivity
+run_bounded force-stop 30 adb -s "$DEVICE_SERIAL" shell am force-stop app.shiv
+run_bounded logcat-clear 20 adb -s "$DEVICE_SERIAL" logcat -c
+run_bounded launch 60 adb -s "$DEVICE_SERIAL" shell am start -W -n app.shiv/.MainActivity
 grep -E "Status: ok" "$REPORT/launch.txt"
 sleep 5
-run_bounded process 20 adb shell pidof app.shiv
+run_bounded process 20 adb -s "$DEVICE_SERIAL" shell pidof app.shiv
 test -s "$REPORT/process.txt"
 if ! grep -Eq '[0-9]+' "$REPORT/process.txt"; then
   echo "Application PID was empty." >&2
   exit 1
 fi
-run_bounded activities 30 adb shell dumpsys activity activities
+run_bounded activities 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities
 grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
-run_bounded logcat 20 adb logcat -d -t 6000
-run_bounded crash-buffer 20 adb logcat -b crash -d
+run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -d -t 6000
+run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d
 if grep -E "FATAL EXCEPTION|Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
   echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
   exit 1
