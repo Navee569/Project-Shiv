@@ -87,6 +87,7 @@ internal class PhotoCaptureAnalysisAdapter(
 ) {
     private val stateLock = Any()
     private var uiAbandoned = false
+    private var resultDelivered = false
 
     /** Stop delivering late UI effects without violating ownership of an in-flight ML task. */
     fun abandonUi() {
@@ -98,8 +99,14 @@ internal class PhotoCaptureAnalysisAdapter(
      * completion is NOT finalized; the fallback waiter continues waiting for actual task terminality.
      */
     fun analysisUnresolved(failure: Throwable) {
-        synchronized(stateLock) { uiAbandoned = true }
-        onAnalysisUnresolved(failure)
+        val shouldNotify = synchronized(stateLock) {
+            if (uiAbandoned || resultDelivered) false
+            else {
+                uiAbandoned = true
+                true
+            }
+        }
+        if (shouldNotify) onAnalysisUnresolved(failure)
     }
 
     fun imageConsumed() {
@@ -108,7 +115,13 @@ internal class PhotoCaptureAnalysisAdapter(
 
     fun descriptionReady(description: String) {
         completion.finishSuccess {
-            val deliverUi = synchronized(stateLock) { !uiAbandoned }
+            val deliverUi = synchronized(stateLock) {
+                if (uiAbandoned || resultDelivered) false
+                else {
+                    resultDelivered = true
+                    true
+                }
+            }
             if (deliverUi) {
                 onDescription(description)
                 onClose()
