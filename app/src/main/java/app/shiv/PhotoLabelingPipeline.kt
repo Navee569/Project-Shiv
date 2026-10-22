@@ -8,10 +8,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
 import java.util.concurrent.Executor
-import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 
 internal object InterruptSafeAwait {
     fun <T> await(awaitOnce: () -> T, restoreInterrupt: () -> Unit = { Thread.currentThread().interrupt() }): T {
@@ -38,10 +36,8 @@ internal interface PhotoLabeler<I, R> {
 /**
  * Waits for a task after listener registration fails without blocking the caller.
  * Results are dispatched on the main executor to match the normal Task listener contract.
- * Wait scheduling is bounded; exhaustion is reported and deliberately retains image ownership
- * because the task may still be using it. If callback dispatch rejects after task terminality,
- * result delivery is reported as lost and completion cleanup is run on the waiter as a last resort.
- * That emergency path is not a UI callback path; the main looper is unavailable in this case.
+ * If either executor rejects work, completion is not signalled: the pipeline must retain
+ * image ownership rather than closing an image that may still be in use.
  */
 internal object ListenerRegistrationFallback {
     fun schedule(
@@ -72,10 +68,6 @@ internal object ListenerRegistrationFallback {
                     }
                 } catch (rejected: RejectedExecutionException) {
                     onSchedulingFailure(rejected)
-                    // The task is terminal, so image release is now safe. Main-thread result
-                    // delivery is impossible because its executor rejected the callback.
-                    // Run terminal cleanup once rather than stranding the ImageProxy forever.
-                    onComplete()
                 }
             }
             true
@@ -87,13 +79,9 @@ internal object ListenerRegistrationFallback {
 }
 
 internal object PhotoLabelingExecutors {
-    // Four concurrent waits and a bounded queue. Never-completing tasks cannot consume an
-    // unbounded number of threads or queue entries; exhaustion is observable and fail-closed.
-    val waiter: Executor = ThreadPoolExecutor(
-        4, 4, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(16),
-        { runnable -> Thread(runnable, "shiv-mlkit-fallback").apply { isDaemon = true } },
-        ThreadPoolExecutor.AbortPolicy()
-    )
+    val waiter: Executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "shiv-mlkit-fallback").apply { isDaemon = true }
+    }
     val mainCallback: Executor = Executor { command ->
         if (!Handler(Looper.getMainLooper()).post(command)) {
             throw RejectedExecutionException("Main-thread callback could not be scheduled")
@@ -120,7 +108,7 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                 }
             }
         } catch (registrationFailure: Throwable) {
-            val accepted = ListenerRegistrationFallback.schedule(
+            ListenerRegistrationFallback.schedule(
                 awaitTask = { InterruptSafeAwait.await(awaitOnce = { Tasks.await(task) }); Unit },
                 registrationFailure = registrationFailure,
                 waiter = PhotoLabelingExecutors.waiter,
@@ -128,19 +116,9 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                 onFailure = onFailure,
                 onComplete = onComplete,
                 onSchedulingFailure = {
-                    Log.e(
-                        "ShivPhotoLabeler",
-                        "Fallback scheduling/delivery failed; task terminality determines whether cleanup is safe",
-                        it
-                    )
+                    Log.e("ShivPhotoLabeler", "Fallback scheduling failed; retaining image ownership", it)
                 }
             )
-            if (!accepted) {
-                Log.e(
-                    "ShivPhotoLabeler",
-                    "Fallback waiter capacity exhausted; retaining image ownership until task terminality can be established"
-                )
-            }
         }
     }
 

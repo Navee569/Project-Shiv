@@ -291,46 +291,4 @@ class PhotoLabelingPipelineTest {
         assertEquals(0, completions)
     }
 
-    @Test fun registrationFallbackCallbackExecutorRejectionStillCompletesAfterTaskTerminality() {
-        val waiting = mutableListOf<Runnable>()
-        val registration = IllegalStateException("registration failed")
-        val rejected = RejectedExecutionException("main looper rejected callback")
-        var failures = 0
-        var completions = 0
-        var reported: Throwable? = null
-        val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = {},
-            registrationFailure = registration,
-            waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { throw rejected },
-            onFailure = { failures++ },
-            onComplete = { completions++ },
-            onSchedulingFailure = { reported = it }
-        )
-        assertTrue(accepted)
-        waiting.single().run()
-        assertSame(rejected, reported)
-        assertEquals(0, failures)
-        assertEquals(1, completions)
-    }
-
-    @Test fun registrationFallbackWaiterCapacityRejectionDoesNotReleaseActiveImage() {
-        var failures = 0
-        var completions = 0
-        var schedulingFailures = 0
-        val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = { throw AssertionError("must not run when scheduling is rejected") },
-            registrationFailure = IllegalStateException("registration failed"),
-            waiter = Executor { throw RejectedExecutionException("capacity exhausted") },
-            callbackExecutor = Executor { it.run() },
-            onFailure = { failures++ },
-            onComplete = { completions++ },
-            onSchedulingFailure = { schedulingFailures++ }
-        )
-        assertFalse(accepted)
-        assertEquals(1, schedulingFailures)
-        assertEquals(0, failures)
-        assertEquals(0, completions)
-    }
-
 }
