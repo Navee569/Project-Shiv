@@ -2,6 +2,9 @@ package app.shiv
 
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.FilterOutputStream
+import java.io.OutputStream
+import java.io.IOException
 
 /** Read at most maxBytes + 1 bytes, rejecting as soon as the input exceeds its cap. */
 internal fun readBoundedBytes(input: InputStream, maxBytes: Int): ByteArray {
@@ -27,4 +30,35 @@ internal fun readBoundedBytes(input: InputStream, maxBytes: Int): ByteArray {
         }
     }
     return output.toByteArray()
+}
+
+/** Enforces a byte limit before forwarding each write to the wrapped stream. */
+internal class BoundedOutputStream(
+    output: OutputStream,
+    private val maxBytes: Int
+) : FilterOutputStream(output) {
+    private var written = 0L
+
+    init { require(maxBytes >= 0) { "Maximum size must not be negative" } }
+
+    override fun write(value: Int) {
+        ensureCapacity(1)
+        out.write(value)
+        written++
+    }
+
+    override fun write(buffer: ByteArray, offset: Int, length: Int) {
+        if (offset < 0 || length < 0 || length > buffer.size - offset) {
+            throw IndexOutOfBoundsException()
+        }
+        ensureCapacity(length)
+        out.write(buffer, offset, length)
+        written += length
+    }
+
+    private fun ensureCapacity(additional: Int) {
+        if (written + additional > maxBytes.toLong()) {
+            throw IOException("Output exceeds the maximum supported size.")
+        }
+    }
 }
