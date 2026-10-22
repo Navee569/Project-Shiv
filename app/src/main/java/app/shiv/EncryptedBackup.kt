@@ -2,12 +2,15 @@ package app.shiv
 
 import android.content.Context
 import android.net.Uri
+import android.util.JsonWriter
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
+import java.io.IOException
+import javax.crypto.CipherOutputStream
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -21,19 +24,39 @@ class EncryptedBackup(context: Context) {
     private val dao = database.dao()
 
     suspend fun export(uri: Uri, passphrase: CharArray) = withContext(Dispatchers.IO) {
-        require(passphrase.size >= 12) { "Use a passphrase with at least 12 characters." }
-        val payload = makeSnapshot().toString().toByteArray(Charsets.UTF_8)
-        require(payload.size <= MAX_BACKUP_BYTES - HEADER_AND_TAG_BYTES) { "This backup is too large to export safely." }
-        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
-        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt), GCMParameterSpec(128, iv))
-        cipher.updateAAD(MAGIC)
-        val encrypted = cipher.doFinal(payload)
-        app.contentResolver.openOutputStream(uri, "wt").use { output ->
-            requireNotNull(output) { "Could not create the selected backup file." }.use {
-                it.write(MAGIC); it.write(salt); it.write(iv); it.write(encrypted); it.flush()
+        try {
+            require(passphrase.size >= 12) { "Use a passphrase with at least 12 characters." }
+            val salt = ByteArray(16).also(SecureRandom()::nextBytes)
+            val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt), GCMParameterSpec(128, iv))
+            cipher.updateAAD(MAGIC)
+            try {
+                val output = app.contentResolver.openOutputStream(uri, "wt")
+                requireNotNull(output) { "Could not create the selected backup file." }.use { raw ->
+                    raw.write(MAGIC)
+                    raw.write(salt)
+                    raw.write(iv)
+                    val encrypted = CipherOutputStream(raw, cipher)
+                    val bounded = BoundedOutputStream(encrypted, MAX_BACKUP_BYTES - HEADER_AND_TAG_BYTES)
+                    val writer = JsonWriter(java.io.OutputStreamWriter(bounded, Charsets.UTF_8))
+                    writer.isLenient = false
+                    try {
+                        writeSnapshot(writer)
+                        writer.flush()
+                    } finally {
+                        writer.close()
+                    }
+                }
+            } catch (failure: Throwable) {
+                runCatching { app.contentResolver.delete(uri, null, null) }
+                if (failure is IOException && failure.message?.contains("maximum supported size") == true) {
+                    throw IllegalArgumentException("This backup is too large to export safely (150 MiB maximum).", failure)
+                }
+                throw failure
             }
+        } finally {
+            passphrase.fill('\\u0000')
         }
     }
 
@@ -71,19 +94,92 @@ class EncryptedBackup(context: Context) {
         }
     }
 
-    private suspend fun makeSnapshot() = JSONObject()
-        .put("format", 1)
-        .put("createdAt", System.currentTimeMillis())
-        .put("profile", dao.profileOnce()?.let(::profileJson) ?: JSONObject.NULL)
-        .put("messages", jsonArrayTyped(dao.allMessages(), ::messageJson))
-        .put("memories", jsonArrayTyped(dao.allMemories(), ::memoryJson))
-        .put("events", jsonArrayTyped(dao.allEvents(), ::eventJson))
-        .put("pendingEvents", jsonArrayTyped(dao.allPendingEvents(), ::pendingEventJson))
-        .put("actions", jsonArrayTyped(dao.allActions(), ::actionJson))
-        .put("rules", jsonArrayTyped(dao.allRules(), ::ruleJson))
-        .put("drafts", jsonArrayTyped(dao.allDrafts(), ::draftJson))
-        .put("actionTiers", jsonArrayTyped(dao.allActionTiers(), ::tierJson))
-        .put("settings", settingsJson(dao.settingsOnce() ?: ShivSettings()))
+    private suspend fun writeSnapshot(writer: JsonWriter) {
+        writer.beginObject()
+        writer.name("format").value(1)
+        writer.name("createdAt").value(System.currentTimeMillis())
+        writer.name("profile")
+        val profile = dao.profileOnce()
+        if (profile == null) writer.nullValue() else writeProfile(writer, profile)
+        writePagedArray(writer, "messages", dao::messagesPage, ::writeMessage)
+        writePagedArray(writer, "memories", dao::memoriesPage, ::writeMemory)
+        writePagedArray(writer, "events", dao::eventsPage, ::writeEvent)
+        writePagedArray(writer, "pendingEvents", dao::pendingEventsPage, ::writePendingEvent)
+        writePagedArray(writer, "actions", dao::actionsPage, ::writeAction)
+        writePagedArray(writer, "rules", dao::rulesPage, ::writeRule)
+        writePagedArray(writer, "drafts", dao::draftsPage, ::writeDraft)
+        writePagedArray(writer, "actionTiers", dao::actionTiersPage, ::writeTier)
+        writer.name("settings")
+        writeSettings(writer, dao.settingsOnce() ?: ShivSettings())
+        writer.endObject()
+    }
+
+    private suspend fun <T> writePagedArray(
+        writer: JsonWriter,
+        name: String,
+        fetchPage: suspend (Int, Int) -> List<T>,
+        writeItem: (JsonWriter, T) -> Unit
+    ) {
+        writer.name(name).beginArray()
+        var offset = 0
+        while (true) {
+            val page = fetchPage(PAGE_SIZE, offset)
+            if (page.isEmpty()) break
+            page.forEach { writeItem(writer, it) }
+            offset += page.size
+            if (page.size < PAGE_SIZE) break
+        }
+        writer.endArray()
+    }
+
+    private fun writeProfile(w: JsonWriter, v: UserProfile) {
+        w.beginObject().name("id").value(v.id).name("name").value(v.name)
+            .name("notes").value(v.notes).name("updatedAt").value(v.updatedAt).endObject()
+    }
+    private fun writeMessage(w: JsonWriter, v: ChatMessage) {
+        w.beginObject().name("id").value(v.id).name("text").value(v.text)
+            .name("fromUser").value(v.fromUser).name("createdAt").value(v.createdAt).name("tier")
+        if (v.tier == null) w.nullValue() else w.value(v.tier)
+        w.endObject()
+    }
+    private fun writeMemory(w: JsonWriter, v: MemoryFact) {
+        w.beginObject().name("id").value(v.id).name("text").value(v.text)
+            .name("createdAt").value(v.createdAt).endObject()
+    }
+    private fun writeEvent(w: JsonWriter, v: EventRecord) {
+        w.beginObject().name("id").value(v.id).name("title").value(v.title).name("startsAt").value(v.startsAt)
+        writeNullable(w, "place", v.place); writeNullable(w, "person", v.person)
+        w.name("source").value(v.source).name("createdAt").value(v.createdAt).endObject()
+    }
+    private fun writePendingEvent(w: JsonWriter, v: PendingEventRecord) {
+        w.beginObject().name("id").value(v.id).name("title").value(v.title).name("startsAt").value(v.startsAt)
+        writeNullable(w, "place", v.place); writeNullable(w, "person", v.person)
+        w.name("createdAt").value(v.createdAt).endObject()
+    }
+    private fun writeAction(w: JsonWriter, v: ActionLogEntry) {
+        w.beginObject().name("id").value(v.id).name("action").value(v.action).name("tier").value(v.tier)
+            .name("outcome").value(v.outcome).name("createdAt").value(v.createdAt).endObject()
+    }
+    private fun writeRule(w: JsonWriter, v: ReminderRule) {
+        w.beginObject().name("ruleKey").value(v.ruleKey).name("value").value(v.value)
+            .name("updatedAt").value(v.updatedAt).endObject()
+    }
+    private fun writeDraft(w: JsonWriter, v: ReplyDraft) {
+        w.beginObject().name("id").value(v.id).name("person").value(v.person).name("body").value(v.body)
+            .name("createdAt").value(v.createdAt).endObject()
+    }
+    private fun writeTier(w: JsonWriter, v: ActionTierSetting) {
+        w.beginObject().name("actionKey").value(v.actionKey).name("tier").value(v.tier).endObject()
+    }
+    private fun writeSettings(w: JsonWriter, v: ShivSettings) {
+        w.beginObject().name("id").value(v.id).name("proactiveEnabled").value(v.proactiveEnabled)
+            .name("quietStartMinute").value(v.quietStartMinute).name("quietEndMinute").value(v.quietEndMinute)
+            .name("maxDailyInterruptions").value(v.maxDailyInterruptions).endObject()
+    }
+    private fun writeNullable(w: JsonWriter, name: String, value: String?) {
+        w.name(name)
+        if (value == null) w.nullValue() else w.value(value)
+    }
 
     private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
         val spec = PBEKeySpec(password, salt, 310_000, 256)
@@ -121,5 +217,6 @@ class EncryptedBackup(context: Context) {
         val MAGIC = "SHIVBK01".toByteArray(Charsets.US_ASCII)
         const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
         const val HEADER_AND_TAG_BYTES = 8 + 16 + 12 + 16
+        const val PAGE_SIZE = 128
     }
 }
