@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.RejectedExecutionException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.TimeoutCancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -23,9 +24,16 @@ class PrioritizedInferenceQueueTest {
         activeStarted.await()
         var queuedRan = false
         val queued = async { queue.submit(10, 60_000, { -1 }) { queuedRan = true; 2 } }
-        delay(30); queued.cancelAndJoin(); releaseActive.complete(Unit)
-        assertEquals(1, withTimeout(2_000) { active.await() })
-        delay(80); assertTrue(!queuedRan); queue.close()
+        try {
+            withTimeout(2_000) { while (queue.queuedCount == 0) yield() }
+            queued.cancelAndJoin()
+            releaseActive.complete(Unit)
+            assertEquals(1, withTimeout(2_000) { active.await() })
+            assertTrue(!queuedRan)
+        } finally {
+            releaseActive.complete(Unit)
+            queue.close()
+        }
     }
     @Test fun cancellationExceptionDoesNotKillConsumer() = runBlocking {
         val queue = PrioritizedInferenceQueue()
@@ -82,6 +90,50 @@ class PrioritizedInferenceQueueTest {
         runCatching { withTimeout(2_000) { active.await() } }
         Unit
         }
+    }
+
+
+    @Test fun callerCancellationCancelsAnAlreadyRunningTask() = runBlocking {
+        val queue = PrioritizedInferenceQueue()
+        val started = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val caller = async {
+            queue.submit(10, 60_000, { -1 }) {
+                started.complete(Unit)
+                try { CompletableDeferred<Unit>().await() }
+                finally { finished.complete(Unit) }
+                7
+            }
+        }
+        try {
+            withTimeout(2_000) { started.await() }
+            caller.cancel()
+            caller.cancelAndJoin()
+            withTimeout(2_000) { finished.await() }
+            assertEquals(9, withTimeout(2_000) { queue.submit(1, 60_000, { -1 }) { 9 } })
+        } finally {
+            queue.close()
+        }
+    }
+
+    @Test fun throwingStaleValueFailsCallerButLeavesConsumerUsable() = runBlocking {
+        val queue = PrioritizedInferenceQueue()
+        try {
+            val failed = runCatching {
+                queue.submit(10, -1, { throw IllegalStateException("stale failed") }) { 1 }
+            }
+            assertTrue(failed.exceptionOrNull() is IllegalStateException)
+            assertEquals(5, withTimeout(2_000) { queue.submit(1, 60_000, { -1 }) { 5 } })
+        } finally {
+            queue.close()
+        }
+    }
+
+    @Test fun closeIsIdempotentAndRejectsLaterSubmissions() = runBlocking {
+        val queue = PrioritizedInferenceQueue()
+        queue.close()
+        queue.close()
+        assertTrue(runCatching { queue.submit(1, 1000, { 0 }) { 1 } }.isFailure)
     }
 
 }
