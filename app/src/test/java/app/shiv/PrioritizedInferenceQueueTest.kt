@@ -3,7 +3,6 @@ package app.shiv
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.RejectedExecutionException
@@ -134,6 +133,36 @@ class PrioritizedInferenceQueueTest {
         queue.close()
         queue.close()
         assertTrue(runCatching { queue.submit(1, 1000, { 0 }) { 1 } }.isFailure)
+    }
+
+
+    @Test fun closeMakesEveryQueuedCallerTerminal() = runBlocking {
+        val queue = PrioritizedInferenceQueue()
+        val activeStarted = CompletableDeferred<Unit>()
+        val releaseActive = CompletableDeferred<Unit>()
+        val active = async {
+            runCatching { queue.submit(100, 60_000, { -1 }) {
+                activeStarted.complete(Unit)
+                releaseActive.await()
+                1
+            } }
+        }
+        val pending = mutableListOf<kotlinx.coroutines.Deferred<Result<Int>>>()
+        try {
+            withTimeout(2_000) { activeStarted.await() }
+            repeat(8) {
+                pending += async { runCatching { queue.submit(1, 60_000, { -1 }) { 2 } } }
+            }
+            withTimeout(2_000) { while (queue.queuedCount < 8) yield() }
+            queue.close()
+            val results = withTimeout(2_000) { pending.awaitAll() }
+            assertEquals(8, results.size)
+            assertTrue("A queued caller remained active after close", pending.none { it.isActive })
+            withTimeout(2_000) { active.await() }
+        } finally {
+            releaseActive.complete(Unit)
+            queue.close()
+        }
     }
 
 }
