@@ -408,9 +408,13 @@ User: $input"""
     fun describePhoto(
         image: InputImage,
         onImageConsumed: () -> Unit = {},
+        onAnalysisUnresolved: (Throwable) -> Unit = {},
         onDescription: (String) -> Unit
     ) {
-        val labeler = MlKitPhotoLabeler(ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS))
+        val labeler = MlKitPhotoLabeler(
+            ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS),
+            onTaskUnresolved = onAnalysisUnresolved
+        )
         PhotoLabelingPipeline.run(
             image = image,
             labeler = labeler,
