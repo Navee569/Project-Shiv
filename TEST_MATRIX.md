@@ -245,3 +245,28 @@ Follow-up candidate: shell script uses POSIX `set -eu`; fallback waits through i
 Independent QA verdict: **NOT ACCEPTED**. Exact-source push run [39739443060](https://github.com/Navee569/Project-Shiv/actions/runs/39739443060) and PR run [39739449813](https://github.com/Navee569/Project-Shiv/actions/runs/39739449813) both failed during emulator smoke after the POSIX shell issue was corrected. The push run encountered an ADB broken pipe and `emulator-5554 offline`; the PR run hung at `adb install` until the 20-minute step timeout. Neither run verified APK installation or cold launch. Both runs passed build, 18 unit tests, and lint (0 errors, 26 warnings). Exact artifact and APK hashes are in the independent QA report; those results apply only to this SHA.
 
 QA also found that the listener-registration fallback blocks synchronously in the CameraX main-executor path and can invoke `onFailure` twice if the callback itself throws. The follow-up candidate changes the fallback to a worker waiter and main-thread callback dispatch, adds bounded per-command ADB timeouts and device-state checks, and adds focused fallback tests. These changes are **PENDING exact-SHA CI**. Executor-rejection paths intentionally do not signal completion, to avoid premature image release; they require review because they retain ownership without completing the user flow. M0 remains **NOT ACCEPTED**.
+
+
+---
+
+## Exact-SHA QA matrix — 2026-10-22
+
+Source SHA `8dec101f5f399a135d9b5bfed0ae84356e8b063b`; PR #1 merge SHA `ed6edc59ea716e2bdd558b042fa102df5c38af14`.
+
+| Gate | Push 39773119551 | PR 39773127800 |
+|---|---|---|
+| Build debug APK / manifest | PASS | PASS |
+| KVM device permission check | PASS; hardware acceleration enabled | PASS; hardware acceleration enabled |
+| Emulator unique serial selection test (zero/one/multiple) | PASS | PASS |
+| Online transport and boot property | PASS; `sys.boot_completed=1` | PASS; `sys.boot_completed=1` |
+| APK install | PASS; about 20 s | PASS; about 20 s |
+| Clear app data | PASS | PASS |
+| Force-stop and clear logcat | PASS | PASS |
+| Cold launch / `Status: ok` | PASS | PASS |
+| PID and expected activity | PASS | PASS |
+| Crash and ANR assertions | PASS; no match | PASS; no match |
+| JUnit XML | 25 tests; 0 failures/errors/skips | 25 tests; 0 failures/errors/skips |
+| Debug lint HTML | 26 warnings; 0 errors | 26 warnings; 0 errors |
+
+The evidence demonstrates the KVM fix on the present runner and exact revision. Historical ADB-offline, broken-pipe, and workflow-cancellation records remain separately classified; a cancelled run is never counted as a pass.
+

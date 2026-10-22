@@ -404,3 +404,40 @@ All fixes are pending fresh exact-SHA push/PR CI. M0 remains NOT ACCEPTED until 
 Independent QA verdict: **NOT ACCEPTED**. Exact-source push run [39739443060](https://github.com/Navee569/Project-Shiv/actions/runs/39739443060) and PR run [39739449813](https://github.com/Navee569/Project-Shiv/actions/runs/39739449813) both failed during emulator smoke after the POSIX shell issue was corrected. The push run encountered an ADB broken pipe and `emulator-5554 offline`; the PR run hung at `adb install` until the 20-minute step timeout. Neither run verified APK installation or cold launch. Both runs passed build, 18 unit tests, and lint (0 errors, 26 warnings). Exact artifact and APK hashes are in the independent QA report; those results apply only to this SHA.
 
 QA also found that the listener-registration fallback blocks synchronously in the CameraX main-executor path and can invoke `onFailure` twice if the callback itself throws. The follow-up candidate changes the fallback to a worker waiter and main-thread callback dispatch, adds bounded per-command ADB timeouts and device-state checks, and adds focused fallback tests. These changes are **PENDING exact-SHA CI**. Executor-rejection paths intentionally do not signal completion, to avoid premature image release; they require review because they retain ownership without completing the user flow. M0 remains **NOT ACCEPTED**.
+
+
+---
+
+## Independent QA re-verification — 2026-10-22
+
+**Verified code revision:** `8dec101f5f399a135d9b5bfed0ae84356e8b063b`  
+**Parent:** `653c4000b3d0dae98a42afc45bfab6d4489fadc7`  
+**Decision:** M0 CI/emulator smoke gates PASS for this exact source revision.
+
+Fresh workflows on the same source revision both completed successfully:
+
+- Push: [39773119551](https://github.com/Navee569/Project-Shiv/actions/runs/39773119551) — success.
+- PR #1: [39773127800](https://github.com/Navee569/Project-Shiv/actions/runs/39773127800) — success; synthetic merge SHA `ed6edc59ea716e2bdd558b042fa102df5c38af14`, distinct from the source SHA.
+- PR #1 remains OPEN, DRAFT, and UNMERGED.
+
+### Root cause and fix
+
+The failing Ubuntu jobs explicitly reported that the runner user lacked permission to use `/dev/kvm`. The emulator action consequently launched the x86_64 guest with `-accel off`. At the stalled install snapshots, QEMU consumed about 104–105% CPU and 4.1 GiB RSS while host available memory was 601–688 MiB; guest logs showed prolonged PackageManager/system_server monitor contention and ANR/startup trouble. This is direct evidence of software-emulation resource starvation as the cause of the repeated online-but-unresponsive guest/install failure. The PR `Broken pipe` and earlier ADB-offline signatures are recorded as separate observed failures; this experiment does not prove every historical signature had one identical cause.
+
+The workflow now enables the ephemeral runner's KVM device rule, verifies read/write access, and fails closed if KVM is unavailable. On both fresh runs the log states `KVM device access verified for runner` and `disable Linux hardware acceleration: false`. With the same API 35 image/profile and unchanged install timeout, `adb install -r` succeeded in about 20 seconds in both runs. No smoke assertion was skipped or weakened.
+
+### Exact-SHA verification
+
+Both runs passed all smoke gates: exactly one online emulator selected; `sys.boot_completed=1`; APK install; app data clear; force-stop; logcat clear; cold launch with `Status: ok`; nonempty process PID; expected activity; and no app crash or ANR.
+
+The JUnit XML contains 25 tests (PhotoCaptureCompletionTest 7; PhotoLabelingPipelineTest 18), with 0 failures, 0 errors, and 0 skipped in each run. The debug lint HTML was inspected: 26 warnings, no lint errors. `NO-SOURCE` Java compile tasks are not counted as tests.
+
+APK size was 136,026,771 bytes. Push APK SHA-256: `85aee72cc1eb16491ae5c2c356c9f0847bdd0286015b8877cf471735365de050`; PR APK SHA-256: `489861c4993d5b5b0ca94ac81eb967d27c87a79f28c8b255205f7f1bd829c66d`.
+
+Passing run artifacts:
+
+- Push artifact 12423747424, 73,064,024 bytes, SHA-256 `ad3a9710e9e3b941eb43c27fbe1f2c95f0017025600b852842e44b96840017cc`.
+- PR artifact 12423388487, 73,064,863 bytes, SHA-256 `2fe4ec7530c518d510464bdd3f75aee93929a3442bf63ff4377854dd2d76ce69`.
+
+Emulator serial resolution now has an executable CI test for zero, one, and multiple online devices. Photo fallback tests cover terminal callback-executor rejection via a main-thread completion executor, waiter-capacity rejection without releasing an active image, saturation/pending state, failed task propagation, callback exceptions, late completion, and exactly-once image cleanup.
+
