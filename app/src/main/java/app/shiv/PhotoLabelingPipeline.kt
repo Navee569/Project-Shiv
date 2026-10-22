@@ -63,11 +63,11 @@ internal object ListenerRegistrationFallback {
             } catch (unresolved: TaskTerminalityUnresolvedException) {
                 reportSafely(onSchedulingFailure, unresolved)
                 return@Runnable
-            } catch (taskFailure: Throwable) {
+            } catch (taskFailure: Exception) {
                 if (taskFailure !== registrationFailure) {
                     try {
                         taskFailure.addSuppressed(registrationFailure)
-                    } catch (_: Throwable) {
+                    } catch (_: Exception) {
                         // Preserve the actual task failure even if diagnostics cannot be attached.
                     }
                 }
@@ -86,7 +86,7 @@ internal object ListenerRegistrationFallback {
                     val primary = callbackFailure
                     if (primary == null) callbackFailure = completionFailure
                     else if (primary !== completionFailure) {
-                        try { primary.addSuppressed(completionFailure) } catch (_: Throwable) { }
+                        try { primary.addSuppressed(completionFailure) } catch (_: Exception) { }
                     }
                 }
             }
@@ -103,7 +103,7 @@ internal object ListenerRegistrationFallback {
     }
 
     private fun reportSafely(report: (Throwable) -> Unit, failure: Throwable) {
-        try { report(failure) } catch (_: Throwable) {
+        try { report(failure) } catch (_: Exception) {
             // Diagnostics must never change task or image ownership.
         }
     }
@@ -165,9 +165,11 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
             ListenerRegistrationFallback.schedule(
                 awaitTask = {
                     try {
-                        InterruptSafeAwait.await {
-                            Tasks.await(task, PhotoLabelingExecutors.TASK_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                        }
+                        InterruptSafeAwait.await(
+                            awaitOnce = {
+                                Tasks.await(task, PhotoLabelingExecutors.TASK_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                            }
+                        )
                     } catch (timeout: TimeoutException) {
                         throw TaskTerminalityUnresolvedException(timeout)
                     } catch (awaitFailure: Throwable) {
@@ -216,7 +218,7 @@ internal object PhotoLabelingPipeline {
             val primary = current.exceptionOrNull()
             if (primary == null) return Result.failure(additional)
             if (primary !== additional) {
-                try { primary.addSuppressed(additional) } catch (_: Throwable) { }
+                try { primary.addSuppressed(additional) } catch (_: Exception) { }
             }
             return current
         }
@@ -225,12 +227,12 @@ internal object PhotoLabelingPipeline {
             var finalResult = initialResult
             try {
                 labeler.close()
-            } catch (closeFailure: Throwable) {
+            } catch (closeFailure: Exception) {
                 finalResult = addFailure(finalResult, closeFailure)
             }
             try {
                 onImageConsumed()
-            } catch (cleanupFailure: Throwable) {
+            } catch (cleanupFailure: Exception) {
                 finalResult = addFailure(finalResult, cleanupFailure)
             }
 
@@ -243,7 +245,7 @@ internal object PhotoLabelingPipeline {
                 }
             } catch (dispatchFailure: RejectedExecutionException) {
                 if (started.get()) throw dispatchFailure
-                try { onDeliveryFailure(dispatchFailure) } catch (_: Throwable) {
+                try { onDeliveryFailure(dispatchFailure) } catch (_: Exception) {
                     // Reporting a delivery failure must not undo completed cleanup.
                 }
             }
@@ -260,7 +262,7 @@ internal object PhotoLabelingPipeline {
 
         try {
             labeler.process(image, { record(Result.success(it)) }, { record(Result.failure(it)) }, ::finishFromCompletion)
-        } catch (setupFailure: Throwable) {
+        } catch (setupFailure: Exception) {
             val ownsTerminal = synchronized(lock) {
                 if (terminal) false else { terminal = true; true }
             }
