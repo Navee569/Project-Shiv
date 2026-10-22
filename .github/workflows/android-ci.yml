@@ -290,3 +290,113 @@ jobs:
             app/build/outputs/apk/debug/*.apk
             app/build/reports/apk-verification/**
             app/build/reports/emulator-smoke/**
+
+  exact_source:
+    name: Exact PR source build, tests, lint, and emulator smoke
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact PR source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact source checkout
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          echo "source_sha=$SOURCE_SHA"
+          echo "checked_out_sha=$CHECKED_OUT_SHA"
+          test "$CHECKED_OUT_SHA" = "$SOURCE_SHA"
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+      - name: Install Android SDK platform and build tools
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null
+      - name: Build exact-source APK
+        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Run exact-source unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - name: Run exact-source lint
+        run: ./gradlew :app:lintDebug --stacktrace
+      - name: Prepare emulator runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Strict exact-source emulator smoke
+        id: exact_emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 25
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
+          disable-animations: true
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
+          script: bash .github/scripts/emulator-smoke.sh
+      - name: Verify exact-source APK provenance
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          REPORT="app/build/reports/apk-verification"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -s "$APK"
+          mkdir -p "$REPORT"
+          "$AAPT" dump badging "$APK" > "$REPORT/exact-source-manifest.txt"
+          python3 - "$APK" "$REPORT/exact-source-manifest.txt" "$REPORT/exact-source-evidence.json" <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess, sys
+          apk = pathlib.Path(sys.argv[1])
+          badging = pathlib.Path(sys.argv[2]).read_text()
+          output = pathlib.Path(sys.argv[3])
+          checked_out = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          source = os.environ["SOURCE_SHA"]
+          assert checked_out == source, f"Checkout {checked_out} does not match source {source}"
+          assert re.search(r"^package: name='app.shiv' versionCode='1' versionName='0.1.0'", badging, re.M)
+          assert re.search(r"^launchable-activity: name='app.shiv.MainActivity'", badging, re.M)
+          assert re.search(r"^application-label:'Shiv'", badging, re.M)
+          assert re.search(r"^sdkVersion:'26'", badging, re.M)
+          assert re.search(r"^application-icon-[0-9]+:", badging, re.M)
+          data = apk.read_bytes()
+          evidence = {"source_sha": source, "checked_out_sha": checked_out,
+                      "apk_sha256": hashlib.sha256(data).hexdigest(), "apk_size_bytes": len(data)}
+          output.write_text(json.dumps(evidence, indent=2) + "\n")
+          print(json.dumps(evidence, indent=2))
+          PY
+      - name: Upload exact-source APK and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-exact-source-pr-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/apk-verification/exact-source-*
+            app/build/test-results/**
+            app/build/reports/lint-results-debug.xml
+            app/build/reports/emulator-smoke/**
