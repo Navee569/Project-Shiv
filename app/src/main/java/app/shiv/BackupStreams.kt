@@ -6,6 +6,11 @@ import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.io.IOException
 
+internal const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
+internal const val BACKUP_HEADER_BYTES = 8 + 16 + 12
+internal const val BACKUP_TAG_BYTES = 16
+internal const val MAX_BACKUP_PLAINTEXT_BYTES = MAX_BACKUP_BYTES - BACKUP_HEADER_BYTES - BACKUP_TAG_BYTES
+
 /** Read at most maxBytes + 1 bytes, rejecting as soon as the input exceeds its cap. */
 internal fun readBoundedBytes(input: InputStream, maxBytes: Int): ByteArray {
     require(maxBytes >= 0) { "Maximum size must not be negative" }
