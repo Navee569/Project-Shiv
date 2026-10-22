@@ -491,3 +491,56 @@ The next candidate moves WorkManager scheduling off the cold-start UI thread, co
 - Both APKs: applicationId `app.shiv`, versionCode `1`, versionName `0.1.0`, minSdk `26`, launcher `app.shiv.MainActivity`, label `Shiv`, application icon present. ZIP digest and APK digest are different measurements; the two APK hashes differ because event builds used different checked-out trees.
 - Lifecycle unit-test evidence passed, but Android runtime cold-launch, PID/activity, crash-buffer, and ANR assertions were **SKIPPED** due to syntax failure. Preserve all prior evidence; this section does not mark the defect closed.
 - Remediation required: rewrite the malformed launch gate and duplicate displaced statements; run all three `bash -n` checks; rerun both event workflows and require actual smoke execution. M0 remains **NOT ACCEPTED**.
+
+
+## Independent M0 retest evidence — 2026-10-22 — source SHA `790c72555aa8b71b7b28f296eef5e9030788c238`
+
+This dated section records the independent tester's completed retest. It supplements and does not delete or rewrite earlier historical entries.
+
+- Source/head SHA: `790c72555aa8b71b7b28f296eef5e9030788c238` — https://github.com/Navee569/Project-Shiv/commit/790c72555aa8b71b7b28f296eef5e9030788c238
+- PR #1: https://github.com/Navee569/Project-Shiv/pull/1 — OPEN, DRAFT, UNMERGED at retest.
+- PR base SHA: `96e5dd78eedb8f12cf1e2aee758364284de03276`.
+- PR synthetic merge/checked-out SHA: `fcc8b773f5a8e63e35ca4a647b7aaa59fa9d2543`; this is distinct from the source/head SHA.
+- Push workflow [39812687992](https://github.com/Navee569/Project-Shiv/actions/runs/39812687992): SUCCESS, source SHA `790c72555aa8b71b7b28f296eef5e9030788c238`.
+- Pull-request workflow [39812695904](https://github.com/Navee569/Project-Shiv/actions/runs/39812695904): SUCCESS, source SHA `790c72555aa8b71b7b28f296eef5e9030788c238`, checked-out synthetic merge SHA `fcc8b773f5a8e63e35ca4a647b7aaa59fa9d2543`.
+- Both workflows executed the emulator install/cold-launch smoke; it was not skipped. Both completed all workflow jobs successfully.
+
+### Shell, build, tests, and lint
+
+- Shell syntax gate passed in both workflows: `bash -n .github/scripts/emulator-smoke.sh`, `bash -n .github/scripts/emulator-device-selection.sh`, and `bash -n .github/scripts/test-emulator-device-selection.sh`.
+- Gradle tasks passed in both: `./gradlew --version`, `./gradlew projects`, `./gradlew :app:assembleDebug --stacktrace`, `./gradlew :app:testDebugUnitTest --stacktrace`, and `./gradlew :app:lintDebug --stacktrace`.
+- JUnit, push and PR: `PhotoCaptureCompletionTest` 15 passed; `PhotoLabelingPipelineTest` 24 passed; aggregate 39 passed, 0 failures, 0 errors, 0 skipped.
+- Lint, both workflows: 0 errors, 26 warnings — GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1. Warnings were not suppressed.
+
+### Strict emulator smoke, both events
+
+- Emulator boot completed (`sys.boot_completed=1`); KVM `/dev/kvm` was a character device and actual read/write open by the workflow user passed. No software-emulation fallback was used.
+- Device-selection checks rejected zero and multiple online devices and selected the single online serial `emulator-5554`.
+- APK install and `pm clear app.shiv` returned Success; force-stop and fresh logcat clearing succeeded.
+- Cold launch required both exit code zero and the exact line `Status: ok`; `Status: timeout` is not accepted. Push launch: COLD, `app.shiv/.MainActivity`, TotalTime 11304 ms, WaitTime 11597 ms, PID 2952. PR launch: COLD, same activity, TotalTime 11621 ms, WaitTime 11650 ms, PID 2697.
+- Both runs confirmed numeric PID, expected activity in activity and top-activity dumps, fresh full logcat inspection without matching fatal crash/ANR patterns, and an empty crash-buffer output. Smoke summaries were generated only after all success assertions passed.
+- The failure diagnostics path is implemented, but it was not exercised because both launch attempts succeeded. This is source-path review, not a simulated-failure test.
+
+### APK artifacts and independently verified provenance
+
+**Push run 39812687992**
+- APK artifact ID `12442115561`, name `shiv-debug-apk-push-39812687992-attempt-1`; ZIP size 72,878,162 bytes; ZIP SHA-256 `576ec281284c05dfa2f74e7dda135e617b9ca8af8e5e308b70fbe5a44120922a`.
+- Extracted APK size 136,043,155 bytes; independently computed APK SHA-256 `aed3bb3981b67c1c1565b05b37d04bf3f050459eee07f06fa5808631688f6f57`. Evidence JSON/hash matched.
+- Report artifact ID `12442135459`, ZIP size 73,525,726 bytes, ZIP SHA-256 `29ad8035cb1978f2707e1eeb9a187ff7145f2f76d8f5f14f11e23becb71c7d80`.
+
+**PR run 39812695904**
+- APK artifact ID `12441526542`, name `shiv-debug-apk-pull_request-39812695904-attempt-1`; ZIP size 72,878,183 bytes; ZIP SHA-256 `bb8a0b15771ceb2b5bf650c24a7c303c8f20c8ca9cddf748ca394ce918296967`.
+- Extracted APK size 136,043,155 bytes; independently computed APK SHA-256 `e74160833816e115153b99615e8a35f103332b582f5a077e8f395ea96261b61c`. Evidence JSON/hash matched.
+- Report artifact ID `12441027673`, ZIP size 73,535,417 bytes, ZIP SHA-256 `64cf995b6a5c19018221cd0222623c75d4ac95ef071fb9fe3b5387a019e6345c`.
+
+Both APKs' metadata/manifest: applicationId `app.shiv`, versionCode `1`, versionName `0.1.0`, minSdk `26`, launcher `app.shiv.MainActivity`, label `Shiv`, icon present. ZIP hashes and APK hashes are different measures. Push and PR APK hashes differ because the PR built the synthetic merge tree.
+
+### Decision and scope limits
+
+The tester confirmed the previous shell syntax and emulator smoke blockers are fixed on this candidate, but found this documentation stale at `790c72555aa8b71b7b28f296eef5e9030788c238`. This section closes that stale-evidence finding for the tested candidate and supersedes prior open shell/smoke blocker statuses only with the exact evidence above; historical failures remain preserved. M0 is still **NOT ACCEPTED pending verification of the documentation-only commit's own push and PR workflows and independent tester confirmation**. This CI result does not demonstrate physical Samsung Galaxy S23 testing, Android Studio run-configuration validation, or broader product/security milestones.
+
+### M0 handoff state
+
+- Documentation evidence from source SHA `790c72555aa8b71b7b28f296eef5e9030788c238` is now recorded in this file.
+- The documentation-only commit created from this update must itself receive fresh push and PR workflow results; those results are not yet known at authoring time.
+- Keep M0 NOT ACCEPTED until both new exact-SHA workflows pass and independent QA retests the final documentation commit.

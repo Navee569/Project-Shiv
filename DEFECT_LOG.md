@@ -117,3 +117,22 @@ M0 remains NOT ACCEPTED. Do not merge or close PR #1.
 | M0-DOC-EVIDENCE-002 | Medium | Documentation lacked this SHA's actual test/run/artifact evidence. | This dated section records exact previous run IDs and artifact provenance; append new exact-SHA results after CI. |
 
 Do not close these defects before their stated criteria pass. M0 remains NOT ACCEPTED.
+
+
+## Independent M0 retest disposition — 2026-10-22
+
+Retested source SHA: `790c72555aa8b71b7b28f296eef5e9030788c238`. Push run [39812687992](https://github.com/Navee569/Project-Shiv/actions/runs/39812687992) and PR run [39812695904](https://github.com/Navee569/Project-Shiv/actions/runs/39812695904) both **SUCCESS**. The PR source SHA is `790c72555aa8b71b7b28f296eef5e9030788c238`; the PR workflow checked out synthetic merge SHA `fcc8b773f5a8e63e35ca4a647b7aaa59fa9d2543` (base SHA `96e5dd78eedb8f12cf1e2aee758364284de03276`).
+
+### Defects closed on the tested candidate, with evidence
+
+| ID | Status on `790c72555aa8b71b7b28f296eef5e9030788c238` | Closure evidence |
+|---|---|---|
+| M0-SHELL-SYNTAX-001 | **CLOSED for this candidate** | All three required `bash -n` checks passed in both push and PR workflows; unmatched quote no longer present. |
+| M0-ANDROID-SMOKE-001 | **CLOSED for this candidate** | Both emulator smoke steps executed and passed strict cold launch, PID, activity/top-activity, fresh crash/ANR and summary assertions. See run-specific metrics and artifact hashes in the dated retest section above. |
+| M0-DOC-EVIDENCE-003 | **Addressed for tested SHA; final verification pending** | This documentation update records the current tested SHA, both run IDs, exact artifact IDs/hashes, test/lint results, and runtime results. Fresh CI for the resulting documentation commit is still required. |
+
+Historical failed-run entries above are retained unchanged; closure here applies only to the stated candidate and does not erase historical failures. Do not close unrelated product/lifecycle/security defects. Physical Samsung Galaxy S23 and Android Studio run-configuration checks remain unverified.
+
+### Current M0 decision
+
+**NOT ACCEPTED pending** successful push and PR workflows on the new documentation commit SHA and independent QA retest. Do not merge or close PR #1; it must remain open, draft, and unmerged.
