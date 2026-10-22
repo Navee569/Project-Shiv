@@ -178,3 +178,30 @@ The PR workflow [39715598035](https://github.com/Navee569/Project-Shiv/actions/r
 | CAM-RETEST-01 | Real permission/preview/capture/ML Kit/ImageProxy path | NOT VERIFIED | Requires suitable runtime/device evidence |
 
 The remediation candidate fixes the preview-controller assignment and strengthens CI crash/ANR evidence and APK metadata reporting. All results for the new candidate remain **PENDING** until its exact-SHA workflows finish. Historical PASS rows above apply only to their explicitly named SHAs. M0 remains **NOT ACCEPTED**.
+
+## Consolidated QA remediation — 2026-10-22 — previous candidate SHA `cc5f07d951e7675bb2904dca08948462b5155468`
+
+Independent QA evidence for that candidate:
+- Push run [39718207920](https://github.com/Navee569/Project-Shiv/actions/runs/39718207920): FAILED at emulator boot timeout.
+- PR run [39718211150](https://github.com/Navee569/Project-Shiv/actions/runs/39718211150): FAILED at emulator boot timeout on synthetic merge SHA `32e69faa251c6d7d4e74c82e3a4443bbda4a8bdb`.
+- Build and APK metadata inspection passed in both runs; app install/cold-launch script did not execute.
+- Unit tests and lint were SKIPPED in both runs because the emulator step failed.
+- Artifact upload passed. Push artifact ID `12400717002`, digest `sha256:929a4f4dbe5aa1404aff104b854ef18f2a236f1444e622f9ffed4f841482b7ce`; PR artifact ID `12400936649`, digest `sha256:60ad72aed4efdb8b271749c8ea9a5cba74f1f319852322b6f4ed29ba2aa1fd62`.
+- Push APK SHA-256 `6e5f5129486cb47544de86447b444c0968c86f8974be153e4d6548226415a153`; PR APK SHA-256 `09c96c8b589944807782e41b2dcab3351ee1069248d683582016607bdaf068f2`. Both were 136026771 bytes.
+- No unit-test count or lint count is asserted for this candidate because those tasks did not run.
+
+| ID | Requirement | Previous candidate status | Consolidated remediation status |
+|---|---|---|---|
+| M0-EMU-BOOT | API 35 emulator boots | FAIL | PENDING fresh exact-SHA workflow |
+| M0-EMU-SMOKE | Install and cold launch | NOT RUN | PENDING; strict gate retained |
+| M0-TEST | Unit tests | SKIPPED | Workflow changed to run after successful build even if emulator fails; PENDING |
+| M0-LINT | Lint | SKIPPED | Workflow changed to run after successful build even if emulator fails; PENDING |
+| M0-ARTIFACT | Always-run artifact upload | PASS | Must reverify new SHA |
+| CAM-LABEL-01 | Labeler cleanup on synchronous setup failure | Defect identified | New pipeline and regression tests; PENDING CI |
+| CAM-LABEL-02 | Async success/failure and callback exactly once | Not adequately covered | New pipeline tests; PENDING CI |
+| CAM-LABEL-03 | ImageProxy ownership until ML Kit processing completes | NOT VERIFIED end-to-end | Pipeline ordering tested; real integration remains NOT VERIFIED |
+| DEV-IDE-01 | Android Studio sync/run | NOT VERIFIED | NOT VERIFIED |
+| CAM-DEVICE-01 | Physical camera/real ML Kit/ImageProxy lifecycle | NOT VERIFIED | NOT VERIFIED |
+| M0-ACCEPT | M0 acceptance | NOT ACCEPTED | NOT ACCEPTED pending fresh evidence |
+
+The new remediation is not accepted based on source inspection alone. Recheck actual build, JUnit XML, lint reports, emulator diagnostics/smoke output, APK metadata, and artifact provenance for the new exact SHA.

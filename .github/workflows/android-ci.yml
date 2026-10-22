@@ -71,6 +71,7 @@ jobs:
           ./gradlew --version
           ./gradlew projects
       - name: Build debug APK
+        id: build
         run: ./gradlew :app:assembleDebug --stacktrace
       - name: Inspect packaged APK manifest and launcher
         shell: bash
@@ -90,13 +91,20 @@ jobs:
           sha256sum "$APK" | tee app/build/reports/apk-verification/apk-sha256.txt
           stat --format="APK bytes: %s" "$APK" | tee app/build/reports/apk-verification/apk-size.txt
       - name: Install and cold-launch APK in Android emulator
+        id: emulator_smoke
         uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 20
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
-          profile: pixel_2
+          profile: pixel_6
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
           disable-animations: true
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
           script: |
             set -euo pipefail
             mkdir -p app/build/reports/emulator-smoke
@@ -117,9 +125,34 @@ jobs:
               echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
               exit 1
             fi
+      - name: Collect emulator boot/smoke diagnostics on failure
+        if: always() && steps.emulator_smoke.outcome != 'success'
+        shell: bash
+        run: |
+          mkdir -p app/build/reports/emulator-smoke
+          {
+            echo "UTC: $(date -u +%FT%TZ)"
+            echo "Runner: $(uname -a)"
+            echo "Android SDK: ${ANDROID_HOME:-unset}"
+            echo "ADB version:"
+            adb version || true
+            echo "ADB devices:"
+            adb devices -l || true
+            echo "Emulator processes:"
+            ps -ef | grep -E '[e]mulator|[q]emu|[a]db' || true
+            echo "SDK emulator binaries:"
+            find "${ANDROID_HOME:-/nonexistent}/emulator" -maxdepth 1 -type f -name emulator -ls 2>/dev/null || true
+            echo "Device properties (if booted):"
+            adb shell getprop 2>&1 || true
+          } > app/build/reports/emulator-smoke/boot-diagnostics.txt 2>&1
+          adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || true
+          adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || true
+          adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || true
       - name: Run unit tests
+        if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Run debug lint
+        if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:lintDebug --stacktrace
       - name: Upload build and test reports
         if: always()

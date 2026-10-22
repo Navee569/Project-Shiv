@@ -367,3 +367,19 @@ The cause is receiver/name shadowing in `PreviewView(it).apply { controller = co
 The remediation candidate changes the preview setup to assign `this.controller = cameraController` explicitly, retains the CameraX controller and image capture, improves emulator crash/ANR log collection, and records APK size and SHA-256 in CI reports. The accidentally committed tester prompt is removed in this remediation commit; tester prompts remain external deliverables.
 
 **New-candidate verification state:** PENDING until a new exact-source push workflow and the corresponding PR workflow complete. No build, unit-test, lint, APK, or runtime pass is claimed here. M0 remains **NOT ACCEPTED** until independent QA retests the resulting exact SHA and required device/IDE limitations are resolved or explicitly handled under the acceptance rules.
+
+## Consolidated remediation for independent QA findings — 2026-10-22
+
+The exact-source push workflow [39718207920](https://github.com/Navee569/Project-Shiv/actions/runs/39718207920) and PR workflow [39718211150](https://github.com/Navee569/Project-Shiv/actions/runs/39718211150) both **FAILED** at Android emulator startup with repeated adb exit code 1 and `Timeout waiting for emulator to boot`. The app install/cold-launch script did not execute; this is not evidence of an app crash. The build and APK metadata steps passed, but unit tests and lint were skipped by the old sequential workflow. Artifact upload passed.
+
+Observed artifacts on source SHA `cc5f07d951e7675bb2904dca08948462b5155468`:
+- PR synthetic merge SHA: `32e69faa251c6d7d4e74c82e3a4443bbda4a8bdb`.
+- Push artifact ID `12400717002`, digest `sha256:929a4f4dbe5aa1404aff104b854ef18f2a236f1444e622f9ffed4f841482b7ce`.
+- PR artifact ID `12400936649`, digest `sha256:60ad72aed4efdb8b271749c8ea9a5cba74f1f319852322b6f4ed29ba2aa1fd62`.
+- Push APK SHA-256 `6e5f5129486cb47544de86447b444c0968c86f8974be153e4d6548226415a153`; size 136026771 bytes.
+- PR APK SHA-256 `09c96c8b589944807782e41b2dcab3351ee1069248d683582016607bdaf068f2`; size 136026771 bytes.
+- Current-candidate unit tests and lint did not run; no historical test counts are carried forward.
+
+The consolidated remediation candidate increases the emulator boot timeout, uses an explicit API 35 Pixel 6 AVD with software-rendering/no-snapshot options, adds always-run emulator diagnostics, and runs unit tests/lint after successful APK build even when emulator smoke fails. The image-labeling path is moved behind a testable cleanup pipeline that closes the ML Kit labeler before delivering the result, handles synchronous setup failures, and gates terminal callback delivery exactly once. New pipeline regression tests cover setup failure, success, failure, callback exceptions, duplicate/late callbacks and ImageProxy ownership ordering.
+
+**New-candidate verification:** PENDING fresh exact-SHA push and PR workflows. No new build/test/lint/emulator pass is claimed until logs and reports are inspected. Android Studio sync/run, physical-device camera, real ML Kit output and real ImageProxy lifecycle remain NOT VERIFIED. M0 remains **NOT ACCEPTED**.

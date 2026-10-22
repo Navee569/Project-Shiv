@@ -406,11 +406,14 @@ User: $input"""
 
     /** The full image-analysis call stays behind Brain and uses ML Kit's bundled local model. */
     fun describePhoto(image: InputImage, onDescription: (String) -> Unit) {
-        val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
-        labeler.process(image)
-            .addOnSuccessListener { labels -> onDescription(describePhoto(labels.sortedByDescending { it.confidence }.map { it.text })) }
-            .addOnFailureListener { onDescription("I couldn’t confidently identify the photo. It was analyzed on this phone and Shiv didn’t save it.") }
-            .addOnCompleteListener { labeler.close() }
+        val labeler = MlKitPhotoLabeler(ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS))
+        PhotoLabelingPipeline.run(image, labeler) { result ->
+            val description = result.fold(
+                onSuccess = { labels -> describePhoto(labels.sortedByDescending { it.confidence }.map { it.text }) },
+                onFailure = { "I couldn’t confidently identify the photo. It was analyzed on this phone and Shiv didn’t save it." }
+            )
+            onDescription(description)
+        }
     }
 
     fun extractMemory(text: String): MemoryFact? {
