@@ -555,6 +555,8 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
         val execute: suspend () -> Unit
     )
     private val sequence = AtomicLong()
+    // Admission and shutdown share one lock: no submitter can enqueue after close drains the queue.
+    private val lifecycleLock = Any()
     private val tasks = PriorityBlockingQueue<Task>(11, compareByDescending<Task> { it.priority }.thenBy { it.sequence })
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -577,20 +579,29 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
         }
     }
     suspend fun <T> submit(priority: Int, staleAfterMillis: Long, staleValue: () -> T, block: suspend () -> T): T {
-        check(!closed) { "Inference queue is closed" }
-        if (tasks.size >= MAX_QUEUED) throw RejectedExecutionException("Local inference queue is full")
         val result = CompletableDeferred<T>()
         val createdAt = System.currentTimeMillis()
         val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis,
             isCancelled = { result.isCancelled }, cancelResult = { result.cancel(it) },
             execute = {
-                if (result.isCancelled) return@Task
-                if (System.currentTimeMillis() - createdAt > staleAfterMillis) result.complete(staleValue())
-                else try { result.complete(block()) }
-                catch (failure: CancellationException) { result.cancel(failure) }
-                catch (failure: Throwable) { result.completeExceptionally(failure) }
+                if (!result.isCancelled) {
+                    try {
+                        val value = if (System.currentTimeMillis() - createdAt > staleAfterMillis) staleValue() else block()
+                        result.complete(value)
+                    } catch (failure: CancellationException) {
+                        result.cancel(failure)
+                    } catch (failure: Throwable) {
+                        result.completeExceptionally(failure)
+                    }
+                }
             })
-        tasks.add(task); onChanged(); wake.trySend(Unit)
+        synchronized(lifecycleLock) {
+            check(!closed) { "Inference queue is closed" }
+            if (tasks.size >= MAX_QUEUED) throw RejectedExecutionException("Local inference queue is full")
+            tasks.add(task)
+        }
+        onChanged()
+        wake.trySend(Unit)
         try { return result.await() }
         finally {
             if (!currentCoroutineContext().isActive) {
@@ -600,11 +611,17 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
         }
     }
     override fun close() {
-        if (closed) return
-        closed = true; wake.close()
+        val pending = synchronized(lifecycleLock) {
+            if (closed) return
+            closed = true
+            tasks.toList().also { tasks.clear() }
+        }
         val cancelled = CancellationException("Inference queue closed")
-        tasks.toList().forEach { if (tasks.remove(it)) it.cancelResult(cancelled) }
-        worker.cancel(cancelled); workerScope.cancel(cancelled); onChanged()
+        pending.forEach { it.cancelResult(cancelled) }
+        wake.close()
+        worker.cancel(cancelled)
+        workerScope.cancel(cancelled)
+        onChanged()
     }
     private companion object { const val MAX_QUEUED = 32 }
 }
