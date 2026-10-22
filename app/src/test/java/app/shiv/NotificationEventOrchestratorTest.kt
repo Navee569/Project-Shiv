@@ -42,4 +42,24 @@ class NotificationEventOrchestratorTest {
         assertEquals(NotificationEventOutcome.DUPLICATE, orchestrateNotificationEvent(event, ActionTier.ACT_THEN_TELL, sink))
         assertEquals(listOf("check"), sink.calls)
     }
+
+    @Test fun confirmationPreservesNotificationSourceAndDefaultsOtherSourcesSafely() {
+        assertEquals("NOTIFICATION", confirmedEventSource("NOTIFICATION"))
+        assertEquals("LISTENING", confirmedEventSource("LISTENING"))
+        assertEquals("LISTENING", confirmedEventSource(null))
+    }
+
+    @Test fun dismissedConfirmationIsRecognized() {
+        assertEquals(true, PendingEventConfirmation.isDismissAction("app.shiv.CONFIRM_EVENT_DISMISS"))
+        assertEquals(false, PendingEventConfirmation.isDismissAction("app.shiv.CONFIRM_EVENT_SAVE"))
+    }
+
+    @Test fun expiredPendingEventIsRejectedForCleanup() {
+        val now = 2_000_000_000_000L
+        val stale = PendingEventRecord(id = "stale", title = "Old meeting", startsAt = now - 1_000L)
+        val valid = PendingEventRecord(id = "valid", title = "Project review", startsAt = now + 60_000L)
+        assertEquals(false, isPendingEventValid(stale, now))
+        assertEquals(true, isPendingEventValid(valid, now))
+    }
+
 }
