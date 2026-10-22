@@ -90,6 +90,21 @@ jobs:
           grep -E "application-icon-[0-9]+:" app/build/reports/apk-verification/manifest-inspection.txt
           sha256sum "$APK" | tee app/build/reports/apk-verification/apk-sha256.txt
           stat --format="APK bytes: %s" "$APK" | tee app/build/reports/apk-verification/apk-size.txt
+      - name: Free runner disk space for Android emulator userdata
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          echo "Disk space after cleanup:"
+          df -h /
+          available_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          required_kb=$((9 * 1024 * 1024))
+          if [ "$available_kb" -lt "$required_kb" ]; then
+            echo "Insufficient free disk for API 35 emulator userdata: available ${available_kb} KiB; require at least ${required_kb} KiB." >&2
+            exit 1
+          fi
       - name: Install and cold-launch APK in Android emulator
         id: emulator_smoke
         uses: reactivecircus/android-emulator-runner@v2
@@ -105,8 +120,6 @@ jobs:
           cores: 2
           ram-size: 2048M
           heap-size: 512M
-          # Keep userdata below the runner's available disk space; default API 35 userdata needs >7 GB.
-          disk-size: 4096M
           script: |
             set -euo pipefail
             mkdir -p app/build/reports/emulator-smoke

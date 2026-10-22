@@ -205,3 +205,18 @@ Independent QA evidence for that candidate:
 | M0-ACCEPT | M0 acceptance | NOT ACCEPTED | NOT ACCEPTED pending fresh evidence |
 
 The new remediation is not accepted based on source inspection alone. Recheck actual build, JUnit XML, lint reports, emulator diagnostics/smoke output, APK metadata, and artifact provenance for the new exact SHA.
+
+## Independent QA retest — SHA 26331bae82806ad2ed8e2041a0b2884859d28847
+
+| Criterion | Result |
+|---|---|
+| APK build and manifest assertions | PASS |
+| Emulator boot | FAIL — userdata required 7372.80 MB; about 5619.80 MB available |
+| Unit-test compilation / JUnit execution | FAIL — callback type mismatch; no JUnit XML |
+| Lint | PASS — 0 errors, 26 warnings |
+| Artifact upload | PASS |
+| ML Kit listener-registration / image lifetime | HIGH risk remains on tested SHA |
+| Android Studio / physical device / camera | NOT VERIFIED |
+| M0 | NOT ACCEPTED |
+
+The consolidated remediation candidate adds runner disk cleanup/preflight, corrects the test callback binding, hardens task ownership and terminal result selection, preserves cleanup exceptions, and adds regression tests. All results for the new HEAD are pending fresh exact-SHA CI.

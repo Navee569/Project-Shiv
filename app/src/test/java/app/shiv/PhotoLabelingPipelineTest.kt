@@ -104,7 +104,7 @@ class PhotoLabelingPipelineTest {
 
     @Test fun imageOwnershipRemainsWithCallerUntilCompletion() {
         var imageClosed = false
-        val labeler = FakeLabeler { _, success, complete ->
+        val labeler = FakeLabeler { success, _, complete ->
             success("dog")
             assertFalse(imageClosed)
             complete()
@@ -115,5 +115,67 @@ class PhotoLabelingPipelineTest {
             imageClosed = true // models the caller closing ImageProxy after callback
         }
         assertTrue(imageClosed)
+    }
+    @Test fun successWithCleanupFailureReportsCleanupFailure() {
+        val cleanup = IllegalStateException("cleanup")
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                onSuccess("cat"); onComplete()
+            }
+            override fun close() { throw cleanup }
+        }
+        val results = mutableListOf<Result<String>>()
+        PhotoLabelingPipeline.run("image", labeler, results::add)
+        assertSame(cleanup, results.single().exceptionOrNull())
+    }
+
+    @Test fun processingFailureRemainsPrimaryAndCleanupIsSuppressed() {
+        val processing = IllegalArgumentException("processing")
+        val cleanup = IllegalStateException("cleanup")
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                onFailure(processing); onComplete()
+            }
+            override fun close() { throw cleanup }
+        }
+        val results = mutableListOf<Result<String>>()
+        PhotoLabelingPipeline.run("image", labeler, results::add)
+        assertSame(processing, results.single().exceptionOrNull())
+        assertEquals(1, processing.suppressed.size)
+        assertSame(cleanup, processing.suppressed.single())
+    }
+
+    @Test fun setupFailureRemainsPrimaryAndCleanupIsSuppressed() {
+        val setup = IllegalStateException("setup")
+        val cleanup = IllegalArgumentException("cleanup")
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) { throw setup }
+            override fun close() { throw cleanup }
+        }
+        val results = mutableListOf<Result<String>>()
+        PhotoLabelingPipeline.run("image", labeler, results::add)
+        assertSame(setup, results.single().exceptionOrNull())
+        assertEquals(1, setup.suppressed.size)
+        assertSame(cleanup, setup.suppressed.single())
+    }
+
+    @Test fun lateCallbacksCannotChangeCompletedResult() {
+        lateinit var success: (String) -> Unit
+        lateinit var failure: (Throwable) -> Unit
+        lateinit var complete: () -> Unit
+        var closes = 0
+        val labeler = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                success = onSuccess; failure = onFailure; complete = onComplete
+                success("winner"); complete()
+            }
+            override fun close() { closes++ }
+        }
+        val results = mutableListOf<Result<String>>()
+        PhotoLabelingPipeline.run("image", labeler, results::add)
+        failure(IllegalStateException("late")); success("late"); complete()
+        assertEquals(1, closes)
+        assertEquals(1, results.size)
+        assertEquals("winner", results.single().getOrNull())
     }
 }

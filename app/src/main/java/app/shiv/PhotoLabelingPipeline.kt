@@ -1,85 +1,93 @@
 package app.shiv
 
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
-import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Minimal seam around ML Kit so processing setup, asynchronous completion, and cleanup can be
- * tested without a camera. Implementations must invoke onComplete only after image processing
- * has stopped reading the input image.
- */
 internal interface PhotoLabeler<I, R> {
-    fun process(
-        image: I,
-        onSuccess: (R) -> Unit,
-        onFailure: (Throwable) -> Unit,
-        onComplete: () -> Unit
-    )
+    fun process(image: I, onSuccess: (R) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit)
     fun close()
 }
 
-internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) : PhotoLabeler<InputImage, List<ImageLabel>> {
+/** Keeps the input alive until the ML Kit task is terminal, even if listener registration fails. */
+internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
+    PhotoLabeler<InputImage, List<ImageLabel>> {
     override fun process(
         image: InputImage,
         onSuccess: (List<ImageLabel>) -> Unit,
         onFailure: (Throwable) -> Unit,
         onComplete: () -> Unit
     ) {
-        delegate.process(image)
-            .addOnSuccessListener { onSuccess(it) }
-            .addOnFailureListener { onFailure(it) }
-            .addOnCompleteListener { onComplete() }
+        val task = delegate.process(image)
+        try {
+            task.addOnCompleteListener { completed ->
+                try {
+                    if (completed.isSuccessful) onSuccess(completed.result ?: emptyList())
+                    else onFailure(completed.exception ?: IllegalStateException("Image labeling failed without an exception"))
+                } finally {
+                    onComplete()
+                }
+            }
+        } catch (registrationFailure: Throwable) {
+            // The task exists, so do not report terminal completion until it stops reading image.
+            Thread({
+                try {
+                    Tasks.await(task)
+                    onFailure(registrationFailure)
+                } catch (taskFailure: Throwable) {
+                    if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
+                    onFailure(taskFailure)
+                } finally {
+                    onComplete()
+                }
+            }, "shiv-mlkit-task-waiter").apply { isDaemon = true }.start()
+        }
     }
 
     override fun close() = delegate.close()
 }
 
-/**
- * Closes the labeler before delivering a terminal result to the caller. A synchronous setup
- * exception is terminal too. Atomic terminal ownership prevents late/duplicate callbacks from
- * closing resources or notifying the caller twice.
- */
+/** Outcome selection and terminal ownership are committed atomically under the same lock. */
 internal object PhotoLabelingPipeline {
     fun <I, R> run(image: I, labeler: PhotoLabeler<I, R>, onResult: (Result<R>) -> Unit) {
-        val terminal = AtomicBoolean(false)
         val lock = Any()
         var outcome: Result<R>? = null
+        var terminal = false
 
         fun record(result: Result<R>) {
-            synchronized(lock) {
-                if (!terminal.get() && outcome == null) outcome = result
-            }
+            synchronized(lock) { if (!terminal && outcome == null) outcome = result }
         }
 
-        fun finish(result: Result<R>) {
-            if (!terminal.compareAndSet(false, true)) return
+        fun closeAndDeliver(result: Result<R>) {
             var finalResult = result
             try {
                 labeler.close()
             } catch (closeFailure: Throwable) {
-                if (finalResult.isSuccess) finalResult = Result.failure(closeFailure)
+                val primary = finalResult.exceptionOrNull()
+                if (primary == null) finalResult = Result.failure(closeFailure)
+                else if (primary !== closeFailure) primary.addSuppressed(closeFailure)
             }
             onResult(finalResult)
         }
 
+        fun finishFromCompletion() {
+            val result = synchronized(lock) {
+                if (terminal) return
+                terminal = true
+                outcome ?: Result.failure(IllegalStateException("Image labeling completed without a result"))
+            }
+            closeAndDeliver(result)
+        }
+
         try {
-            labeler.process(
-                image = image,
-                onSuccess = { value -> record(Result.success(value)) },
-                onFailure = { failure -> record(Result.failure(failure)) },
-                onComplete = {
-                    val completed = synchronized(lock) { outcome }
-                        ?: Result.failure(IllegalStateException("Image labeling completed without a result"))
-                    finish(completed)
-                }
-            )
-        } catch (setupOrCallbackFailure: Throwable) {
-            // If finish already owns the terminal callback, propagate callback exceptions instead
-            // of converting them into a second result. Otherwise close and report setup failure.
-            if (terminal.get()) throw setupOrCallbackFailure
-            finish(Result.failure(setupOrCallbackFailure))
+            labeler.process(image, { record(Result.success(it)) }, { record(Result.failure(it)) }, ::finishFromCompletion)
+        } catch (setupFailure: Throwable) {
+            val ownsTerminal = synchronized(lock) {
+                if (terminal) false else { terminal = true; true }
+            }
+            if (!ownsTerminal) throw setupFailure
+            closeAndDeliver(Result.failure(setupFailure))
         }
     }
 }

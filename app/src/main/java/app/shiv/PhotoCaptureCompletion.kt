@@ -30,6 +30,7 @@ internal class PhotoCaptureCompletion(
             closeImage()
         } catch (closeError: Exception) {
             if (finalError == null) finalError = closeError
+            else if (finalError !== closeError) finalError.addSuppressed(closeError)
         }
         onComplete(finalError)
         return true
