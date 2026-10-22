@@ -178,4 +178,20 @@ class PhotoLabelingPipelineTest {
         assertEquals(1, results.size)
         assertEquals("winner", results.single().getOrNull())
     }
+    @Test fun interruptedWaitRetriesUntilTaskIsTerminalAndRestoresInterruptFlag() {
+        var attempts = 0
+        var restoredInterrupt = false
+        val terminal = InterruptSafeAwait.await(
+            awaitOnce = {
+                attempts++
+                if (attempts == 1) throw InterruptedException("simulated interrupt")
+                "terminal"
+            },
+            restoreInterrupt = { restoredInterrupt = true }
+        )
+        assertEquals("terminal", terminal)
+        assertEquals(2, attempts)
+        assertTrue(restoredInterrupt)
+    }
+
 }

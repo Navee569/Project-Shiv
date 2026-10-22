@@ -220,3 +220,21 @@ The new remediation is not accepted based on source inspection alone. Recheck ac
 | M0 | NOT ACCEPTED |
 
 The consolidated remediation candidate adds runner disk cleanup/preflight, corrects the test callback binding, hardens task ownership and terminal result selection, preserves cleanup exceptions, and adds regression tests. All results for the new HEAD are pending fresh exact-SHA CI.
+
+## Independent QA retest — SHA 76433e45a3fa4f607f399f96c3a0e9042400fb8d
+
+| Criterion | Result |
+|---|---|
+| Debug build and APK manifest assertions | PASS |
+| Emulator disk cleanup and boot | PASS |
+| Emulator smoke script | FAIL — Bash-only pipefail under /usr/bin/sh |
+| Install/cold launch/process/activity/crash assertions | NOT RUN |
+| Unit tests | PASS: 17/17, 0 failures/errors/skips |
+| Lint | PASS: 0 errors, 26 warnings |
+| Artifact provenance | PASS |
+| Fallback waiter safe under interruption | FAIL / HIGH RISK on tested SHA |
+| Adapter registration/fallback and concurrent race tests | MISSING |
+| Current-SHA documentation | STALE after workflow completion |
+| Overall M0 | NOT ACCEPTED |
+
+Follow-up candidate: shell script uses POSIX `set -eu`; fallback waits through interruption until task terminality and restores the interrupt flag. Fresh exact-SHA workflows and further adapter/concurrency tests remain mandatory.

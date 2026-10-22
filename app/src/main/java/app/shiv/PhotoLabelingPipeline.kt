@@ -5,12 +5,32 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
 
+internal object InterruptSafeAwait {
+    fun <T> await(awaitOnce: () -> T, restoreInterrupt: () -> Unit = { Thread.currentThread().interrupt() }): T {
+        var interrupted = false
+        try {
+            while (true) {
+                try {
+                    return awaitOnce()
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                }
+            }
+        } finally {
+            if (interrupted) restoreInterrupt()
+        }
+    }
+}
+
 internal interface PhotoLabeler<I, R> {
     fun process(image: I, onSuccess: (R) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit)
     fun close()
 }
 
-/** Keeps the input alive until the ML Kit task is terminal, even if listener registration fails. */
+/**
+ * Keeps the input alive until the ML Kit task is terminal, including listener-registration
+ * failure. The exceptional fallback waits uninterruptibly, then restores the interrupt flag.
+ */
 internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
     PhotoLabeler<InputImage, List<ImageLabel>> {
     override fun process(
@@ -30,18 +50,17 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                 }
             }
         } catch (registrationFailure: Throwable) {
-            // The task exists, so do not report terminal completion until it stops reading image.
-            Thread({
-                try {
-                    Tasks.await(task)
-                    onFailure(registrationFailure)
-                } catch (taskFailure: Throwable) {
-                    if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
-                    onFailure(taskFailure)
-                } finally {
-                    onComplete()
-                }
-            }, "shiv-mlkit-task-waiter").apply { isDaemon = true }.start()
+            // Do not create a worker whose start could fail and accidentally release the image.
+            // This rare exceptional path may block its caller, but retains ownership until terminality.
+            try {
+                InterruptSafeAwait.await(awaitOnce = { Tasks.await(task) })
+                onFailure(registrationFailure)
+            } catch (taskFailure: Throwable) {
+                if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
+                onFailure(taskFailure)
+            } finally {
+                onComplete()
+            }
         }
     }
 

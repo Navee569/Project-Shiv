@@ -121,7 +121,7 @@ jobs:
           ram-size: 2048M
           heap-size: 512M
           script: |
-            set -euo pipefail
+            set -eu
             mkdir -p app/build/reports/emulator-smoke
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm clear app.shiv
