@@ -1,6 +1,8 @@
 package app.shiv
 
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -30,4 +32,19 @@ class BackupStreamsTest {
     @Test fun rejectsNegativeLimit() {
         assertThrows(IllegalArgumentException::class.java) { readBoundedBytes(ByteArrayInputStream(byteArrayOf()), -1) }
     }
+
+    @Test fun boundedOutputAcceptsExactLimit() {
+        val sink = ByteArrayOutputStream()
+        BoundedOutputStream(sink, 4).use { it.write(byteArrayOf(1, 2, 3, 4)) }
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), sink.toByteArray())
+    }
+
+    @Test fun boundedOutputRejectsBeforeWritingOverLimit() {
+        val sink = ByteArrayOutputStream()
+        val bounded = BoundedOutputStream(sink, 4)
+        bounded.write(byteArrayOf(1, 2, 3))
+        assertThrows(IOException::class.java) { bounded.write(byteArrayOf(4, 5)) }
+        assertArrayEquals(byteArrayOf(1, 2, 3), sink.toByteArray())
+    }
+
 }
