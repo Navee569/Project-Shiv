@@ -61,6 +61,7 @@ class EncryptedBackup(context: Context) {
     }
 
     suspend fun restore(uri: Uri, passphrase: CharArray) = withContext(Dispatchers.IO) {
+        try {
         val packed = app.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Could not open the selected backup file." }.use { readBoundedBytes(it, MAX_BACKUP_BYTES) }
         }
@@ -91,6 +92,9 @@ class EncryptedBackup(context: Context) {
             dao.saveProfile(profile)
             dao.saveMessages(messages); dao.saveMemories(memories); dao.saveEvents(events); dao.savePendingEvents(pendingEvents)
             dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers); dao.saveSettings(settings)
+        }
+        } finally {
+            passphrase.fill('\\u0000')
         }
     }
 
