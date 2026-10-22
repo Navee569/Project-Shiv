@@ -125,14 +125,16 @@ internal class PhotoCaptureAnalysisAdapter(
     }
 
     fun descriptionReady(description: String) {
-        completion.finishSuccess {
-            val deliverUi = synchronized(stateLock) {
-                if (uiAbandoned || resultDelivered) false
-                else {
-                    resultDelivered = true
-                    true
-                }
+        val ownsResult = synchronized(stateLock) {
+            if (resultDelivered) false
+            else {
+                resultDelivered = true
+                true
             }
+        }
+        if (!ownsResult) return
+        completion.finishSuccess {
+            val deliverUi = synchronized(stateLock) { !uiAbandoned }
             if (deliverUi) {
                 onDescription(description)
                 onClose()
@@ -141,6 +143,13 @@ internal class PhotoCaptureAnalysisAdapter(
     }
 
     fun failed(failure: Throwable) {
-        completion.finish(failure)
+        val ownsResult = synchronized(stateLock) {
+            if (resultDelivered) false
+            else {
+                resultDelivered = true
+                true
+            }
+        }
+        if (ownsResult) completion.finish(failure)
     }
 }
