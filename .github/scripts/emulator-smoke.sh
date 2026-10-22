@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -eu
 
+source "$(dirname "$0")/emulator-device-selection.sh"
+
 ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 cd "$ROOT"
 REPORT="app/build/reports/emulator-smoke"
@@ -56,10 +58,6 @@ capture_diagnostics() {
     df -h / || true
     echo "Memory:"
     free -h || true
-    echo "Boot properties (if transport permits):"
-    timeout 8s adb -s emulator-5554 shell getprop sys.boot_completed 2>&1 || true
-    timeout 8s adb -s emulator-5554 shell getprop dev.bootcomplete 2>&1 || true
-    timeout 8s adb -s emulator-5554 shell getprop ro.boot.qemu 2>&1 || true
   } >"$out" 2>&1
   echo "Captured $out"
 }
@@ -158,12 +156,11 @@ while :; do
 done
 
 run_bounded adb-devices-before 10 adb devices -l
-mapfile -t online_emulators < <(awk '$1 ~ /^emulator-[0-9]+$/ && $2 == "device" { print $1 }' "$REPORT/adb-devices-before.txt")
-if [ "${#online_emulators[@]}" -ne 1 ]; then
-  echo "Expected exactly one online emulator, found ${#online_emulators[@]}; refusing to continue." >&2
+DEVICE_SERIAL="$(resolve_online_emulator_serial "$(cat "$REPORT/adb-devices-before.txt")")" || {
+  echo "Expected exactly one online emulator; refusing to continue." >&2
+  cat "$REPORT/adb-devices-before.txt" >&2
   exit 1
-fi
-DEVICE_SERIAL="${online_emulators[0]}"
+}
 printf 'Selected emulator serial: %s\n' "$DEVICE_SERIAL" | tee "$REPORT/selected-device.txt"
 run_bounded boot-completed 30 adb -s "$DEVICE_SERIAL" shell getprop sys.boot_completed
 grep -Fx '1' "$REPORT/boot-completed.txt" || {

@@ -274,6 +274,86 @@ class PhotoLabelingPipelineTest {
         assertSame(registration, taskFailure.suppressed.single())
     }
 
+    @Test fun registrationFallbackCallbackExecutorRejectionStillCompletesAfterTaskTerminality() {
+        val waiting = mutableListOf<Runnable>()
+        val completions = mutableListOf<Runnable>()
+        val taskFailure = IllegalStateException("ML task failed")
+        var taskTerminal = false
+        var failureCalls = 0
+        var completionCalls = 0
+
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = { taskTerminal = true; throw taskFailure },
+            registrationFailure = IllegalArgumentException("listener registration failed"),
+            waiter = Executor { waiting.add(it) },
+            callbackExecutor = Executor { throw RejectedExecutionException("callback queue full") },
+            completionExecutor = Executor { completions.add(it) },
+            onFailure = { assertTrue(taskTerminal); assertSame(taskFailure, it); failureCalls++ },
+            onComplete = { assertTrue(taskTerminal); completionCalls++ }
+        )
+
+        assertTrue(accepted)
+        assertEquals(1, waiting.size)
+        assertTrue(completions.isEmpty())
+        waiting.single().run()
+        assertTrue(taskTerminal)
+        assertEquals(1, completions.size)
+        assertEquals(0, failureCalls)
+        assertEquals(0, completionCalls)
+        completions.single().run()
+        assertEquals(1, failureCalls)
+        assertEquals(1, completionCalls)
+    }
+
+    @Test fun registrationFallbackWaiterCapacityRejectionDoesNotReleaseActiveImage() {
+        var closes = 0
+        var taskStillActive = true
+        val owner = PhotoCaptureCompletion(closeImage = { closes++ }, onComplete = {})
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = { taskStillActive = false },
+            registrationFailure = IllegalStateException("listener registration failed"),
+            waiter = Executor { throw RejectedExecutionException("waiter capacity exhausted") },
+            callbackExecutor = Executor { it.run() },
+            completionExecutor = Executor { it.run() },
+            onFailure = {},
+            onComplete = { owner.finish() },
+            onSchedulingFailure = {}
+        )
+
+        assertFalse(accepted)
+        assertTrue(taskStillActive)
+        assertEquals(0, closes)
+    }
+
+    @Test fun registrationFallbackSaturationKeepsImageUntilAcceptedTaskTerminates() {
+        val waiting = mutableListOf<Runnable>()
+        val callbacks = mutableListOf<Runnable>()
+        var taskTerminal = false
+        var closes = 0
+        val owner = PhotoCaptureCompletion(closeImage = { closes++ }, onComplete = {})
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = { taskTerminal = true },
+            registrationFailure = IllegalStateException("listener registration failed"),
+            waiter = Executor { waiting.add(it) },
+            callbackExecutor = Executor { callbacks.add(it) },
+            completionExecutor = Executor { callbacks.add(it) },
+            onFailure = { assertTrue(taskTerminal) },
+            onComplete = { assertTrue(taskTerminal); owner.finish() }
+        )
+
+        assertTrue(accepted)
+        assertTrue(waiting.isNotEmpty())
+        assertFalse(taskTerminal)
+        assertEquals(0, closes)
+        waiting.single().run()
+        assertTrue(taskTerminal)
+        assertEquals(1, callbacks.size)
+        callbacks.single().run()
+        assertEquals(1, closes)
+        assertFalse(owner.finish())
+        assertEquals(1, closes)
+    }
+
     @Test fun registrationFallbackDoesNotSignalCompletionWhenWaiterRejects() {
         var failures = 0
         var completions = 0

@@ -122,6 +122,8 @@ jobs:
             exit 1
           fi
           echo "KVM device access verified for $(id -un)."
+      - name: Test emulator device selection
+        run: bash .github/scripts/test-emulator-device-selection.sh
       - name: Install and cold-launch APK in Android emulator
         id: emulator_smoke
         uses: reactivecircus/android-emulator-runner@v2

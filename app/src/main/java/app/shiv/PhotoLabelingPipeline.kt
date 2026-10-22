@@ -45,6 +45,7 @@ internal object ListenerRegistrationFallback {
         registrationFailure: Throwable,
         waiter: Executor,
         callbackExecutor: Executor,
+        completionExecutor: Executor = callbackExecutor,
         onFailure: (Throwable) -> Unit,
         onComplete: () -> Unit,
         onSchedulingFailure: (Throwable) -> Unit = {}
@@ -58,16 +59,22 @@ internal object ListenerRegistrationFallback {
                     if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
                     taskFailure
                 }
-                try {
-                    callbackExecutor.execute {
-                        try {
-                            onFailure(terminalFailure)
-                        } finally {
-                            onComplete()
-                        }
+                val completion = Runnable {
+                    try {
+                        onFailure(terminalFailure)
+                    } finally {
+                        onComplete()
                     }
-                } catch (rejected: RejectedExecutionException) {
-                    onSchedulingFailure(rejected)
+                }
+                try {
+                    callbackExecutor.execute(completion)
+                } catch (callbackRejected: RejectedExecutionException) {
+                    try {
+                        completionExecutor.execute(completion)
+                    } catch (completionRejected: RejectedExecutionException) {
+                        completionRejected.addSuppressed(callbackRejected)
+                        onSchedulingFailure(completionRejected)
+                    }
                 }
             }
             true
@@ -85,6 +92,11 @@ internal object PhotoLabelingExecutors {
     val mainCallback: Executor = Executor { command ->
         if (!Handler(Looper.getMainLooper()).post(command)) {
             throw RejectedExecutionException("Main-thread callback could not be scheduled")
+        }
+    }
+    val mainCompletion: Executor = Executor { command ->
+        if (!Handler(Looper.getMainLooper()).post(command)) {
+            throw RejectedExecutionException("Main-thread completion could not be scheduled")
         }
     }
 }
@@ -113,6 +125,7 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                 registrationFailure = registrationFailure,
                 waiter = PhotoLabelingExecutors.waiter,
                 callbackExecutor = PhotoLabelingExecutors.mainCallback,
+                completionExecutor = PhotoLabelingExecutors.mainCompletion,
                 onFailure = onFailure,
                 onComplete = onComplete,
                 onSchedulingFailure = {
