@@ -30,7 +30,7 @@ class EncryptedBackup(context: Context) {
             val salt = ByteArray(16).also(SecureRandom()::nextBytes)
             val iv = ByteArray(12).also(SecureRandom()::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt), GCMParameterSpec(128, iv))
+            cipher.init(Cipher.ENCRYPT_MODE, deriveBackupKey(passphrase, salt), GCMParameterSpec(128, iv))
             cipher.updateAAD(MAGIC)
             val temporary = File.createTempFile("shiv-backup-", ".tmp", app.cacheDir)
             try {
@@ -75,14 +75,7 @@ class EncryptedBackup(context: Context) {
         val packed = app.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Could not open the selected backup file." }.use { readBoundedBytes(it, MAX_BACKUP_BYTES) }
         }
-        require(packed.size in (MAGIC.size + 16 + 12 + 16)..MAX_BACKUP_BYTES) { "This backup file has an invalid size." }
-        require(packed.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) { "This is not a Shiv encrypted backup." }
-        val salt = packed.copyOfRange(MAGIC.size, MAGIC.size + 16)
-        val iv = packed.copyOfRange(MAGIC.size + 16, MAGIC.size + 28)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, deriveKey(passphrase, salt), GCMParameterSpec(128, iv))
-        cipher.updateAAD(MAGIC)
-        val json = JSONObject(String(cipher.doFinal(packed.copyOfRange(MAGIC.size + 28, packed.size)), Charsets.UTF_8))
+        val json = JSONObject(String(decryptBackupPayload(packed, passphrase), Charsets.UTF_8))
         require(json.optInt("format") == 1) { "This backup format is not supported." }
         val profile = json.optJSONObject("profile")?.let(::readProfile) ?: UserProfile()
         val messages = readArray(json, "messages", ::readMessage)
@@ -195,11 +188,6 @@ class EncryptedBackup(context: Context) {
         if (value == null) w.nullValue() else w.value(value)
     }
 
-    private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
-        val spec = PBEKeySpec(password, salt, 310_000, 256)
-        return try { SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded, "AES") }
-        finally { spec.clearPassword() }
-    }
 
     private fun readProfile(o: JSONObject) = UserProfile(o.optInt("id", 1), o.getString("name"), o.getString("notes"), o.getLong("updatedAt"))
     private fun readMessage(o: JSONObject) = ChatMessage(o.getString("id"), o.getString("text"), o.getBoolean("fromUser"), o.getLong("createdAt"), o.optString("tier").takeUnless { it == "null" || it.isEmpty() })
