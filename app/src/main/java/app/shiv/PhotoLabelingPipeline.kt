@@ -7,9 +7,15 @@ import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal object InterruptSafeAwait {
     fun <T> await(awaitOnce: () -> T, restoreInterrupt: () -> Unit = { Thread.currentThread().interrupt() }): T {
@@ -34,69 +40,106 @@ internal interface PhotoLabeler<I, R> {
 }
 
 /**
- * Waits for a task after listener registration fails without blocking the caller.
- * Results are dispatched on the main executor to match the normal Task listener contract.
- * If either executor rejects work, completion is not signalled: the pipeline must retain
- * image ownership rather than closing an image that may still be in use.
+ * Runs the blocking Tasks.await fallback away from the caller. Successful results stay successful
+ * even if listener registration failed. If capacity is exhausted, the caller retains image
+ * ownership because task terminality has not been established.
  */
+/** Indicates that waiting ended without proving task terminality; ownership must remain retained. */
+internal class TaskTerminalityUnresolvedException(cause: Throwable) :
+    IllegalStateException("ML Kit task terminality could not be established", cause)
+
 internal object ListenerRegistrationFallback {
-    fun schedule(
-        awaitTask: () -> Unit,
+    fun <R> schedule(
+        awaitTask: () -> R,
         registrationFailure: Throwable,
         waiter: Executor,
-        callbackExecutor: Executor,
-        completionExecutor: Executor = callbackExecutor,
+        onSuccess: (R) -> Unit,
         onFailure: (Throwable) -> Unit,
         onComplete: () -> Unit,
         onSchedulingFailure: (Throwable) -> Unit = {}
     ): Boolean {
-        return try {
-            waiter.execute {
-                val terminalFailure = try {
-                    awaitTask()
-                    registrationFailure
-                } catch (taskFailure: Throwable) {
-                    if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
-                    taskFailure
-                }
-                val completion = Runnable {
+        val waitAndDeliver = Runnable {
+            val outcome: Result<R> = try {
+                Result.success(awaitTask())
+            } catch (unresolved: TaskTerminalityUnresolvedException) {
+                reportSafely(onSchedulingFailure, unresolved)
+                return@Runnable
+            } catch (taskFailure: Throwable) {
+                if (taskFailure !== registrationFailure) {
                     try {
-                        onFailure(terminalFailure)
-                    } finally {
-                        onComplete()
+                        taskFailure.addSuppressed(registrationFailure)
+                    } catch (_: Throwable) {
+                        // Preserve the actual task failure even if diagnostics cannot be attached.
                     }
                 }
+                Result.failure(taskFailure)
+            }
+
+            var callbackFailure: Throwable? = null
+            try {
+                outcome.fold(onSuccess, onFailure)
+            } catch (failure: Throwable) {
+                callbackFailure = failure
+            } finally {
                 try {
-                    callbackExecutor.execute(completion)
-                } catch (callbackRejected: RejectedExecutionException) {
-                    try {
-                        completionExecutor.execute(completion)
-                    } catch (completionRejected: RejectedExecutionException) {
-                        completionRejected.addSuppressed(callbackRejected)
-                        onSchedulingFailure(completionRejected)
+                    onComplete()
+                } catch (completionFailure: Throwable) {
+                    val primary = callbackFailure
+                    if (primary == null) callbackFailure = completionFailure
+                    else if (primary !== completionFailure) {
+                        try { primary.addSuppressed(completionFailure) } catch (_: Throwable) { }
                     }
                 }
             }
+            callbackFailure?.let { reportSafely(onSchedulingFailure, it) }
+        }
+
+        return try {
+            waiter.execute(waitAndDeliver)
             true
         } catch (rejected: RejectedExecutionException) {
-            onSchedulingFailure(rejected)
+            reportSafely(onSchedulingFailure, rejected)
             false
+        }
+    }
+
+    private fun reportSafely(report: (Throwable) -> Unit, failure: Throwable) {
+        try { report(failure) } catch (_: Throwable) {
+            // Diagnostics must never change task or image ownership.
         }
     }
 }
 
 internal object PhotoLabelingExecutors {
-    val waiter: Executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "shiv-mlkit-fallback").apply { isDaemon = true }
+    const val DEFAULT_WAITER_THREADS = 2
+    const val DEFAULT_WAITER_QUEUE_CAPACITY = 8
+    const val TASK_AWAIT_TIMEOUT_MILLIS = 120_000L
+
+    fun createWaiterExecutor(
+        workerCount: Int = DEFAULT_WAITER_THREADS,
+        queueCapacity: Int = DEFAULT_WAITER_QUEUE_CAPACITY,
+        threadFactory: ThreadFactory = ThreadFactory { runnable ->
+            Thread(runnable, "shiv-mlkit-fallback").apply { isDaemon = true }
+        }
+    ): ThreadPoolExecutor {
+        require(workerCount > 0) { "workerCount must be positive" }
+        require(queueCapacity > 0) { "queueCapacity must be positive" }
+        return ThreadPoolExecutor(
+            workerCount,
+            workerCount,
+            0L,
+            TimeUnit.MILLISECONDS,
+            ArrayBlockingQueue(queueCapacity),
+            threadFactory,
+            ThreadPoolExecutor.AbortPolicy()
+        )
     }
+
+    val waiter: Executor = createWaiterExecutor()
+
     val mainCallback: Executor = Executor { command ->
         if (!Handler(Looper.getMainLooper()).post(command)) {
             throw RejectedExecutionException("Main-thread callback could not be scheduled")
-        }
-    }
-    val mainCompletion: Executor = Executor { command ->
-        if (!Handler(Looper.getMainLooper()).post(command)) {
-            throw RejectedExecutionException("Main-thread completion could not be scheduled")
         }
     }
 }
@@ -121,15 +164,24 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
             }
         } catch (registrationFailure: Throwable) {
             ListenerRegistrationFallback.schedule(
-                awaitTask = { InterruptSafeAwait.await(awaitOnce = { Tasks.await(task) }); Unit },
+                awaitTask = {
+                    try {
+                        InterruptSafeAwait.await {
+                            Tasks.await(task, PhotoLabelingExecutors.TASK_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                        }
+                    } catch (timeout: TimeoutException) {
+                        throw TaskTerminalityUnresolvedException(timeout)
+                    } catch (awaitFailure: Throwable) {
+                        throw task.exception ?: awaitFailure
+                    }
+                },
                 registrationFailure = registrationFailure,
                 waiter = PhotoLabelingExecutors.waiter,
-                callbackExecutor = PhotoLabelingExecutors.mainCallback,
-                completionExecutor = PhotoLabelingExecutors.mainCompletion,
+                onSuccess = onSuccess,
                 onFailure = onFailure,
                 onComplete = onComplete,
                 onSchedulingFailure = {
-                    Log.e("ShivPhotoLabeler", "Fallback scheduling failed; retaining image ownership", it)
+                    Log.e("ShivPhotoLabeler", "Fallback could not establish task terminality; image ownership is retained", it)
                 }
             )
         }
@@ -138,9 +190,21 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
     override fun close() = delegate.close()
 }
 
-/** Outcome selection and terminal ownership are committed atomically under the same lock. */
+/**
+ * Cleanup is committed before result delivery is scheduled. A rejected UI dispatcher can therefore
+ * lose UI notification, but cannot strand a terminal image or cause callbacks on the waiter thread.
+ */
 internal object PhotoLabelingPipeline {
-    fun <I, R> run(image: I, labeler: PhotoLabeler<I, R>, onResult: (Result<R>) -> Unit) {
+    private val directExecutor = Executor { command -> command.run() }
+
+    fun <I, R> run(
+        image: I,
+        labeler: PhotoLabeler<I, R>,
+        callbackExecutor: Executor = directExecutor,
+        onImageConsumed: () -> Unit = {},
+        onDeliveryFailure: (Throwable) -> Unit = {},
+        onResult: (Result<R>) -> Unit
+    ) {
         val lock = Any()
         var outcome: Result<R>? = null
         var terminal = false
@@ -149,16 +213,41 @@ internal object PhotoLabelingPipeline {
             synchronized(lock) { if (!terminal && outcome == null) outcome = result }
         }
 
-        fun closeAndDeliver(result: Result<R>) {
-            var finalResult = result
+        fun addFailure(current: Result<R>, additional: Throwable): Result<R> {
+            val primary = current.exceptionOrNull()
+            if (primary == null) return Result.failure(additional)
+            if (primary !== additional) {
+                try { primary.addSuppressed(additional) } catch (_: Throwable) { }
+            }
+            return current
+        }
+
+        fun closeAndDeliver(initialResult: Result<R>) {
+            var finalResult = initialResult
             try {
                 labeler.close()
             } catch (closeFailure: Throwable) {
-                val primary = finalResult.exceptionOrNull()
-                if (primary == null) finalResult = Result.failure(closeFailure)
-                else if (primary !== closeFailure) primary.addSuppressed(closeFailure)
+                finalResult = addFailure(finalResult, closeFailure)
             }
-            onResult(finalResult)
+            try {
+                onImageConsumed()
+            } catch (cleanupFailure: Throwable) {
+                finalResult = addFailure(finalResult, cleanupFailure)
+            }
+
+            val stableResult = finalResult
+            val started = AtomicBoolean(false)
+            try {
+                callbackExecutor.execute {
+                    started.set(true)
+                    onResult(stableResult)
+                }
+            } catch (dispatchFailure: RejectedExecutionException) {
+                if (started.get()) throw dispatchFailure
+                try { onDeliveryFailure(dispatchFailure) } catch (_: Throwable) {
+                    // Reporting a delivery failure must not undo completed cleanup.
+                }
+            }
         }
 
         fun finishFromCompletion() {

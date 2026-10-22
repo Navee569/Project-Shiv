@@ -405,9 +405,21 @@ User: $input"""
     }
 
     /** The full image-analysis call stays behind Brain and uses ML Kit's bundled local model. */
-    fun describePhoto(image: InputImage, onDescription: (String) -> Unit) {
+    fun describePhoto(
+        image: InputImage,
+        onImageConsumed: () -> Unit = {},
+        onDescription: (String) -> Unit
+    ) {
         val labeler = MlKitPhotoLabeler(ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS))
-        PhotoLabelingPipeline.run(image, labeler) { result ->
+        PhotoLabelingPipeline.run(
+            image = image,
+            labeler = labeler,
+            callbackExecutor = PhotoLabelingExecutors.mainCallback,
+            onImageConsumed = onImageConsumed,
+            onDeliveryFailure = {
+                android.util.Log.e("ShivPhotoLabeler", "Image result could not be delivered to the main thread", it)
+            }
+        ) { result ->
             val description = result.fold(
                 onSuccess = { labels -> describePhoto(labels.sortedByDescending { it.confidence }.map { it.text }) },
                 onFailure = { "I couldn’t confidently identify the photo. It was analyzed on this phone and Shiv didn’t save it." }

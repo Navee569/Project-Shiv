@@ -88,8 +88,6 @@ jobs:
           grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -F "label='Shiv'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -E "application-icon-[0-9]+:" app/build/reports/apk-verification/manifest-inspection.txt
-          sha256sum "$APK" | tee app/build/reports/apk-verification/apk-sha256.txt
-          stat --format="APK bytes: %s" "$APK" | tee app/build/reports/apk-verification/apk-size.txt
       - name: Free runner disk space for Android emulator userdata
         shell: bash
         run: |
@@ -172,6 +170,65 @@ jobs:
       - name: Run debug lint
         if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:lintDebug --stacktrace
+      - name: Verify final packaged APK evidence
+        if: always() && steps.build.outcome == 'success'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CHECKED_OUT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          REPORT="app/build/reports/apk-verification"
+          test -s "$APK"
+          mkdir -p "$REPORT"
+          "$AAPT" dump badging "$APK" > "$REPORT/manifest-inspection-final.txt"
+          python3 - "$APK" "$REPORT/manifest-inspection-final.txt" "$REPORT/apk-evidence.json" <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+
+          apk = pathlib.Path(sys.argv[1])
+          badging_path = pathlib.Path(sys.argv[2])
+          output_path = pathlib.Path(sys.argv[3])
+          badging = badging_path.read_text()
+          package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']*)'", badging, re.M)
+          launcher = re.search(r"^launchable-activity: name='([^']+)'", badging, re.M)
+          label = re.search(r"^application-label:'([^']*)'", badging, re.M)
+          min_sdk = re.search(r"^sdkVersion:'([^']+)'", badging, re.M)
+          has_icon = re.search(r"^application-icon-[0-9]+:", badging, re.M) is not None
+          assert package, "Could not parse APK package/version metadata"
+          assert package.group(1) == "app.shiv", f"Unexpected applicationId: {package.group(1)}"
+          assert package.group(2) == "1", f"Unexpected versionCode: {package.group(2)}"
+          assert package.group(3) == "0.1.0", f"Unexpected versionName: {package.group(3)}"
+          assert launcher and launcher.group(1) == "app.shiv.MainActivity", "Launcher activity mismatch"
+          assert label and label.group(1) == "Shiv", "Application label mismatch"
+          assert min_sdk and min_sdk.group(1) == "26", "Minimum SDK mismatch"
+          assert has_icon, "APK has no application-icon entry"
+          binary = apk.read_bytes()
+          evidence = {
+              "source_sha": os.environ["SOURCE_SHA"],
+              "checked_out_sha": os.environ["CHECKED_OUT_SHA"],
+              "apk_path": str(apk),
+              "apk_sha256": hashlib.sha256(binary).hexdigest(),
+              "apk_size_bytes": len(binary),
+              "application_id": package.group(1),
+              "version_code": int(package.group(2)),
+              "version_name": package.group(3),
+              "min_sdk": int(min_sdk.group(1)),
+              "launcher_activity": launcher.group(1),
+              "application_label": label.group(1),
+              "has_application_icon": has_icon,
+          }
+          output_path.write_text(json.dumps(evidence, indent=2) + "\n")
+          (output_path.parent / "apk-sha256.txt").write_text(evidence["apk_sha256"] + "  " + str(apk) + "\n")
+          (output_path.parent / "apk-size.txt").write_text(f"APK bytes: {len(binary)}\n")
+          print(json.dumps(evidence, indent=2))
+          PY
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4

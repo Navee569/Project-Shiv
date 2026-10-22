@@ -107,15 +107,18 @@ class PhotoCaptureCompletionTest {
     @Test
     fun processingFailureRemainsPrimaryWhenClosingAlsoFails() {
         val processingFailure = IllegalArgumentException("processing failed")
+        val closeFailure = IllegalStateException("close failed")
         var observedError: Throwable? = null
         val completion = PhotoCaptureCompletion(
-            closeImage = { throw IllegalStateException("close failed") },
+            closeImage = { throw closeFailure },
             onComplete = { error -> observedError = error }
         )
 
         completion.finish(processingFailure)
 
         assertSame(processingFailure, observedError)
+        assertEquals(1, processingFailure.suppressed.size)
+        assertSame(closeFailure, processingFailure.suppressed.single())
     }
 
 
@@ -149,6 +152,77 @@ class PhotoCaptureCompletionTest {
         assertEquals(1, closes)
         assertEquals(1, completionCallbacks)
         assertEquals(null, observedError)
+    }
+
+    @Test
+    fun imageCanBeReleasedAtTaskTerminalityBeforeUiCompletion() {
+        var closes = 0
+        var callbacks = 0
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { callbacks++ }
+        )
+
+        assertEquals(null, completion.releaseImage())
+        assertEquals(1, closes)
+        assertEquals(0, callbacks)
+        assertEquals(null, completion.releaseImage())
+        assertEquals(1, closes)
+
+        assertEquals(true, completion.finish())
+        assertEquals(1, closes)
+        assertEquals(1, callbacks)
+    }
+
+    @Test
+    fun closeFailureDuringEarlyReleaseIsRetainedUntilCompletionNotification() {
+        val closeFailure = IllegalStateException("proxy close failed")
+        var callbacks = 0
+        var observed: Throwable? = null
+        val completion = PhotoCaptureCompletion(
+            closeImage = { throw closeFailure },
+            onComplete = { callbacks++; observed = it }
+        )
+
+        assertSame(closeFailure, completion.releaseImage())
+        assertEquals(0, callbacks)
+        assertEquals(true, completion.finish())
+        assertSame(closeFailure, observed)
+        assertEquals(1, callbacks)
+    }
+
+    @Test
+    fun productionPhotoAdapterReleasesImageBeforeUiResultAndOnlyOnce() {
+        var closes = 0
+        var completionCallbacks = 0
+        var descriptions = 0
+        var closeRequests = 0
+        var observedDescription: String? = null
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { completionCallbacks++ }
+        )
+        val adapter = PhotoCaptureAnalysisAdapter(
+            completion = completion,
+            onDescription = { description ->
+                assertEquals(1, closes)
+                descriptions++
+                observedDescription = description
+            },
+            onClose = { closeRequests++ }
+        )
+
+        adapter.imageConsumed()
+        assertEquals(1, closes)
+        assertEquals(0, completionCallbacks)
+        adapter.descriptionReady("cat")
+        adapter.descriptionReady("late result")
+
+        assertEquals("cat", observedDescription)
+        assertEquals(1, descriptions)
+        assertEquals(1, closeRequests)
+        assertEquals(1, closes)
+        assertEquals(1, completionCallbacks)
     }
 
 }

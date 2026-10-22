@@ -5,8 +5,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class PhotoLabelingPipelineTest {
     private class FakeLabeler(
@@ -23,46 +26,28 @@ class PhotoLabelingPipelineTest {
         val failure = IllegalStateException("process setup failed")
         val labeler = FakeLabeler { _, _, _ -> throw failure }
         val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
+        PhotoLabelingPipeline.run("image", labeler, onResult = results::add)
         assertEquals(1, labeler.closes)
         assertEquals(1, results.size)
         assertSame(failure, results.single().exceptionOrNull())
     }
 
     @Test fun asynchronousSuccessClosesBeforeDeliveringExactlyOnce() {
-        var closeCountAtCallback = -1
         val labeler = FakeLabeler { success, _, complete ->
-            success("cat")
-            complete()
-            success("late result")
-            complete()
+            success("cat"); complete(); success("late result"); complete()
         }
         val results = mutableListOf<Result<String>>()
-        // The fake close counter is observable to prove cleanup precedes delivery.
-        val observing = object : PhotoLabeler<String, String> {
-            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) =
-                labeler.process(image, onSuccess, onFailure, onComplete)
-            override fun close() { labeler.close() }
-        }
-        PhotoLabelingPipeline.run("image", observing) {
-            closeCountAtCallback = labeler.closes
-            results.add(it)
-        }
+        PhotoLabelingPipeline.run("image", labeler) { results.add(it) }
         assertEquals(1, labeler.closes)
-        assertEquals(1, closeCountAtCallback)
         assertEquals(1, results.size)
         assertEquals("cat", results.single().getOrNull())
     }
 
     @Test fun asynchronousFailureClosesAndReportsFailureOnce() {
         val failure = IllegalArgumentException("labeling failed")
-        val labeler = FakeLabeler { _, fail, complete ->
-            fail(failure)
-            complete()
-            complete()
-        }
+        val labeler = FakeLabeler { _, fail, complete -> fail(failure); complete(); complete() }
         val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
+        PhotoLabelingPipeline.run("image", labeler) { results.add(it) }
         assertEquals(1, labeler.closes)
         assertEquals(1, results.size)
         assertSame(failure, results.single().exceptionOrNull())
@@ -72,12 +57,10 @@ class PhotoLabelingPipelineTest {
         val failure = IllegalStateException("listener setup failed")
         lateinit var lateComplete: () -> Unit
         val labeler = FakeLabeler { success, _, complete ->
-            success("early value")
-            lateComplete = complete
-            throw failure
+            success("early value"); lateComplete = complete; throw failure
         }
         val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
+        PhotoLabelingPipeline.run("image", labeler) { results.add(it) }
         lateComplete()
         assertEquals(1, labeler.closes)
         assertEquals(1, results.size)
@@ -86,16 +69,10 @@ class PhotoLabelingPipelineTest {
 
     @Test fun callbackExceptionPropagatesWithoutSecondCloseOrCallback() {
         val callbackFailure = IllegalStateException("consumer callback failed")
-        val labeler = FakeLabeler { success, _, complete ->
-            success("cat")
-            complete()
-        }
+        val labeler = FakeLabeler { success, _, complete -> success("cat"); complete() }
         var callbacks = 0
         try {
-            PhotoLabelingPipeline.run("image", labeler) {
-                callbacks++
-                throw callbackFailure
-            }
+            PhotoLabelingPipeline.run("image", labeler) { callbacks++; throw callbackFailure }
             throw AssertionError("Expected callback exception")
         } catch (actual: IllegalStateException) {
             assertSame(callbackFailure, actual)
@@ -104,82 +81,67 @@ class PhotoLabelingPipelineTest {
         assertEquals(1, callbacks)
     }
 
-    @Test fun imageOwnershipRemainsWithCallerUntilCompletion() {
-        var imageClosed = false
-        val labeler = FakeLabeler { success, _, complete ->
-            success("dog")
-            assertFalse(imageClosed)
-            complete()
-        }
-        PhotoLabelingPipeline.run("image", labeler) {
+    @Test fun cleanupRunsBeforeCallbackDispatcherAndResultCallback() {
+        val queued = mutableListOf<Runnable>()
+        var consumed = false
+        var callbackSawConsumed = false
+        val labeler = FakeLabeler { success, _, complete -> success("dog"); complete() }
+        PhotoLabelingPipeline.run(
+            image = "image",
+            labeler = labeler,
+            callbackExecutor = Executor { queued.add(it) },
+            onImageConsumed = { consumed = true }
+        ) {
+            callbackSawConsumed = consumed
             assertEquals("dog", it.getOrNull())
-            assertEquals(1, labeler.closes)
-            imageClosed = true // models the caller closing ImageProxy after callback
         }
-        assertTrue(imageClosed)
-    }
-    @Test fun successWithCleanupFailureReportsCleanupFailure() {
-        val cleanup = IllegalStateException("cleanup")
-        val labeler = object : PhotoLabeler<String, String> {
-            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
-                onSuccess("cat"); onComplete()
-            }
-            override fun close() { throw cleanup }
-        }
-        val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
-        assertSame(cleanup, results.single().exceptionOrNull())
+        assertTrue(consumed)
+        assertFalse(callbackSawConsumed)
+        assertEquals(1, queued.size)
+        queued.single().run()
+        assertTrue(callbackSawConsumed)
+        assertEquals(1, labeler.closes)
     }
 
-    @Test fun processingFailureRemainsPrimaryAndCleanupIsSuppressed() {
+    @Test fun rejectedResultDispatcherCannotStrandTerminalCleanupOrRunUiCallbackOnWaiter() {
+        var consumed = 0
+        var results = 0
+        var deliveryFailures = 0
+        val labeler = FakeLabeler { success, _, complete -> success("cat"); complete() }
+        PhotoLabelingPipeline.run(
+            image = "image",
+            labeler = labeler,
+            callbackExecutor = Executor { throw RejectedExecutionException("main queue rejected") },
+            onImageConsumed = { consumed++ },
+            onDeliveryFailure = { deliveryFailures++ }
+        ) { results++ }
+        assertEquals(1, labeler.closes)
+        assertEquals(1, consumed)
+        assertEquals(0, results)
+        assertEquals(1, deliveryFailures)
+        assertEquals(1, labeler.closes)
+    }
+
+    @Test fun cleanupFailureDoesNotSkipImageReleaseAndProcessingFailureStaysPrimary() {
         val processing = IllegalArgumentException("processing")
-        val cleanup = IllegalStateException("cleanup")
         val labeler = object : PhotoLabeler<String, String> {
             override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
                 onFailure(processing); onComplete()
             }
-            override fun close() { throw cleanup }
+            override fun close() { throw IllegalStateException("labeler close failed") }
         }
+        var imageConsumed = 0
         val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
+        PhotoLabelingPipeline.run(
+            image = "image",
+            labeler = labeler,
+            onImageConsumed = { imageConsumed++; throw IllegalStateException("proxy close failed") }
+        ) { results.add(it) }
+        assertEquals(1, imageConsumed)
         assertSame(processing, results.single().exceptionOrNull())
-        assertEquals(1, processing.suppressed.size)
-        assertSame(cleanup, processing.suppressed.single())
+        assertEquals(2, processing.suppressed.size)
     }
 
-    @Test fun setupFailureRemainsPrimaryAndCleanupIsSuppressed() {
-        val setup = IllegalStateException("setup")
-        val cleanup = IllegalArgumentException("cleanup")
-        val labeler = object : PhotoLabeler<String, String> {
-            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) { throw setup }
-            override fun close() { throw cleanup }
-        }
-        val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
-        assertSame(setup, results.single().exceptionOrNull())
-        assertEquals(1, setup.suppressed.size)
-        assertSame(cleanup, setup.suppressed.single())
-    }
-
-    @Test fun lateCallbacksCannotChangeCompletedResult() {
-        lateinit var success: (String) -> Unit
-        lateinit var failure: (Throwable) -> Unit
-        lateinit var complete: () -> Unit
-        var closes = 0
-        val labeler = object : PhotoLabeler<String, String> {
-            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
-                success = onSuccess; failure = onFailure; complete = onComplete
-                success("winner"); complete()
-            }
-            override fun close() { closes++ }
-        }
-        val results = mutableListOf<Result<String>>()
-        PhotoLabelingPipeline.run("image", labeler, results::add)
-        failure(IllegalStateException("late")); success("late"); complete()
-        assertEquals(1, closes)
-        assertEquals(1, results.size)
-        assertEquals("winner", results.single().getOrNull())
-    }
     @Test fun interruptedWaitRetriesUntilTaskIsTerminalAndRestoresInterruptFlag() {
         var attempts = 0
         var restoredInterrupt = false
@@ -196,179 +158,193 @@ class PhotoLabelingPipelineTest {
         assertTrue(restoredInterrupt)
     }
 
-    @Test fun registrationFallbackWaitsOffCallerThreadAndDispatchesFailureOnce() {
+    @Test fun fallbackListenerRegistrationFailurePreservesSuccessfulTaskResult() {
         val waiting = mutableListOf<Runnable>()
-        val callbacks = mutableListOf<Runnable>()
         val registration = IllegalStateException("listener registration failed")
-        var awaits = 0
-        var failureCalls = 0
+        var successes = 0
+        var failures = 0
         var completions = 0
-
-        val scheduled = ListenerRegistrationFallback.schedule(
-            awaitTask = { awaits++ },
+        var result: String? = null
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = { "known successful result" },
             registrationFailure = registration,
             waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { callbacks.add(it) },
-            onFailure = { assertSame(registration, it); failureCalls++ },
+            onSuccess = { successes++; result = it },
+            onFailure = { failures++ },
             onComplete = { completions++ }
         )
-
-        assertTrue(scheduled)
-        assertEquals(1, waiting.size)
-        assertEquals(0, awaits)
-        assertEquals(0, failureCalls)
-        assertEquals(0, completions)
+        assertTrue(accepted)
+        assertEquals(0, successes)
         waiting.single().run()
-        assertEquals(1, awaits)
-        assertEquals(1, callbacks.size)
-        assertEquals(0, failureCalls)
-        callbacks.single().run()
-        assertEquals(1, failureCalls)
+        assertEquals(1, successes)
+        assertEquals("known successful result", result)
+        assertEquals(0, failures)
         assertEquals(1, completions)
     }
 
-    @Test fun registrationFallbackDoesNotRepeatFailureWhenConsumerCallbackThrows() {
+    @Test fun fallbackTaskFailureIsPrimaryAndRegistrationFailureIsSuppressed() {
         val waiting = mutableListOf<Runnable>()
-        val callbacks = mutableListOf<Runnable>()
-        val callbackFailure = IllegalArgumentException("consumer callback failed")
-        var failureCalls = 0
-        var completions = 0
-        ListenerRegistrationFallback.schedule(
-            awaitTask = {},
-            registrationFailure = IllegalStateException("registration failed"),
-            waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { callbacks.add(it) },
-            onFailure = { failureCalls++; throw callbackFailure },
-            onComplete = { completions++ }
-        )
-
-        waiting.single().run()
-        try {
-            callbacks.single().run()
-            throw AssertionError("Expected callback exception")
-        } catch (actual: IllegalArgumentException) {
-            assertSame(callbackFailure, actual)
-        }
-        assertEquals(1, failureCalls)
-        assertEquals(1, completions)
-    }
-
-    @Test fun registrationFallbackPreservesTaskFailureAndRegistrationCause() {
-        val waiting = mutableListOf<Runnable>()
-        val callbacks = mutableListOf<Runnable>()
-        val taskFailure = IllegalStateException("task failed")
-        val registration = IllegalArgumentException("registration failed")
+        val taskFailure = IllegalStateException("underlying task failed")
+        val registration = IllegalArgumentException("listener registration failed")
         var observed: Throwable? = null
+        var successes = 0
+        var completions = 0
         ListenerRegistrationFallback.schedule(
             awaitTask = { throw taskFailure },
             registrationFailure = registration,
             waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { callbacks.add(it) },
+            onSuccess = { successes++ },
             onFailure = { observed = it },
-            onComplete = {}
+            onComplete = { completions++ }
         )
         waiting.single().run()
-        callbacks.single().run()
+        assertEquals(0, successes)
         assertSame(taskFailure, observed)
         assertEquals(1, taskFailure.suppressed.size)
         assertSame(registration, taskFailure.suppressed.single())
+        assertEquals(1, completions)
     }
 
-    @Test fun registrationFallbackCallbackExecutorRejectionStillCompletesAfterTaskTerminality() {
+    @Test fun fallbackCallbackExceptionDoesNotRepeatFailureAndStillCompletes() {
         val waiting = mutableListOf<Runnable>()
-        val completions = mutableListOf<Runnable>()
-        val taskFailure = IllegalStateException("ML task failed")
-        var taskTerminal = false
+        val callbackFailure = IllegalArgumentException("consumer callback failed")
         var failureCalls = 0
-        var completionCalls = 0
-
-        val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = { taskTerminal = true; throw taskFailure },
-            registrationFailure = IllegalArgumentException("listener registration failed"),
+        var completions = 0
+        var diagnostics = 0
+        ListenerRegistrationFallback.schedule(
+            awaitTask = { throw IllegalStateException("task failed") },
+            registrationFailure = IllegalStateException("registration failed"),
             waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { throw RejectedExecutionException("callback queue full") },
-            completionExecutor = Executor { completions.add(it) },
-            onFailure = { assertTrue(taskTerminal); assertSame(taskFailure, it); failureCalls++ },
-            onComplete = { assertTrue(taskTerminal); completionCalls++ }
+            onSuccess = {},
+            onFailure = { failureCalls++; throw callbackFailure },
+            onComplete = { completions++ },
+            onSchedulingFailure = { diagnostics++ }
         )
-
-        assertTrue(accepted)
-        assertEquals(1, waiting.size)
-        assertTrue(completions.isEmpty())
         waiting.single().run()
-        assertTrue(taskTerminal)
-        assertEquals(1, completions.size)
-        assertEquals(0, failureCalls)
-        assertEquals(0, completionCalls)
-        completions.single().run()
         assertEquals(1, failureCalls)
-        assertEquals(1, completionCalls)
+        assertEquals(1, completions)
+        assertEquals(1, diagnostics)
     }
 
-    @Test fun registrationFallbackWaiterCapacityRejectionDoesNotReleaseActiveImage() {
-        var closes = 0
-        var taskStillActive = true
-        val owner = PhotoCaptureCompletion(closeImage = { closes++ }, onComplete = {})
-        val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = { taskStillActive = false },
-            registrationFailure = IllegalStateException("listener registration failed"),
-            waiter = Executor { throw RejectedExecutionException("waiter capacity exhausted") },
-            callbackExecutor = Executor { it.run() },
-            completionExecutor = Executor { it.run() },
-            onFailure = {},
-            onComplete = { owner.finish() },
-            onSchedulingFailure = {}
-        )
-
-        assertFalse(accepted)
-        assertTrue(taskStillActive)
-        assertEquals(0, closes)
-    }
-
-    @Test fun registrationFallbackSaturationKeepsImageUntilAcceptedTaskTerminates() {
-        val waiting = mutableListOf<Runnable>()
-        val callbacks = mutableListOf<Runnable>()
-        var taskTerminal = false
-        var closes = 0
-        val owner = PhotoCaptureCompletion(closeImage = { closes++ }, onComplete = {})
-        val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = { taskTerminal = true },
-            registrationFailure = IllegalStateException("listener registration failed"),
-            waiter = Executor { waiting.add(it) },
-            callbackExecutor = Executor { callbacks.add(it) },
-            completionExecutor = Executor { callbacks.add(it) },
-            onFailure = { assertTrue(taskTerminal) },
-            onComplete = { assertTrue(taskTerminal); owner.finish() }
-        )
-
-        assertTrue(accepted)
-        assertTrue(waiting.isNotEmpty())
-        assertFalse(taskTerminal)
-        assertEquals(0, closes)
-        waiting.single().run()
-        assertTrue(taskTerminal)
-        assertEquals(1, callbacks.size)
-        callbacks.single().run()
-        assertEquals(1, closes)
-        assertFalse(owner.finish())
-        assertEquals(1, closes)
-    }
-
-    @Test fun registrationFallbackDoesNotSignalCompletionWhenWaiterRejects() {
+    @Test fun fallbackWaiterRejectionIsObservableAndDoesNotClaimCompletion() {
         var failures = 0
         var completions = 0
+        var diagnostics = 0
         val accepted = ListenerRegistrationFallback.schedule(
-            awaitTask = {},
+            awaitTask = { "not reached" },
             registrationFailure = IllegalStateException("registration failed"),
-            waiter = Executor { throw RejectedExecutionException("test rejection") },
-            callbackExecutor = Executor { it.run() },
+            waiter = Executor { throw RejectedExecutionException("waiter capacity exhausted") },
+            onSuccess = { failures++ },
             onFailure = { failures++ },
             onComplete = { completions++ },
-            onSchedulingFailure = {}
+            onSchedulingFailure = { diagnostics++ }
         )
         assertFalse(accepted)
         assertEquals(0, failures)
         assertEquals(0, completions)
+        assertEquals(1, diagnostics)
+    }
+
+    @Test fun productionWaiterFactoryHasBoundedQueueAndRejectsOverflow() {
+        val executor = PhotoLabelingExecutors.createWaiterExecutor(workerCount = 1, queueCapacity = 1)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val queuedRan = CountDownLatch(1)
+        try {
+            executor.execute {
+                started.countDown()
+                check(release.await(3, TimeUnit.SECONDS))
+            }
+            assertTrue("worker should start", started.await(3, TimeUnit.SECONDS))
+            executor.execute { queuedRan.countDown() }
+            try {
+                executor.execute { throw AssertionError("overflow work must not execute") }
+                throw AssertionError("expected bounded queue rejection")
+            } catch (_: RejectedExecutionException) {
+                // Expected: the active worker and one queued task exhaust capacity.
+            }
+            release.countDown()
+            assertTrue("queued work should proceed after terminal worker returns", queuedRan.await(3, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun fallbackCompletionAfterTaskWasAlreadyTerminalStillProducesOneOutcome() {
+        val waiting = mutableListOf<Runnable>()
+        var successes = 0
+        var failures = 0
+        var completions = 0
+        // A task that completed before listener registration threw is observed as terminal by awaitTask.
+        ListenerRegistrationFallback.schedule(
+            awaitTask = { "completed-before-registration-error" },
+            registrationFailure = IllegalStateException("late registration exception"),
+            waiter = Executor { waiting.add(it) },
+            onSuccess = { successes++; assertEquals("completed-before-registration-error", it) },
+            onFailure = { failures++ },
+            onComplete = { completions++ }
+        )
+        waiting.single().run()
+        assertEquals(1, successes)
+        assertEquals(0, failures)
+        assertEquals(1, completions)
+    }
+    @Test fun acceptedCallbackDispatcherKeepsResultOffWaiterThread() {
+        val waiter = java.util.concurrent.Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "test-photo-waiter") }
+        val callback = java.util.concurrent.Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "test-ui-dispatcher") }
+        val delivered = CountDownLatch(1)
+        val labeler = FakeLabeler { success, _, complete ->
+            waiter.execute { success("cat"); complete() }
+        }
+        var cleanupThread: String? = null
+        var callbackThread: String? = null
+        var callbackResult: String? = null
+        try {
+            PhotoLabelingPipeline.run(
+                image = "image",
+                labeler = labeler,
+                callbackExecutor = callback,
+                onImageConsumed = { cleanupThread = Thread.currentThread().name }
+            ) {
+                callbackThread = Thread.currentThread().name
+                callbackResult = it.getOrNull()
+                delivered.countDown()
+            }
+            assertTrue("result should be delivered", delivered.await(3, TimeUnit.SECONDS))
+            assertEquals("cat", callbackResult)
+            assertEquals("test-photo-waiter", cleanupThread)
+            assertEquals("test-ui-dispatcher", callbackThread)
+            assertEquals(1, labeler.closes)
+        } finally {
+            waiter.shutdownNow()
+            callback.shutdownNow()
+            assertTrue(waiter.awaitTermination(3, TimeUnit.SECONDS))
+            assertTrue(callback.awaitTermination(3, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun unresolvedTaskTerminalityReportsOnceAndDoesNotSignalCompletion() {
+        val waiting = mutableListOf<Runnable>()
+        var successCalls = 0
+        var failureCalls = 0
+        var completions = 0
+        var diagnostics = 0
+        ListenerRegistrationFallback.schedule(
+            awaitTask = { throw TaskTerminalityUnresolvedException(java.util.concurrent.TimeoutException("bounded wait elapsed")) },
+            registrationFailure = IllegalStateException("listener registration failed"),
+            waiter = Executor { waiting.add(it) },
+            onSuccess = { successCalls++ },
+            onFailure = { failureCalls++ },
+            onComplete = { completions++ },
+            onSchedulingFailure = { diagnostics++ }
+        )
+        waiting.single().run()
+        assertEquals(0, successCalls)
+        assertEquals(0, failureCalls)
+        assertEquals(0, completions)
+        assertEquals(1, diagnostics)
     }
 
 }

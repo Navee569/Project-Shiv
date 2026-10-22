@@ -36,3 +36,29 @@ internal class PhotoCaptureCompletion(
         return true
     }
 }
+
+
+/**
+ * Production bridge between Brain's asynchronous analysis lifecycle and CameraX capture ownership.
+ * The processor calls imageConsumed only after its ML task is terminal; result/UI delivery is separate.
+ */
+internal class PhotoCaptureAnalysisAdapter(
+    private val completion: PhotoCaptureCompletion,
+    private val onDescription: (String) -> Unit,
+    private val onClose: () -> Unit
+) {
+    fun imageConsumed() {
+        completion.releaseImage()?.let { throw it }
+    }
+
+    fun descriptionReady(description: String) {
+        completion.finishSuccess {
+            onDescription(description)
+            onClose()
+        }
+    }
+
+    fun failed(failure: Throwable) {
+        completion.finish(failure)
+    }
+}

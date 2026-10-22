@@ -84,13 +84,17 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                                 if (failure != null) error = "The photo couldn’t be processed. Please try again."
                             }
                         )
+                        val adapter = PhotoCaptureAnalysisAdapter(done, onDescription, onClose)
                         try {
                             val media = proxy.image
                             if (media == null) { done.finish(IllegalStateException("Empty camera image")); return }
-                            Brain().describePhoto(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)) { description ->
-                                done.finishSuccess { onDescription(description); onClose() }
+                            Brain().describePhoto(
+                                image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees),
+                                onImageConsumed = adapter::imageConsumed
+                            ) { description ->
+                                adapter.descriptionReady(description)
                             }
-                        } catch (failure: Exception) { done.finish(failure) }
+                        } catch (failure: Exception) { adapter.failed(failure) }
                     }
                     override fun onError(exception: ImageCaptureException) {
                         working = false
