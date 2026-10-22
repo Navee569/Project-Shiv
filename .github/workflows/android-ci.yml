@@ -1,0 +1,292 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - "dev/**"
+      - "codex/shiv-complete-beta"
+  pull_request:
+    branches:
+      - main
+      - "codex/shiv-complete-beta"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build, unit tests, and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+      - name: Install Android SDK platform and build tools
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses >/dev/null
+      - name: Validate Android Studio run configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import xml.etree.ElementTree as ET
+          config = pathlib.Path(".run/App.run.xml")
+          settings = pathlib.Path("settings.gradle.kts")
+          app_build = pathlib.Path("app/build.gradle.kts")
+          assert config.is_file(), "Missing .run/App.run.xml"
+          assert settings.is_file() and app_build.is_file(), "Missing Gradle project/module files"
+          root = ET.parse(config).getroot()
+          configuration = root.find("configuration")
+          assert configuration is not None, "No run configuration found"
+          assert configuration.attrib.get("type") == "AndroidRunConfigurationType", "Unexpected run configuration type"
+          assert configuration.attrib.get("name") == "Shiv Android", "Unexpected run configuration name"
+          module = configuration.find("module")
+          assert module is not None and module.attrib.get("name") == "Shiv.app", "Run configuration module must be Shiv.app"
+          assert 'include(":app")' in settings.read_text(), "Gradle settings do not include :app"
+          assert 'applicationId = "app.shiv"' in app_build.read_text(), "Application ID mismatch"
+          print("Run configuration XML valid; Shiv.app module and app.shiv declarations agree.")
+          PY
+      - name: Record toolchain
+        run: |
+          java -version
+          ./gradlew --version
+          ./gradlew projects
+      - name: Build debug APK
+        id: build
+        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Inspect packaged APK manifest and launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -f "$APK"
+          test -s "$APK"
+          test -x "$AAPT"
+          mkdir -p app/build/reports/apk-verification
+          "$AAPT" dump badging "$APK" | tee app/build/reports/apk-verification/manifest-inspection.txt
+          grep -F "package: name='app.shiv'" app/build/reports/apk-verification/manifest-inspection.txt
+          grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
+          grep -F "label='Shiv'" app/build/reports/apk-verification/manifest-inspection.txt
+          grep -E "application-icon-[0-9]+:" app/build/reports/apk-verification/manifest-inspection.txt
+      - name: Free runner disk space for Android emulator userdata
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          echo "Disk space after cleanup:"
+          df -h /
+          available_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          required_kb=$((9 * 1024 * 1024))
+          if [ "$available_kb" -lt "$required_kb" ]; then
+            echo "Insufficient free disk for API 35 emulator userdata: available ${available_kb} KiB; require at least ${required_kb} KiB." >&2
+            exit 1
+          fi
+      - name: Enable KVM access for Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          diagnostics() {
+            echo "KVM access diagnostics for the actual workflow user:" >&2
+            id >&2 || true
+            echo "groups:" >&2
+            groups >&2 || true
+            echo "device metadata:" >&2
+            ls -l /dev/kvm >&2 || true
+            stat /dev/kvm >&2 || true
+            if command -v getfacl >/dev/null 2>&1; then getfacl -p /dev/kvm >&2 || true; fi
+            echo "mount/device context:" >&2
+            findmnt -T /dev/kvm >&2 || true
+          }
+          if [[ ! -c /dev/kvm ]]; then
+            diagnostics
+            echo "KVM device /dev/kvm is unavailable on this runner; refusing software emulation." >&2
+            exit 1
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          # udev trigger behavior differs across ephemeral hosted-runner images. Apply the
+          # intended mode to the existing device node as well, then verify real access as the
+          # unprivileged workflow user (not merely root or the device's displayed mode).
+          sudo chmod 0666 /dev/kvm
+          stat -c 'KVM mode=%a owner=%U group=%G type=%F' /dev/kvm
+          python3 - <<'PY'
+          import os
+          import sys
+          path = "/dev/kvm"
+          print(f"effective_uid={os.geteuid()} groups={os.getgroups()}")
+          print(f"readable={os.access(path, os.R_OK)} writable={os.access(path, os.W_OK)}")
+          try:
+              fd = os.open(path, os.O_RDWR | getattr(os, "O_CLOEXEC", 0))
+              os.close(fd)
+          except OSError as exc:
+              print(f"open_rw_failed={exc!r}", file=sys.stderr)
+              sys.exit(1)
+          print("PASS: workflow user opened /dev/kvm read/write.")
+          PY
+          echo "KVM device access verified for $(id -un); software-emulation fallback is prohibited."
+      - name: Test emulator device selection
+        run: bash .github/scripts/test-emulator-device-selection.sh
+      - name: Validate emulator smoke shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/emulator-smoke.sh
+          bash -n .github/scripts/emulator-device-selection.sh
+          bash -n .github/scripts/test-emulator-device-selection.sh
+          echo "PASS: emulator smoke and device-selection shell scripts parse successfully."
+      - name: Install and cold-launch APK in Android emulator
+        id: emulator_smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 25
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
+          disable-animations: true
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
+          script: bash .github/scripts/emulator-smoke.sh
+      - name: Collect emulator boot/smoke diagnostics on failure
+        if: always() && steps.emulator_smoke.outcome != 'success'
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set +e
+          mkdir -p app/build/reports/emulator-smoke
+          report="app/build/reports/emulator-smoke/boot-diagnostics.txt"
+          {
+            echo "UTC: $(date -u +%FT%TZ)"
+            echo "Runner: $(uname -a)"
+            echo "Android SDK: ${ANDROID_HOME:-unset}"
+            echo "ADB version:"
+            timeout 5s adb version 2>&1 || echo "ADB version command timed out or failed."
+            echo "ADB devices:"
+            timeout 8s adb devices -l 2>&1 || echo "ADB devices command timed out or failed."
+            echo "Emulator processes:"
+            ps -ef | grep -E '[e]mulator|[q]emu|[a]db' || true
+            echo "SDK emulator binaries:"
+            find "${ANDROID_HOME:-/nonexistent}/emulator" -maxdepth 1 -type f -name emulator -ls 2>/dev/null || true
+            echo "Device properties (if booted):"
+            timeout 8s adb shell getprop 2>&1 || echo "getprop timed out or failed; emulator may be unavailable."
+          } > "$report" 2>&1
+          timeout 8s adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || echo "logcat unavailable or timed out" > app/build/reports/emulator-smoke/boot-logcat.txt
+          timeout 8s adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || echo "crash buffer unavailable or timed out" > app/build/reports/emulator-smoke/boot-crash-buffer.txt
+          timeout 8s adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || echo "bootstat unavailable or timed out" > app/build/reports/emulator-smoke/bootstat.txt
+      - name: Run unit tests
+        if: always() && steps.build.outcome == 'success'
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - name: Run debug lint
+        if: always() && steps.build.outcome == 'success'
+        run: ./gradlew :app:lintDebug --stacktrace
+      - name: Verify final packaged APK evidence
+        if: always() && steps.build.outcome == 'success'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CHECKED_OUT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          REPORT="app/build/reports/apk-verification"
+          test -s "$APK"
+          mkdir -p "$REPORT"
+          "$AAPT" dump badging "$APK" > "$REPORT/manifest-inspection-final.txt"
+          python3 - "$APK" "$REPORT/manifest-inspection-final.txt" "$REPORT/apk-evidence.json" <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+
+          apk = pathlib.Path(sys.argv[1])
+          badging_path = pathlib.Path(sys.argv[2])
+          output_path = pathlib.Path(sys.argv[3])
+          badging = badging_path.read_text()
+          package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']*)'", badging, re.M)
+          launcher = re.search(r"^launchable-activity: name='([^']+)'", badging, re.M)
+          label = re.search(r"^application-label:'([^']*)'", badging, re.M)
+          min_sdk = re.search(r"^sdkVersion:'([^']+)'", badging, re.M)
+          has_icon = re.search(r"^application-icon-[0-9]+:", badging, re.M) is not None
+          assert package, "Could not parse APK package/version metadata"
+          assert package.group(1) == "app.shiv", f"Unexpected applicationId: {package.group(1)}"
+          assert package.group(2) == "1", f"Unexpected versionCode: {package.group(2)}"
+          assert package.group(3) == "0.1.0", f"Unexpected versionName: {package.group(3)}"
+          assert launcher and launcher.group(1) == "app.shiv.MainActivity", "Launcher activity mismatch"
+          assert label and label.group(1) == "Shiv", "Application label mismatch"
+          assert min_sdk and min_sdk.group(1) == "26", "Minimum SDK mismatch"
+          assert has_icon, "APK has no application-icon entry"
+          binary = apk.read_bytes()
+          evidence = {
+              "source_sha": os.environ["SOURCE_SHA"],
+              "checked_out_sha": os.environ["CHECKED_OUT_SHA"],
+              "apk_path": str(apk),
+              "apk_sha256": hashlib.sha256(binary).hexdigest(),
+              "apk_size_bytes": len(binary),
+              "application_id": package.group(1),
+              "version_code": int(package.group(2)),
+              "version_name": package.group(3),
+              "min_sdk": int(min_sdk.group(1)),
+              "launcher_activity": launcher.group(1),
+              "application_label": label.group(1),
+              "has_application_icon": has_icon,
+          }
+          output_path.write_text(json.dumps(evidence, indent=2) + "\n")
+          (output_path.parent / "apk-sha256.txt").write_text(evidence["apk_sha256"] + "  " + str(apk) + "\n")
+          (output_path.parent / "apk-size.txt").write_text(f"APK bytes: {len(binary)}\n")
+          print(json.dumps(evidence, indent=2))
+          PY
+      - name: Upload exact-run debug APK binary
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-debug-apk-${{ github.event_name }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/output-metadata.json
+            app/build/reports/apk-verification/apk-evidence.json
+            app/build/reports/apk-verification/apk-sha256.txt
+            app/build/reports/apk-verification/apk-size.txt
+            app/build/reports/apk-verification/manifest-inspection-final.txt
+      - name: Upload build and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-android-verification-reports
+          if-no-files-found: warn
+          path: |
+            app/build/reports/**
+            app/build/test-results/**
+            app/build/outputs/apk/debug/output-metadata.json
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/apk-verification/**
+            app/build/reports/emulator-smoke/**
