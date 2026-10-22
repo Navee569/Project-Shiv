@@ -101,9 +101,11 @@ interface ShivDao {
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
     @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
+    @Query("SELECT EXISTS(SELECT 1 FROM events WHERE lower(title) = lower(:title) AND startsAt = :startsAt)") suspend fun hasEventForTitleAndStart(title: String, startsAt: Long): Boolean
     @Query("SELECT * FROM events ORDER BY startsAt LIMIT :limit OFFSET :offset") suspend fun eventsPage(limit: Int, offset: Int): List<EventRecord>
     @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
     @Query("SELECT * FROM pending_events WHERE id = :id") suspend fun pendingEvent(id: String): PendingEventRecord?
+    @Query("SELECT EXISTS(SELECT 1 FROM pending_events WHERE lower(title) = lower(:title) AND startsAt = :startsAt)") suspend fun hasPendingEventForTitleAndStart(title: String, startsAt: Long): Boolean
     @Query("SELECT * FROM pending_events ORDER BY startsAt") suspend fun allPendingEvents(): List<PendingEventRecord>
     @Query("SELECT * FROM pending_events ORDER BY startsAt LIMIT :limit OFFSET :offset") suspend fun pendingEventsPage(limit: Int, offset: Int): List<PendingEventRecord>
     @Insert suspend fun addPendingEvent(value: PendingEventRecord)
