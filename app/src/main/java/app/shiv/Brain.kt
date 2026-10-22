@@ -25,10 +25,15 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import org.json.JSONObject
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.RejectedExecutionException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 enum class ActionTier { FREE, ACT_THEN_TELL, ASK_FIRST }
@@ -81,6 +86,13 @@ class Brain(private val appContext: Context? = null) : BrainPort {
         private set
     val runtimeStatus = kotlinx.coroutines.flow.MutableStateFlow(BrainRuntimeStatus())
     private val inferenceQueue = PrioritizedInferenceQueue { publishRuntimeStatus() }
+
+    /** Close only non-process-wide instances; BrainProvider keeps the shared instance alive. */
+    suspend fun close() {
+        inferenceQueue.close()
+        modelLock.lock()
+        try { closeEngine() } finally { modelLock.unlock() }
+    }
 
     private fun publishRuntimeStatus() {
         runtimeStatus.value = BrainRuntimeStatus(
@@ -536,61 +548,63 @@ object BrainProvider {
 
 /** Single-consumer inference queue: urgent user requests outrank ordinary chat, which outranks
  * background proactive checks. Expired work is answered safely instead of blocking indefinitely. */
-private class PrioritizedInferenceQueue(private val onChanged: () -> Unit) {
+internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {}) : AutoCloseable {
     private data class Task(
-        val priority: Int,
-        val sequence: Long,
-        val createdAt: Long,
-        val staleAfterMillis: Long,
+        val priority: Int, val sequence: Long, val createdAt: Long, val staleAfterMillis: Long,
+        val isCancelled: () -> Boolean, val cancelResult: (CancellationException) -> Unit,
         val execute: suspend () -> Unit
     )
-
     private val sequence = AtomicLong()
     private val tasks = PriorityBlockingQueue<Task>(11, compareByDescending<Task> { it.priority }.thenBy { it.sequence })
     private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var closed = false
     @Volatile var isRunning: Boolean = false
         private set
     val queuedCount: Int get() = tasks.size
-
-    init {
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            for (ignored in wake) {
-                while (true) {
-                    val task = tasks.poll() ?: break
-                    isRunning = true
-                    onChanged()
-                    try { task.execute() } finally {
-                        isRunning = false
-                        onChanged()
-                    }
-                }
+    private val worker = workerScope.launch {
+        for (ignored in wake) {
+            while (true) {
+                val task = tasks.poll() ?: break
+                if (task.isCancelled()) continue
+                isRunning = true
+                onChanged()
+                try { task.execute() }
+                catch (_: CancellationException) { /* Per-request cancellation must not kill the consumer. */ }
+                catch (_: Throwable) { /* Isolate task failures. */ }
+                finally { isRunning = false; onChanged() }
             }
         }
     }
-
-    suspend fun <T> submit(
-        priority: Int,
-        staleAfterMillis: Long,
-        staleValue: () -> T,
-        block: suspend () -> T
-    ): T {
+    suspend fun <T> submit(priority: Int, staleAfterMillis: Long, staleValue: () -> T, block: suspend () -> T): T {
+        check(!closed) { "Inference queue is closed" }
+        if (tasks.size >= MAX_QUEUED) throw RejectedExecutionException("Local inference queue is full")
         val result = CompletableDeferred<T>()
         val createdAt = System.currentTimeMillis()
-        val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis) {
-            if (result.isCancelled) return@Task
-            if (System.currentTimeMillis() - createdAt > staleAfterMillis) {
-                result.complete(staleValue())
-            } else {
-                try { result.complete(block()) }
-                catch (failure: Throwable) {
-                    result.completeExceptionally(failure)
-                    if (failure is kotlinx.coroutines.CancellationException) throw failure
-                }
+        val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis,
+            isCancelled = { result.isCancelled }, cancelResult = { result.cancel(it) },
+            execute = {
+                if (result.isCancelled) return@Task
+                if (System.currentTimeMillis() - createdAt > staleAfterMillis) result.complete(staleValue())
+                else try { result.complete(block()) }
+                catch (failure: CancellationException) { result.cancel(failure) }
+                catch (failure: Throwable) { result.completeExceptionally(failure) }
+            })
+        tasks.add(task); onChanged(); wake.trySend(Unit)
+        try { return result.await() }
+        finally {
+            if (!currentCoroutineContext().isActive) {
+                val cancelled = CancellationException("Inference caller cancelled")
+                result.cancel(cancelled); tasks.remove(task); wake.trySend(Unit); onChanged()
             }
         }
-        tasks.add(task)
-        onChanged()
-        wake.trySend(Unit)
-        return result.await()
     }
+    override fun close() {
+        if (closed) return
+        closed = true; wake.close()
+        val cancelled = CancellationException("Inference queue closed")
+        tasks.toList().forEach { if (tasks.remove(it)) it.cancelResult(cancelled) }
+        worker.cancel(cancelled); workerScope.cancel(cancelled); onChanged()
+    }
+    private companion object { const val MAX_QUEUED = 32 }
 }

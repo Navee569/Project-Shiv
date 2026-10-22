@@ -119,7 +119,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                         try {
                             val media = proxy.image
                             if (media == null) { done.finish(IllegalStateException("Empty camera image")); return }
-                            Brain().describePhoto(
+                            BrainProvider.get(context.applicationContext).describePhoto(
                                 image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees),
                                 onImageConsumed = adapter::imageConsumed,
                                 onAnalysisUnresolved = adapter::analysisUnresolved

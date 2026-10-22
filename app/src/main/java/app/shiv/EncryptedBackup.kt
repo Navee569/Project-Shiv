@@ -23,6 +23,7 @@ class EncryptedBackup(context: Context) {
     suspend fun export(uri: Uri, passphrase: CharArray) = withContext(Dispatchers.IO) {
         require(passphrase.size >= 12) { "Use a passphrase with at least 12 characters." }
         val payload = makeSnapshot().toString().toByteArray(Charsets.UTF_8)
+        require(payload.size <= MAX_BACKUP_BYTES - HEADER_AND_TAG_BYTES) { "This backup is too large to export safely." }
         val salt = ByteArray(16).also(SecureRandom()::nextBytes)
         val iv = ByteArray(12).also(SecureRandom()::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -38,7 +39,7 @@ class EncryptedBackup(context: Context) {
 
     suspend fun restore(uri: Uri, passphrase: CharArray) = withContext(Dispatchers.IO) {
         val packed = app.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Could not open the selected backup file." }.use { it.readBytes() }
+            requireNotNull(input) { "Could not open the selected backup file." }.use { readBoundedBytes(it, MAX_BACKUP_BYTES) }
         }
         require(packed.size in (MAGIC.size + 16 + 12 + 16)..MAX_BACKUP_BYTES) { "This backup file has an invalid size." }
         require(packed.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) { "This is not a Shiv encrypted backup." }
@@ -119,5 +120,6 @@ class EncryptedBackup(context: Context) {
     private companion object {
         val MAGIC = "SHIVBK01".toByteArray(Charsets.US_ASCII)
         const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
+        const val HEADER_AND_TAG_BYTES = 8 + 16 + 12 + 16
     }
 }

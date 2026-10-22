@@ -49,7 +49,6 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             reminderLeadMinutes.value = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
             if (dao.profileOnce() == null) dao.saveProfile(UserProfile())
             if (dao.settingsOnce() == null) dao.saveSettings(ShivSettings())
-            ProactiveWorker.schedule(getApplication())
             refreshModelStatus()
         }
     }
@@ -206,10 +205,8 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun configuredTier(key: String, minimum: ActionTier): ActionTier {
-        val saved = actionTiers.value.firstOrNull { it.actionKey == key }?.tier?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() } ?: minimum
-        return if (saved.ordinal < minimum.ordinal) minimum else saved
-    }
+    private fun configuredTier(key: String, minimum: ActionTier): ActionTier =
+        ActionTierPolicy.resolve(actionTiers.value.firstOrNull { it.actionKey == key }?.tier, defaultTier = minimum, minimum = minimum)
 
     private suspend fun saveEvent(event: EventRecord, tier: ActionTier) {
         dao.saveEvent(event)
