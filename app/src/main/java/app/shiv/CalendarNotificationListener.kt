@@ -5,6 +5,7 @@ import android.service.notification.StatusBarNotification
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -49,7 +50,7 @@ class CalendarNotificationListener : NotificationListenerService() {
 private fun CalendarNotificationListener.notifySavedEvent(event: EventRecord) {
     if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
     if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-    val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     val channel = "shiv_event_saved"
     if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(channel, "Saved events", NotificationManager.IMPORTANCE_DEFAULT))
     val date = android.text.format.DateFormat.format("EEE, MMM d · h:mm a", event.startsAt)
