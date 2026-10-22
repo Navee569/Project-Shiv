@@ -32,15 +32,30 @@ class CalendarNotificationListener : NotificationListenerService() {
         scope.launch {
             val dao = ShivDatabase.get(applicationContext).dao()
             val tier = ActionTierPolicy.resolve(dao.actionTier("CREATE_EVENT"))
-            if (tier == ActionTier.ASK_FIRST) {
-                PendingEventConfirmation.request(applicationContext, event, source = "NOTIFICATION")
-            } else {
-                dao.saveEvent(event)
-                dao.logAction(ActionLogEntry(action = "Saved an event from a notification", tier = tier.name, outcome = event.title))
-                val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
-                AlarmScheduler.schedule(applicationContext, event, lead)
-                if (tier == ActionTier.ACT_THEN_TELL) notifySavedEvent(event)
+            val sink = object : NotificationEventSink {
+                override suspend fun isDuplicate(candidate: EventRecord): Boolean =
+                    dao.hasEventForTitleAndStart(candidate.title, candidate.startsAt) ||
+                        dao.hasPendingEventForTitleAndStart(candidate.title, candidate.startsAt)
+
+                override suspend fun createPendingConfirmation(candidate: EventRecord) {
+                    PendingEventConfirmation.request(applicationContext, candidate, source = "NOTIFICATION")
+                }
+
+                override suspend fun saveEvent(candidate: EventRecord) {
+                    dao.saveEvent(candidate)
+                    dao.logAction(ActionLogEntry(action = "Saved an event from a notification", tier = tier.name, outcome = candidate.title))
+                }
+
+                override suspend fun scheduleReminder(candidate: EventRecord) {
+                    val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
+                    AlarmScheduler.schedule(applicationContext, candidate, lead)
+                }
+
+                override suspend fun notifySavedEvent(candidate: EventRecord) {
+                    this@CalendarNotificationListener.notifySavedEvent(candidate)
+                }
             }
+            orchestrateNotificationEvent(event, tier, sink)
         }
         // The notification is only a transient input; only a parsed event is persisted.
     }
