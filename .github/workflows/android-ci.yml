@@ -199,6 +199,10 @@ jobs:
           timeout 8s adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || echo "logcat unavailable or timed out" > app/build/reports/emulator-smoke/boot-logcat.txt
           timeout 8s adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || echo "crash buffer unavailable or timed out" > app/build/reports/emulator-smoke/boot-crash-buffer.txt
           timeout 8s adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || echo "bootstat unavailable or timed out" > app/build/reports/emulator-smoke/bootstat.txt
+      - name: Run inference queue tests first
+        id: queue_tests
+        if: always() && steps.build.outcome == 'success'
+        run: ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --stacktrace
       - name: Run unit tests
         if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
@@ -328,8 +332,13 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses >/dev/null
       - name: Build exact-source APK
+        id: exact_build
         run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Run exact-source inference queue tests first
+        if: always() && steps.exact_build.outcome == 'success'
+        run: ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --stacktrace
       - name: Run exact-source unit tests
+        if: always() && steps.exact_build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Run exact-source lint
         run: ./gradlew :app:lintDebug --stacktrace
