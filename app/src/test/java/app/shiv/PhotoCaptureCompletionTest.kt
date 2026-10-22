@@ -273,4 +273,37 @@ class PhotoCaptureCompletionTest {
         assertEquals(1, closes)
         assertEquals(1, callbacks)
     }
+
+    @Test
+    fun unresolvedAnalysisAbandonsUiButRetainsImageUntilTaskActuallyCompletes() {
+        var closes = 0
+        var completions = 0
+        var descriptions = 0
+        var closeRequests = 0
+        var unresolvedWarnings = 0
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { completions++ }
+        )
+        val adapter = PhotoCaptureAnalysisAdapter(
+            completion = completion,
+            onDescription = { descriptions++ },
+            onClose = { closeRequests++ },
+            onAnalysisUnresolved = { unresolvedWarnings++ }
+        )
+
+        adapter.analysisUnresolved(TaskTerminalityUnresolvedException(java.util.concurrent.TimeoutException()))
+        assertEquals(1, unresolvedWarnings)
+        assertEquals(0, closes)
+        assertEquals(0, completions)
+
+        // This is the later, actual task-terminal signal from the pipeline.
+        adapter.imageConsumed()
+        adapter.descriptionReady("late result")
+        assertEquals(1, closes)
+        assertEquals(1, completions)
+        assertEquals(0, descriptions)
+        assertEquals(0, closeRequests)
+    }
+
 }
