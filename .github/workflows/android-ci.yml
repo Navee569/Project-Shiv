@@ -341,6 +341,7 @@ jobs:
         if: always() && steps.exact_build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Run exact-source lint
+        if: always() && steps.exact_build.outcome == 'success'
         run: ./gradlew :app:lintDebug --stacktrace
       - name: Prepare emulator runner
         shell: bash
@@ -351,6 +352,7 @@ jobs:
           sudo chmod 0666 /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
       - name: Strict exact-source emulator smoke
+        if: always() && steps.exact_build.outcome == 'success'
         id: exact_emulator
         uses: reactivecircus/android-emulator-runner@v2
         timeout-minutes: 25
@@ -367,6 +369,7 @@ jobs:
           heap-size: 512M
           script: bash .github/scripts/emulator-smoke.sh
       - name: Verify exact-source APK provenance
+        if: always() && steps.exact_build.outcome == 'success'
         shell: bash
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
