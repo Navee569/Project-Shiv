@@ -24,7 +24,7 @@ class ListeningService : Service() {
     private var transcriber: Brain.OnDeviceTranscriber? = null
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val brain = Brain()
+    private val brain by lazy { BrainProvider.get(applicationContext) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 

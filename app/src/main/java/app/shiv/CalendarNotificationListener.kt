@@ -32,7 +32,7 @@ class CalendarNotificationListener : NotificationListenerService() {
             val dao = ShivDatabase.get(applicationContext).dao()
             val tier = ActionTierPolicy.resolve(dao.actionTier("CREATE_EVENT"))
             if (tier == ActionTier.ASK_FIRST) {
-                PendingEventConfirmation.request(applicationContext, event)
+                PendingEventConfirmation.request(applicationContext, event, source = "NOTIFICATION")
             } else {
                 dao.saveEvent(event)
                 dao.logAction(ActionLogEntry(action = "Saved an event from a notification", tier = tier.name, outcome = event.title))

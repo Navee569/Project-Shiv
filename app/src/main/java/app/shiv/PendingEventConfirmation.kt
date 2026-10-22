@@ -21,7 +21,7 @@ object PendingEventConfirmation {
     private const val CHANNEL = "shiv_event_confirmation"
     private const val ACTION_SAVE = "app.shiv.CONFIRM_EVENT_SAVE"
 
-    suspend fun request(context: Context, event: EventRecord) {
+    suspend fun request(context: Context, event: EventRecord, source: String = "LISTENING") {
         val dao = ShivDatabase.get(context.applicationContext).dao()
         dao.addPendingEvent(PendingEventRecord(id = event.id, title = event.title, startsAt = event.startsAt, place = event.place, person = event.person))
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
@@ -36,6 +36,7 @@ object PendingEventConfirmation {
         val confirm = Intent(context, PendingEventReceiver::class.java).apply {
             action = ACTION_SAVE
             putExtra("eventId", event.id)
+            putExtra("eventSource", source)
         }
         val action = PendingIntent.getBroadcast(context, event.id.hashCode(), confirm, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val date = android.text.format.DateFormat.format("EEE, MMM d · h:mm a", event.startsAt)
@@ -69,7 +70,7 @@ class PendingEventReceiver : BroadcastReceiver() {
                     dao.deletePendingEvent(candidate.id)
                     return@launch
                 }
-                val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
+                val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = intent.getStringExtra("eventSource")?.takeIf { it == "NOTIFICATION" } ?: "LISTENING", createdAt = candidate.createdAt)
                 dao.saveEvent(event)
                 dao.deletePendingEvent(candidate.id)
                 val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
