@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 object PendingEventConfirmation {
     private const val CHANNEL = "shiv_event_confirmation"
     private const val ACTION_SAVE = "app.shiv.CONFIRM_EVENT_SAVE"
+    private const val ACTION_DISMISS = "app.shiv.CONFIRM_EVENT_DISMISS"
 
     suspend fun request(context: Context, event: EventRecord, source: String = "LISTENING") {
         val dao = ShivDatabase.get(context.applicationContext).dao()
@@ -39,12 +40,21 @@ object PendingEventConfirmation {
             putExtra("eventSource", source)
         }
         val action = PendingIntent.getBroadcast(context, event.id.hashCode(), confirm, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val dismissIntent = Intent(context, PendingEventReceiver::class.java).apply {
+            action = ACTION_DISMISS
+            putExtra("eventId", event.id)
+        }
+        val dismissAction = PendingIntent.getBroadcast(
+            context, event.id.hashCode() xor Int.MIN_VALUE, dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val date = android.text.format.DateFormat.format("EEE, MMM d · h:mm a", event.startsAt)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Shiv heard a possible commitment")
             .setContentText("${event.title} · $date")
             .addAction(0, "Confirm & save", action)
+            .setDeleteIntent(dismissAction)
             .setAutoCancel(true)
             .build()
         try {
@@ -55,16 +65,24 @@ object PendingEventConfirmation {
     }
 
     internal fun isSaveAction(action: String?) = action == ACTION_SAVE
+    internal fun isDismissAction(action: String?) = action == ACTION_DISMISS
 }
 
 class PendingEventReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (!PendingEventConfirmation.isSaveAction(intent.action)) return
+        val save = PendingEventConfirmation.isSaveAction(intent.action)
+        val dismiss = PendingEventConfirmation.isDismissAction(intent.action)
+        if (!save && !dismiss) return
         val eventId = intent.getStringExtra("eventId") ?: return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val dao = ShivDatabase.get(context.applicationContext).dao()
+                if (dismiss) {
+                    dao.deletePendingEvent(eventId)
+                    NotificationManagerCompat.from(context).cancel(eventId.hashCode())
+                    return@launch
+                }
                 val candidate = dao.pendingEvent(eventId) ?: return@launch
                 if (candidate.title.length !in 2..120 || candidate.startsAt !in System.currentTimeMillis()..(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000L)) {
                     dao.deletePendingEvent(candidate.id)
