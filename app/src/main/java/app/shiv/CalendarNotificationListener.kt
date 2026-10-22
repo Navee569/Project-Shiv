@@ -15,10 +15,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Optional user-enabled listener. Notification text is inspected in memory and never stored. */
 class CalendarNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val eventMutex = Mutex()
     private val brain by lazy { BrainProvider.get(applicationContext) }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -30,6 +33,7 @@ class CalendarNotificationListener : NotificationListenerService() {
         if (transientText.isBlank()) return
         val event = brain.extractEvent(transientText, source = "NOTIFICATION") ?: return
         scope.launch {
+            eventMutex.withLock {
             val dao = ShivDatabase.get(applicationContext).dao()
             val tier = ActionTierPolicy.resolve(dao.actionTier("CREATE_EVENT"))
             val sink = object : NotificationEventSink {
@@ -56,6 +60,7 @@ class CalendarNotificationListener : NotificationListenerService() {
                 }
             }
             orchestrateNotificationEvent(event, tier, sink)
+            }
         }
         // The notification is only a transient input; only a parsed event is persisted.
     }
