@@ -201,47 +201,36 @@ run_bounded pm-clear 30 adb -s "$DEVICE_SERIAL" shell pm clear app.shiv
 grep -F "Success" "$REPORT/pm-clear.txt"
 run_bounded force-stop 30 adb -s "$DEVICE_SERIAL" shell am force-stop app.shiv
 run_bounded logcat-clear 20 adb -s "$DEVICE_SERIAL" logcat -c
+
+# Preserve both the command's exit status and the exact ActivityManager result.
+# A PID or visible activity never overrides Status: timeout.
 launch_command_status=0
 if run_bounded launch 60 adb -s "$DEVICE_SERIAL" shell am start -W -n app.shiv/.MainActivity; then
   launch_command_status=0
 else
   launch_command_status=$?
 fi
-if [ "$launch_command_status" -ne 0 ] || ! grep -Eq '^Status: ok
-sleep 5
-run_bounded process 20 adb -s "$DEVICE_SERIAL" shell pidof app.shiv
-test -s "$REPORT/process.txt"
-if ! grep -Eq '[0-9]+' "$REPORT/process.txt"; then
-  echo "Application PID was empty." >&2
-  exit 1
-fi
-run_bounded activities 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities
-grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
-run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -d -t 6000
-run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d
-if grep -E "FATAL EXCEPTION|Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
-  echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
-  exit 1
-fi
-printf 'PASS: install, clear-data, cold-launch, PID, activity, crash and ANR assertions completed.\n' | tee "$REPORT/smoke-summary.txt"
- "$REPORT/launch.txt"; then
+if [ "$launch_command_status" -ne 0 ] || ! grep -Fxq 'Status: ok' "$REPORT/launch.txt"; then
   capture_launch_diagnostics failure
-  echo "Cold launch failed: am start must return Status: ok. A timeout is not accepted." >&2
+  echo "Cold launch failed: am start must exit zero and report exactly 'Status: ok'. Status: timeout is a failure." >&2
   exit 1
 fi
+
 sleep 5
 run_bounded process 20 adb -s "$DEVICE_SERIAL" shell pidof app.shiv
 test -s "$REPORT/process.txt"
-if ! grep -Eq '[0-9]+' "$REPORT/process.txt"; then
+grep -Eq '[0-9]+' "$REPORT/process.txt" || {
   echo "Application PID was empty." >&2
   exit 1
-fi
+}
 run_bounded activities 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities
 grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
-run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -d -t 6000
-run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d
+run_bounded top-activity 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity top
+grep -F "app.shiv/.MainActivity" "$REPORT/top-activity.txt"
+run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 6000
+run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d -v threadtime
 if grep -E "FATAL EXCEPTION|Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
   echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
   exit 1
 fi
-printf 'PASS: install, clear-data, cold-launch, PID, activity, crash and ANR assertions completed.\n' | tee "$REPORT/smoke-summary.txt"
+printf 'PASS: install, clear-data, strict cold-launch, PID, activity, crash and ANR assertions completed.\n' | tee "$REPORT/smoke-summary.txt"
