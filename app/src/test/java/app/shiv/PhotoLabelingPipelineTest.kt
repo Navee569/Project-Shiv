@@ -347,4 +347,63 @@ class PhotoLabelingPipelineTest {
         assertEquals(1, diagnostics)
     }
 
+    @Test fun concurrentListenerAndFallbackTerminalCallbacksCloseAndDeliverExactlyOnce() {
+        val labeler = FakeLabeler { _, _, _ -> }
+        lateinit var success: (String) -> Unit
+        lateinit var complete: () -> Unit
+        // Replace the no-op fake with a controlled callback holder for both completion paths.
+        val controlled = object : PhotoLabeler<String, String> {
+            override fun process(image: String, onSuccess: (String) -> Unit, onFailure: (Throwable) -> Unit, onComplete: () -> Unit) {
+                success = onSuccess
+                complete = onComplete
+            }
+            override fun close() { labeler.close() }
+        }
+        val results = java.util.Collections.synchronizedList(mutableListOf<Result<String>>())
+        PhotoLabelingPipeline.run("image", controlled) { results.add(it) }
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val listener = Thread {
+            ready.countDown()
+            start.await()
+            success("listener result")
+            complete()
+        }
+        val fallback = Thread {
+            ready.countDown()
+            start.await()
+            success("fallback result")
+            complete()
+        }
+        listener.start()
+        fallback.start()
+        assertTrue(ready.await(3, TimeUnit.SECONDS))
+        start.countDown()
+        listener.join(3000)
+        fallback.join(3000)
+        assertFalse(listener.isAlive)
+        assertFalse(fallback.isAlive)
+        assertEquals(1, labeler.closes)
+        assertEquals(1, results.size)
+        assertTrue(results.single().isSuccess)
+    }
+
+    @Test fun interruptSafeAwaitRestoresRealThreadInterruptStatus() {
+        val restored = java.util.concurrent.atomic.AtomicBoolean(false)
+        val thread = Thread {
+            var attempts = 0
+            val value = InterruptSafeAwait.await {
+                attempts++
+                if (attempts == 1) throw InterruptedException("controlled interruption")
+                "terminal"
+            }
+            assertEquals("terminal", value)
+            restored.set(Thread.currentThread().isInterrupted)
+        }
+        thread.start()
+        thread.join(3000)
+        assertFalse(thread.isAlive)
+        assertTrue(restored.get())
+    }
+
 }
