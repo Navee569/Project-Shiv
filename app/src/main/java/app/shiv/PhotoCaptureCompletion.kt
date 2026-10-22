@@ -83,7 +83,8 @@ internal class PhotoCaptureAnalysisAdapter(
     private val completion: PhotoCaptureCompletion,
     private val onDescription: (String) -> Unit,
     private val onClose: () -> Unit,
-    private val onAnalysisUnresolved: (Throwable) -> Unit = {}
+    private val onAnalysisUnresolved: (Throwable) -> Unit = {},
+    private val onUiAbandoned: () -> Unit = {}
 ) {
     private val stateLock = Any()
     private var uiAbandoned = false
@@ -91,7 +92,14 @@ internal class PhotoCaptureAnalysisAdapter(
 
     /** Stop delivering late UI effects without violating ownership of an in-flight ML task. */
     fun abandonUi() {
-        synchronized(stateLock) { uiAbandoned = true }
+        val shouldNotify = synchronized(stateLock) {
+            if (uiAbandoned || resultDelivered) false
+            else {
+                uiAbandoned = true
+                true
+            }
+        }
+        if (shouldNotify) onUiAbandoned()
     }
 
     /**
@@ -106,7 +114,10 @@ internal class PhotoCaptureAnalysisAdapter(
                 true
             }
         }
-        if (shouldNotify) onAnalysisUnresolved(failure)
+        if (shouldNotify) {
+            onUiAbandoned()
+            onAnalysisUnresolved(failure)
+        }
     }
 
     fun imageConsumed() {
