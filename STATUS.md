@@ -298,3 +298,12 @@ Still NOT VERIFIED or BLOCKED:
 QA could not run Android tooling or a device/emulator in its inspection environment. Do not infer these gates from CI success, APK metadata, or helper tests.
 
 **M0 decision: NOT ACCEPTED.** PR #1 remains open/draft and unmerged. Do not approve/merge or start the next milestone until the mandatory IDE, binary-manifest, and device/runtime evidence is supplied and independently reviewed.
+
+
+## Follow-up: automated APK manifest gate added — 2026-10-22
+
+After independent retest of `eb218cbb02a6f501dd456b9e70b6da25170b772b`, the QA report confirmed all CI tasks and seven unit tests pass but identified binary APK manifest/launcher inspection as a mandatory gap. The CI workflow has now been extended to run Android Build Tools `aapt dump badging` against the assembled debug APK and fail unless it identifies package `app.shiv` and launchable activity `app.shiv.MainActivity`. The inspection output is collected as an artifact.
+
+**Verification status:** This is a workflow change, not yet verified evidence. The new workflow must complete on its own exact commit; inspect its logs and uploaded manifest report before marking the automated binary-manifest check PASS. This does not verify Android Studio sync/run configuration, installation/cold launch, camera permission behaviour, preview/capture, ML Kit inference, or real asynchronous ImageProxy lifetime. Those remain NOT VERIFIED/BLOCKED.
+
+**M0 remains NOT ACCEPTED.** Preserve PR #1 as open and unmerged until all mandatory criteria have independently verifiable evidence.

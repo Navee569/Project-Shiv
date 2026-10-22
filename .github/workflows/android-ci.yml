@@ -59,6 +59,19 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
+      - name: Inspect packaged APK manifest and launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -f "$APK"
+          test -x "$AAPT"
+          mkdir -p app/build/reports/apk-verification
+          "$AAPT" dump badging "$APK" | tee app/build/reports/apk-verification/manifest-inspection.txt
+          grep -F "package: name='app.shiv'" app/build/reports/apk-verification/manifest-inspection.txt
+          grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
+
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
@@ -76,3 +89,4 @@ jobs:
             app/build/test-results/**
             app/build/outputs/apk/debug/output-metadata.json
             app/build/outputs/apk/debug/*.apk
+            app/build/reports/apk-verification/**
