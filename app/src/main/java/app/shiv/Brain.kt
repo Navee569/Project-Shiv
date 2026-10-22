@@ -25,8 +25,12 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import org.json.JSONObject
 import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.RejectedExecutionException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -552,7 +556,7 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
     private data class Task(
         val priority: Int, val sequence: Long, val createdAt: Long, val staleAfterMillis: Long,
         val isCancelled: () -> Boolean, val cancelResult: (CancellationException) -> Unit,
-        val execute: suspend () -> Unit
+        val cancelRunning: () -> Unit, val execute: suspend () -> Unit
     )
     private val sequence = AtomicLong()
     // Admission and shutdown share one lock: no submitter can enqueue after close drains the queue.
@@ -580,18 +584,27 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
     }
     suspend fun <T> submit(priority: Int, staleAfterMillis: Long, staleValue: () -> T, block: suspend () -> T): T {
         val result = CompletableDeferred<T>()
+        val runningJob = AtomicReference<Job?>(null)
         val createdAt = System.currentTimeMillis()
         val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis,
             isCancelled = { result.isCancelled }, cancelResult = { result.cancel(it) },
+            cancelRunning = { runningJob.get()?.cancel(CancellationException("Inference caller cancelled")) },
             execute = {
                 if (!result.isCancelled) {
+                    val execution = workerScope.async(start = CoroutineStart.LAZY) {
+                        if (System.currentTimeMillis() - createdAt > staleAfterMillis) staleValue() else block()
+                    }
+                    runningJob.set(execution)
+                    if (result.isCancelled) execution.cancel()
+                    execution.start()
                     try {
-                        val value = if (System.currentTimeMillis() - createdAt > staleAfterMillis) staleValue() else block()
-                        result.complete(value)
+                        result.complete(execution.await())
                     } catch (failure: CancellationException) {
                         result.cancel(failure)
                     } catch (failure: Throwable) {
                         result.completeExceptionally(failure)
+                    } finally {
+                        runningJob.compareAndSet(execution, null)
                     }
                 }
             })
@@ -606,7 +619,7 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
         finally {
             if (!currentCoroutineContext().isActive) {
                 val cancelled = CancellationException("Inference caller cancelled")
-                result.cancel(cancelled); tasks.remove(task); wake.trySend(Unit); onChanged()
+                result.cancel(cancelled); tasks.remove(task); task.cancelRunning(); wake.trySend(Unit); onChanged()
             }
         }
     }
@@ -623,5 +636,6 @@ internal class PrioritizedInferenceQueue(private val onChanged: () -> Unit = {})
         workerScope.cancel(cancelled)
         onChanged()
     }
+    // MAX_QUEUED caps waiting tasks only; the single active inference is separately bounded to one.
     private companion object { const val MAX_QUEUED = 32 }
 }
