@@ -105,6 +105,8 @@ jobs:
           cores: 2
           ram-size: 2048M
           heap-size: 512M
+          # Keep userdata below the runner's available disk space; default API 35 userdata needs >7 GB.
+          disk-size: 4096M
           script: |
             set -euo pipefail
             mkdir -p app/build/reports/emulator-smoke
