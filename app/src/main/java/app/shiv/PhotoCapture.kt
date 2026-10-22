@@ -85,10 +85,11 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 cameraController.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
                     override fun onCaptureSuccess(proxy: androidx.camera.core.ImageProxy) {
+                        val uiActive = java.util.concurrent.atomic.AtomicBoolean(true)
                         val done = PhotoCaptureCompletion(
                             closeImage = { proxy.close() },
                             onComplete = { failure ->
-                                if (generation == captureGeneration) {
+                                if (generation == captureGeneration && uiActive.get()) {
                                     working = false
                                     if (failure != null) error = "The photo couldn’t be processed. Please try again."
                                 }
@@ -104,7 +105,8 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                                     working = false
                                     error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
                                 }
-                            }
+                            },
+                            onUiAbandoned = { uiActive.set(false) }
                         )
                         activeAdapter = adapter
                         try {
