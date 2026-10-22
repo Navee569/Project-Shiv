@@ -88,20 +88,24 @@ interface ShivDao {
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") fun messages(): Flow<List<ChatMessage>>
     @Upsert suspend fun addMessage(value: ChatMessage)
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") suspend fun allMessages(): List<ChatMessage>
+    @Query("SELECT * FROM chat_messages ORDER BY createdAt LIMIT :limit OFFSET :offset") suspend fun messagesPage(limit: Int, offset: Int): List<ChatMessage>
     @Upsert suspend fun saveProfile(value: UserProfile)
     @Query("SELECT * FROM user_profile WHERE id = 1") fun profile(): Flow<UserProfile?>
     @Query("SELECT * FROM user_profile WHERE id = 1") suspend fun profileOnce(): UserProfile?
     @Query("SELECT * FROM memories ORDER BY createdAt DESC") fun memories(): Flow<List<MemoryFact>>
     @Query("SELECT * FROM memories ORDER BY createdAt") suspend fun allMemories(): List<MemoryFact>
+    @Query("SELECT * FROM memories ORDER BY createdAt LIMIT :limit OFFSET :offset") suspend fun memoriesPage(limit: Int, offset: Int): List<MemoryFact>
     @Query("SELECT * FROM memories ORDER BY createdAt DESC LIMIT 100") suspend fun latestMemories(): List<MemoryFact>
     @Upsert suspend fun saveMemory(value: MemoryFact)
     @Query("DELETE FROM memories WHERE id = :id") suspend fun deleteMemory(id: String)
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
     @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
+    @Query("SELECT * FROM events ORDER BY startsAt LIMIT :limit OFFSET :offset") suspend fun eventsPage(limit: Int, offset: Int): List<EventRecord>
     @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
     @Query("SELECT * FROM pending_events WHERE id = :id") suspend fun pendingEvent(id: String): PendingEventRecord?
     @Query("SELECT * FROM pending_events ORDER BY startsAt") suspend fun allPendingEvents(): List<PendingEventRecord>
+    @Query("SELECT * FROM pending_events ORDER BY startsAt LIMIT :limit OFFSET :offset") suspend fun pendingEventsPage(limit: Int, offset: Int): List<PendingEventRecord>
     @Insert suspend fun addPendingEvent(value: PendingEventRecord)
     @Query("DELETE FROM pending_events WHERE id = :id") suspend fun deletePendingEvent(id: String)
     @Query("DELETE FROM pending_events") suspend fun clearPendingEvents()
@@ -111,15 +115,19 @@ interface ShivDao {
     @Query("DELETE FROM events WHERE source = 'CALENDAR'") suspend fun clearCalendarEvents()
     @Upsert suspend fun logAction(value: ActionLogEntry)
     @Query("SELECT * FROM action_log ORDER BY createdAt") suspend fun allActions(): List<ActionLogEntry>
+    @Query("SELECT * FROM action_log ORDER BY createdAt LIMIT :limit OFFSET :offset") suspend fun actionsPage(limit: Int, offset: Int): List<ActionLogEntry>
     @Query("SELECT * FROM reminder_rules ORDER BY ruleKey") suspend fun allRules(): List<ReminderRule>
+    @Query("SELECT * FROM reminder_rules ORDER BY ruleKey LIMIT :limit OFFSET :offset") suspend fun rulesPage(limit: Int, offset: Int): List<ReminderRule>
     @Query("SELECT * FROM action_log ORDER BY createdAt DESC LIMIT 200") fun actionLog(): Flow<List<ActionLogEntry>>
     @Query("SELECT * FROM reminder_rules WHERE ruleKey = :key") suspend fun reminderRule(key: String): ReminderRule?
     @Upsert suspend fun saveRule(value: ReminderRule)
     @Query("SELECT * FROM reply_drafts ORDER BY createdAt DESC") fun drafts(): Flow<List<ReplyDraft>>
     @Query("SELECT * FROM reply_drafts ORDER BY createdAt") suspend fun allDrafts(): List<ReplyDraft>
+    @Query("SELECT * FROM reply_drafts ORDER BY createdAt LIMIT :limit OFFSET :offset") suspend fun draftsPage(limit: Int, offset: Int): List<ReplyDraft>
     @Upsert suspend fun saveDraft(value: ReplyDraft)
     @Query("SELECT * FROM action_tiers ORDER BY actionKey") fun actionTiers(): Flow<List<ActionTierSetting>>
     @Query("SELECT * FROM action_tiers ORDER BY actionKey") suspend fun allActionTiers(): List<ActionTierSetting>
+    @Query("SELECT * FROM action_tiers ORDER BY actionKey LIMIT :limit OFFSET :offset") suspend fun actionTiersPage(limit: Int, offset: Int): List<ActionTierSetting>
     @Query("SELECT tier FROM action_tiers WHERE actionKey = :key") suspend fun actionTier(key: String): String?
     @Upsert suspend fun saveActionTier(value: ActionTierSetting)
     @Query("SELECT * FROM shiv_settings WHERE id = 1") fun settings(): Flow<ShivSettings?>
