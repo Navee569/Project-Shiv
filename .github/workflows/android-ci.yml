@@ -79,6 +79,7 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           test -f "$APK"
+          test -s "$APK"
           test -x "$AAPT"
           mkdir -p app/build/reports/apk-verification
           "$AAPT" dump badging "$APK" | tee app/build/reports/apk-verification/manifest-inspection.txt
@@ -86,6 +87,8 @@ jobs:
           grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -F "label='Shiv'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -E "application-icon-[0-9]+:" app/build/reports/apk-verification/manifest-inspection.txt
+          sha256sum "$APK" | tee app/build/reports/apk-verification/apk-sha256.txt
+          stat --format="APK bytes: %s" "$APK" | tee app/build/reports/apk-verification/apk-size.txt
       - name: Install and cold-launch APK in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -109,8 +112,9 @@ jobs:
             adb shell dumpsys activity activities > app/build/reports/emulator-smoke/activities.txt
             grep -F "app.shiv/.MainActivity" app/build/reports/emulator-smoke/activities.txt
             adb logcat -d -t 6000 > app/build/reports/emulator-smoke/logcat.txt
-            if grep -F "Process: app.shiv, PID:" app/build/reports/emulator-smoke/logcat.txt; then
-              echo "Fatal app crash detected in fresh emulator logcat." >&2
+            adb logcat -b crash -d > app/build/reports/emulator-smoke/crash-buffer.txt
+            if grep -E "Process: app\\.shiv, PID:|ANR in app\\.shiv" app/build/reports/emulator-smoke/logcat.txt app/build/reports/emulator-smoke/crash-buffer.txt; then
+              echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
               exit 1
             fi
       - name: Run unit tests

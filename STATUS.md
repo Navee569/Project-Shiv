@@ -354,3 +354,16 @@ The independent developer remediation handoff identified a blocking compile fail
 The consolidated change re-checks camera permission on lifecycle resume, binds the camera only while permission is granted, and reports camera binding/capture/processing errors. CI checks the packaged APK label and icon, clears emulator logcat before launch to avoid historic crash false positives, and asserts the app process remains alive after startup. Emulator reports are included in the existing always-run artifact step.
 
 **Verification status:** This GitHub-only edit session did not execute Gradle locally or a physical Android Studio session. Build, unit tests, lint, APK manifest, and emulator smoke checks are pending exact-SHA CI. Android Studio sync/run and real physical-camera/ML Kit/ImageProxy integration remain NOT VERIFIED until actual evidence exists. M0 remains NOT ACCEPTED.
+
+## Independent QA finding and remediation record — 2026-10-22
+
+The independent Tester AI reported a blocking compile failure on candidate branch SHA `e1cbd88051c62c09266040938066fbbd69965847`. The PR workflow [39715598035](https://github.com/Navee569/Project-Shiv/actions/runs/39715598035) failed while compiling the debug APK on synthetic merge SHA `87cd4947429d65a49aadfabc9f93a437be336389`.
+
+Exact compiler diagnostic:
+`PhotoCapture.kt:60:49 'val' cannot be reassigned.`
+
+The cause is receiver/name shadowing in `PreviewView(it).apply { controller = controller }`. APK manifest inspection, emulator smoke, unit tests, and lint were skipped by that failed workflow. Artifact upload reported no matching files; no artifact was uploaded.
+
+The remediation candidate changes the preview setup to assign `this.controller = cameraController` explicitly, retains the CameraX controller and image capture, improves emulator crash/ANR log collection, and records APK size and SHA-256 in CI reports. The accidentally committed tester prompt is removed in this remediation commit; tester prompts remain external deliverables.
+
+**New-candidate verification state:** PENDING until a new exact-source push workflow and the corresponding PR workflow complete. No build, unit-test, lint, APK, or runtime pass is claimed here. M0 remains **NOT ACCEPTED** until independent QA retests the resulting exact SHA and required device/IDE limitations are resolved or explicitly handled under the acceptance rules.

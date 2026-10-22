@@ -161,3 +161,20 @@ The candidate had a confirmed CameraX compile blocker: `CameraController.PREVIEW
 | M0-ACCEPT | M0 acceptance | NOT ACCEPTED |
 
 Do not promote any pending or not-verified status to PASS without exact-SHA logs or direct test evidence.
+
+## Independent QA finding — 2026-10-22 — candidate SHA `e1cbd88051c62c09266040938066fbbd69965847`
+
+The PR workflow [39715598035](https://github.com/Navee569/Project-Shiv/actions/runs/39715598035) **FAILED** on synthetic merge SHA `87cd4947429d65a49aadfabc9f93a437be336389` with compiler diagnostic `PhotoCapture.kt:60:49 'val' cannot be reassigned.`
+
+| ID | Requirement | Status on failed candidate | Evidence / next action |
+|---|---|---|---|
+| M0-RETEST-01 | Exact source SHA build | FAIL | PR workflow 39715598035; CameraX preview controller assignment does not compile |
+| M0-RETEST-02 | APK manifest inspection | NOT RUN | Build failed before APK inspection |
+| M0-RETEST-03 | Emulator install and cold launch | NOT RUN | Build failure prevented smoke test |
+| M0-RETEST-04 | Unit tests | NOT RUN | Build failure prevented test task |
+| M0-RETEST-05 | Lint | NOT RUN | Build failure prevented lint task |
+| M0-RETEST-06 | Artifact upload | FAIL / NO ARTIFACT | Upload step found no files; no artifact uploaded |
+| M0-RETEST-07 | Android Studio sync/run | NOT VERIFIED | Static XML validation is not an IDE sync/run |
+| CAM-RETEST-01 | Real permission/preview/capture/ML Kit/ImageProxy path | NOT VERIFIED | Requires suitable runtime/device evidence |
+
+The remediation candidate fixes the preview-controller assignment and strengthens CI crash/ANR evidence and APK metadata reporting. All results for the new candidate remain **PENDING** until its exact-SHA workflows finish. Historical PASS rows above apply only to their explicitly named SHAs. M0 remains **NOT ACCEPTED**.

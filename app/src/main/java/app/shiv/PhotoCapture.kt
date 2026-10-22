@@ -28,7 +28,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     fun permitted() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-    val controller = remember { LifecycleCameraController(context).apply { cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA } }
+    val cameraController = remember { LifecycleCameraController(context).apply { cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA } }
     var granted by remember { mutableStateOf(permitted()) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -47,18 +47,18 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    DisposableEffect(controller, owner, granted) {
-        if (granted) try { controller.bindToLifecycle(owner) }
+    DisposableEffect(cameraController, owner, granted) {
+        if (granted) try { cameraController.bindToLifecycle(owner) }
         catch (_: Exception) { error = "The camera is unavailable. Close other camera apps and try again." }
-        onDispose { controller.unbind() }
+        onDispose { cameraController.unbind() }
     }
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Text("Ask Shiv about a photo", style = MaterialTheme.typography.titleLarge)
         Text("The image is analyzed on this phone and isn’t saved by Shiv.")
         Spacer(Modifier.height(12.dp))
         if (granted) AndroidView(
-            factory = { PreviewView(it).apply { controller = controller } },
-            update = { it.controller = controller },
+            factory = { viewContext -> PreviewView(viewContext).apply { this.controller = cameraController } },
+            update = { previewView -> previewView.controller = cameraController },
             modifier = Modifier.fillMaxWidth().height(380.dp)
         ) else Text("Allow camera access to preview and analyze a photo.")
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -74,7 +74,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                 granted = true
                 error = null
                 working = true
-                controller.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+                cameraController.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
                     override fun onCaptureSuccess(proxy: androidx.camera.core.ImageProxy) {
                         val done = PhotoCaptureCompletion(
