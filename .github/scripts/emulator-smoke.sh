@@ -153,7 +153,8 @@ if [ "${#online_emulators[@]}" -ne 1 ]; then
   exit 1
 fi
 DEVICE_SERIAL="${online_emulators[0]}"
-printf 'Selected emulator serial: %s\n' "$DEVICE_SERIAL" | tee "$REPORT/selected-device.txt"run_bounded boot-completed 30 adb -s "$DEVICE_SERIAL" shell getprop sys.boot_completed
+printf 'Selected emulator serial: %s\n' "$DEVICE_SERIAL" | tee "$REPORT/selected-device.txt"
+run_bounded boot-completed 30 adb -s "$DEVICE_SERIAL" shell getprop sys.boot_completed
 grep -Fx '1' "$REPORT/boot-completed.txt" || {
   echo "ADB is online but Android boot is not complete." >&2
   exit 1
