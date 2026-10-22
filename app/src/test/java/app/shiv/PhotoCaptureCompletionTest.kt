@@ -2,6 +2,7 @@ package app.shiv
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.fail
 import org.junit.Test
 
 class PhotoCaptureCompletionTest {
@@ -55,24 +56,52 @@ class PhotoCaptureCompletionTest {
         assertSame(failure, observedError)
     }
     @Test
-    fun lateSuccessCallbackHasNoSideEffectsAfterFailureWins() {
+    fun productionSuccessHandlerSkipsSideEffectsAfterFailureWins() {
         var closes = 0
         var completionCallbacks = 0
-        var successSideEffects = 0
+        var descriptions = 0
+        var closeRequests = 0
+        val failure = IllegalStateException("synchronous failure")
+        var observedError: Throwable? = null
         val completion = PhotoCaptureCompletion(
             closeImage = { closes++ },
-            onComplete = { completionCallbacks++ }
+            onComplete = { error -> completionCallbacks++; observedError = error }
         )
 
-        val failureWon = completion.finish(IllegalStateException("synchronous failure"))
-        val lateSuccessWon = completion.finish()
-        if (lateSuccessWon) successSideEffects++
+        completion.finish(failure)
+        val lateCallbackAccepted = completion.finishSuccess {
+            descriptions++
+            closeRequests++
+        }
 
-        assertEquals(true, failureWon)
-        assertEquals(false, lateSuccessWon)
+        assertEquals(false, lateCallbackAccepted)
+        assertEquals(0, descriptions)
+        assertEquals(0, closeRequests)
         assertEquals(1, closes)
         assertEquals(1, completionCallbacks)
-        assertEquals(0, successSideEffects)
+        assertSame(failure, observedError)
+    }
+
+    @Test
+    fun onCompleteExceptionPropagatesWithoutRepeatingTerminalCleanup() {
+        var closes = 0
+        var callbacks = 0
+        val callbackFailure = IllegalStateException("completion callback failed")
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { callbacks++; throw callbackFailure }
+        )
+
+        try {
+            completion.finishSuccess { fail("success effects must not run") }
+            fail("expected completion callback exception to propagate")
+        } catch (actual: IllegalStateException) {
+            assertSame(callbackFailure, actual)
+        }
+
+        assertEquals(false, completion.finishSuccess { fail("duplicate success effects must not run") })
+        assertEquals(1, closes)
+        assertEquals(1, callbacks)
     }
 
     @Test

@@ -202,3 +202,34 @@ The branch head after the application fixes is `b835d9e531dce1c2ad78d9ce11ca9bb7
 ### Acceptance
 
 M0 remains **NOT ACCEPTED**. The latest completed build failed; unit tests and lint were skipped; no APK or reports were uploaded; and Android Studio/device verification remains blocked. Do not advance to the next milestone until a corrected completed run and independent QA evidence satisfy the mandatory criteria.
+
+
+## Independent M0 regression retest — 2026-10-22
+
+### Exact-SHA result for `a942af9613f7561d671de5aba9b5cfdbd717d522`
+
+Independent QA confirmed branch HEAD matched the requested SHA and both exact-SHA workflows passed:
+- Push run [39654587925](https://github.com/Navee569/Project-Shiv/actions/runs/39654587925): `:app:assembleDebug`, `:app:testDebugUnitTest`, `:app:lintDebug`, artifact upload all SUCCESS.
+- Pull-request run [39654596592](https://github.com/Navee569/Project-Shiv/actions/runs/39654596592): same tasks and artifact upload all SUCCESS.
+- JUnit XML: 5 tests executed, 5 passed, 0 failures, 0 errors, 0 skipped.
+- Lint: 0 errors, 27 warnings; `UnsafeOptInUsageError` absent.
+- Push artifact ID 12371746628; ZIP SHA-256 `c17e43fbf5ca684ecf00601a189d30054d53cf60f33887214b68bb3e0ba2e0ea`.
+- PR artifact ID 12369614921; ZIP SHA-256 `091500e2a6a6c67c225dd69c92a263f688662ac0bb59d3aa6f6d5387caa59f2d`.
+- APK metadata: application ID `app.shiv`, debug variant, versionCode 1, versionName 0.1.0, minSdk 26. Push APK SHA-256 `87f2d389f675312ec1325df6b2b20b24fb05ef5c365273333a543f48b96025f8`; PR APK SHA-256 `596345920536d963954d0c5188a1a635bc0012f89f37e31526ee734e898ecdf7`.
+- Warning categories: GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, MissingApplicationIcon 1.
+
+### Follow-up implementation from QA findings
+
+The helper-only test previously recreated the production conditional instead of calling shared production code. The follow-up extracts the terminal-success gate into `PhotoCaptureCompletion.finishSuccess`; `PhotoCapture.kt` calls that same method around `onDescription` and `onClose`. A regression test now calls the shared production gate and checks that a failure-first/late-success sequence triggers neither success effect, closes once, invokes completion once, and preserves the original failure.
+
+The exception policy is explicit: an exception from `onComplete` propagates to its caller. Terminal ownership is already claimed and image closure has already been attempted; success-side effects do not run because `finishSuccess` cannot proceed past the throwing `finish`. A focused test checks propagation and no duplicate cleanup. The helper intentionally does not catch `Throwable` broadly.
+
+**Important:** the above exact-SHA CI results apply to `a942af9613f7561d671de5aba9b5cfdbd717d522`, before these follow-up changes. The new source/docs commit must receive its own exact-SHA CI verification. Do not reuse the prior results as proof for the new revision.
+
+### Remaining M0 blockers
+
+- Android Studio sync/run-configuration execution: NOT VERIFIED.
+- APK binary manifest and launcher resolution: NOT VERIFIED.
+- Physical-device/emulator install and launch, permission denial, camera preview/capture, ML Kit result, and real ImageProxy lifetime: BLOCKED / NOT VERIFIED.
+- Real CameraX/ML Kit integration is not claimed by helper-level unit tests.
+- M0 remains **NOT ACCEPTED**; do not begin the next milestone.

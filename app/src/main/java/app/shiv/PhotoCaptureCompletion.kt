@@ -12,6 +12,17 @@ internal class PhotoCaptureCompletion(
 ) {
     private val completed = AtomicBoolean(false)
 
+    /**
+     * Runs success-side effects only when this call owns terminal completion.
+     * Exceptions from onComplete deliberately propagate; terminal ownership and
+     * the image-close attempt remain committed, and success effects are skipped.
+     */
+    fun finishSuccess(onSuccess: () -> Unit): Boolean {
+        if (!finish()) return false
+        onSuccess()
+        return true
+    }
+
     fun finish(error: Throwable? = null): Boolean {
         if (!completed.compareAndSet(false, true)) return false
         var finalError = error
