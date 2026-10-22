@@ -57,7 +57,8 @@ class PrioritizedInferenceQueueTest {
         assertTrue("A submission hung until its timeout", outcomes.none { it.exceptionOrNull() is TimeoutCancellationException })
     }
 
-    @Test fun concurrentSubmissionsRespectQueueCapacity() = runBlocking {
+    @Test fun concurrentSubmissionsRespectQueueCapacity() {
+        runBlocking {
         val queue = PrioritizedInferenceQueue()
         val activeStarted = CompletableDeferred<Unit>()
         val releaseActive = CompletableDeferred<Unit>()
@@ -79,6 +80,8 @@ class PrioritizedInferenceQueueTest {
         queue.close()
         releaseActive.complete(Unit)
         runCatching { withTimeout(2_000) { active.await() } }
+        Unit
+        }
     }
 
 }
