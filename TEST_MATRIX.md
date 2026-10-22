@@ -126,3 +126,19 @@ Evidence from the independent report:
 | M0 acceptance | NOT ACCEPTED |
 
 The workflow change in this commit adds a clean-install emulator cold-launch smoke test and archives launch/activity/logcat evidence. Its result is pending on the new commit; do not infer PASS before inspecting that exact-SHA run. Emulator launch does not prove physical-camera or real camera callback correctness.
+
+
+## Consolidated remediation — 2026-10-22 — pending exact-SHA CI
+
+Source changes in the next revision explicitly enable both CameraX preview and image capture, request runtime camera permission before use, and add a vector launcher icon referenced by the manifest. CI now also statically validates the Android Studio run configuration XML and adds an emulator clean-install/cold-launch smoke test.
+
+| Requirement | Status before next revision | Required new evidence |
+|---|---|---|
+| Launcher icon metadata | FAIL / lint warning | Exact-SHA lint plus packaged manifest inspection |
+| Camera preview use case enabled | Source defect corrected; runtime NOT VERIFIED | Emulator/device preview evidence |
+| Runtime camera permission | Source path added; denial UX NOT VERIFIED | Permission grant/deny UI test evidence |
+| Android Studio run config | Static check added; IDE sync/run NOT VERIFIED | Open/sync/run using Android Studio |
+| Emulator clean install and cold launch | CI smoke test added | Exact-SHA workflow logs and artifact |
+| Physical-device camera and ML Kit | NOT VERIFIED | Actual device capture, ML Kit callback/result and logs |
+| Real asynchronous ImageProxy closure | NOT VERIFIED | Instrumented callback/lifecycle test on device/emulator |
+| M0 acceptance | NOT ACCEPTED | All mandatory criteria independently verified |

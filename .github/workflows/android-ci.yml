@@ -50,6 +50,31 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses >/dev/null
 
+      - name: Validate Android Studio run configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          config = pathlib.Path(".run/App.run.xml")
+          settings = pathlib.Path("settings.gradle.kts")
+          app_build = pathlib.Path("app/build.gradle.kts")
+          assert config.is_file(), "Missing .run/App.run.xml"
+          assert settings.is_file() and app_build.is_file(), "Missing Gradle project/module files"
+          root = ET.parse(config).getroot()
+          configuration = root.find("configuration")
+          assert configuration is not None, "No run configuration found"
+          assert configuration.attrib.get("type") == "AndroidRunConfigurationType", "Unexpected run configuration type"
+          assert configuration.attrib.get("name") == "Shiv Android", "Unexpected run configuration name"
+          module = configuration.find("module")
+          assert module is not None and module.attrib.get("name") == "Shiv.app", "Run configuration module must be Shiv.app"
+          assert 'include(":app")' in settings.read_text(), "Gradle settings do not include :app"
+          assert 'applicationId = "app.shiv"' in app_build.read_text(), "Application ID mismatch"
+          print("Run configuration XML valid; Shiv.app module and app.shiv application module declarations agree.")
+          PY
+
       - name: Record toolchain
         run: |
           java -version

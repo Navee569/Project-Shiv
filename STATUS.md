@@ -331,3 +331,17 @@ The independent report inspected the exact branch-tree push run and the separate
 - Lint still reports 27 warnings; the existing warning set includes missing application icon metadata.
 
 **Decision: M0 NOT ACCEPTED.** PR #1 remains open/draft and unmerged. This evidence is tied only to SHA `8c860e1...`; the next commit requires its own CI and independent retest evidence. The following consolidated change adds an emulator install/cold-launch smoke check, but cannot substitute for a physical-device camera test or Android Studio validation.
+
+
+## Consolidated remediation — 2026-10-22 — source revision pending CI
+
+After the independent retest of SHA `8c860e197b0280c299ca890e1a0872bcf4f4fc0c`, a single consolidated source/workflow update was prepared:
+
+- Camera preview is explicitly enabled alongside image capture. Previously the controller enabled only `IMAGE_CAPTURE`, which could leave the preview use case disabled.
+- The photo screen now requests Android's runtime CAMERA permission before capture and explains denial instead of attempting camera use without permission.
+- Added a vector launcher icon and declared it on the application, addressing the confirmed missing-application-icon lint warning.
+- Added a CI static validation step for `.run/App.run.xml` structure and its module/application declarations. This is not a substitute for launching Android Studio and verifying a real Gradle sync/run.
+- Retained the emulator clean-install/cold-launch smoke test added in the preceding commit.
+- No real physical device is attached to this GitHub-only execution environment; physical-device camera testing and actual ML Kit output cannot be truthfully marked PASS from source inspection or emulator startup alone.
+
+The new revision's build, unit tests, lint, APK manifest, emulator smoke test and static run-configuration check are all **PENDING exact-SHA CI evidence**. The camera/ImageProxy asynchronous ownership path still requires end-to-end device evidence; helper tests alone do not establish that. M0 remains **NOT ACCEPTED** until the new evidence is inspected and the remaining runtime gates are independently closed.

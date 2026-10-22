@@ -1,5 +1,9 @@
 package app.shiv
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.camera.core.CameraSelector
@@ -25,11 +29,20 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     val controller = remember {
         LifecycleCameraController(context).apply {
             cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            setEnabledUseCases(CameraController.IMAGE_CAPTURE)
+            setEnabledUseCases(CameraController.PREVIEW or CameraController.IMAGE_CAPTURE)
         }
+    }
+    var cameraPermissionGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     var working by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
+    val requestCameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        cameraPermissionGranted = granted
+        cameraError = if (granted) null else "Camera permission is required to take a photo."
+    }
 
     DisposableEffect(controller, lifecycleOwner) {
         controller.bindToLifecycle(lifecycleOwner)
@@ -40,15 +53,24 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
         Text("Ask Shiv about a photo", style = MaterialTheme.typography.titleLarge)
         Text("The image is analyzed on this phone and isn’t saved by Shiv.", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(12.dp))
-        AndroidView(
-            factory = { viewContext -> PreviewView(viewContext).apply { this.controller = controller } },
-            modifier = Modifier.fillMaxWidth().height(380.dp)
-        )
+        if (cameraPermissionGranted) {
+            AndroidView(
+                factory = { viewContext -> PreviewView(viewContext).apply { this.controller = controller } },
+                modifier = Modifier.fillMaxWidth().height(380.dp)
+            )
+        } else {
+            Text("Allow camera access to preview and analyze a photo.")
+        }
         cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onClose, enabled = !working) { Text("Close") }
             Button(onClick = {
+                if (!cameraPermissionGranted) {
+                    requestCameraPermission.launch(Manifest.permission.CAMERA)
+                    return@Button
+                }
+                cameraError = null
                 working = true
                 controller.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                     @ExperimentalGetImage
@@ -84,7 +106,15 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                         cameraError = "The photo didn’t work. Please try again."
                     }
                 })
-            }, enabled = !working) { Text(if (working) "Looking…" else "Take photo") }
+            }, enabled = !working) {
+                Text(
+                    when {
+                        working -> "Looking…"
+                        !cameraPermissionGranted -> "Allow camera"
+                        else -> "Take photo"
+                    }
+                )
+            }
         }
     }
 }
