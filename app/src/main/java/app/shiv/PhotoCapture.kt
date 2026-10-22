@@ -32,6 +32,7 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
     var granted by remember { mutableStateOf(permitted()) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var activeAdapter by remember { mutableStateOf<PhotoCaptureAnalysisAdapter?>(null) }
     val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
         granted = result && permitted()
         error = if (granted) null else "Camera permission is required. Allow access in app settings and try again."
@@ -64,7 +65,10 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onClose, enabled = !working) { Text("Close") }
+            OutlinedButton(onClick = {
+                activeAdapter?.abandonUi()
+                onClose()
+            }, enabled = !working) { Text("Close") }
             Button(onClick = {
                 if (!permitted()) {
                     granted = false
@@ -90,7 +94,8 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                             if (media == null) { done.finish(IllegalStateException("Empty camera image")); return }
                             Brain().describePhoto(
                                 image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees),
-                                onImageConsumed = adapter::imageConsumed
+                                onImageConsumed = adapter::imageConsumed,
+                                onAnalysisUnresolved = adapter::analysisUnresolved
                             ) { description ->
                                 adapter.descriptionReady(description)
                             }
