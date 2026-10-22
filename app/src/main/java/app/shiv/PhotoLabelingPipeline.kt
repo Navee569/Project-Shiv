@@ -9,7 +9,6 @@ import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
@@ -39,15 +38,15 @@ internal interface PhotoLabeler<I, R> {
     fun close()
 }
 
+/** Indicates that waiting ended without proving task terminality; ownership must remain retained. */
+internal class TaskTerminalityUnresolvedException(cause: Throwable) :
+    IllegalStateException("ML Kit task terminality could not be established", cause)
+
 /**
  * Runs the blocking Tasks.await fallback away from the caller. Successful results stay successful
  * even if listener registration failed. If capacity is exhausted, the caller retains image
  * ownership because task terminality has not been established.
  */
-/** Indicates that waiting ended without proving task terminality; ownership must remain retained. */
-internal class TaskTerminalityUnresolvedException(cause: Throwable) :
-    IllegalStateException("ML Kit task terminality could not be established", cause)
-
 internal object ListenerRegistrationFallback {
     fun <R> schedule(
         awaitTask: () -> R,
