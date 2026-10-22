@@ -54,3 +54,40 @@ These results apply only to SHA `1f53acc34887245c94b30fd9b4ae20032476ce56`. The 
 | CAM-01 | Permission denial, preview, capture, ML Kit result and real ImageProxy lifetime | BLOCKED / NOT VERIFIED |
 
 M0 remains NOT ACCEPTED. Passing CI and helper-level tests do not satisfy unperformed Android Studio, binary manifest, or device/runtime verification.
+
+
+## Independent M0 retest evidence — 2026-10-22 — tested SHA `597be93da4b45e7a8caf780fb9628d85e307cc56`
+
+The independent QA report confirms the exact branch head and records these results:
+
+- Push run [39709266980](https://github.com/Navee569/Project-Shiv/actions/runs/39709266980): SUCCESS on exact commit `597be93da4b45e7a8caf780fb9628d85e307cc56`.
+- PR run [39709271615](https://github.com/Navee569/Project-Shiv/actions/runs/39709271615): SUCCESS; head SHA matches, but checkout is synthetic merge SHA `8f742c27ce1890a492af9f6b89b0fead38d80f38`. This is merge-result validation, distinct from the exact-commit push run.
+- Toolchain: Temurin/OpenJDK 17.0.20.1+1, Gradle 8.9, Android platform 35, Build Tools 35.0.0.
+- Gradle project discovery, debug APK assembly, unit tests, lint, and artifact upload succeeded in both runs.
+- Actual JUnit XML suite `app.shiv.PhotoCaptureCompletionTest`: 7/7 passed in both artifacts, 0 failures/errors/skips.
+- Lint: 0 errors, 27 warnings (GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, MissingApplicationIcon 1); `UnsafeOptInUsageError` absent.
+- Push artifact ID 12396373994; GitHub/independent ZIP SHA-256 match `99a1d2d94914d437acada936a11c2bc8deacca021faaed4e52a0608011eae41f`; APK SHA-256 `53ca69ad77fae89ecfbb24c8ea42ee22d6faf174b30609ba5f9a01a28475af53`.
+- PR artifact ID 12396114520; GitHub/independent ZIP SHA-256 match `46b37713e571c446f5144f8f6d3070abc8969ed9d3dde374308d401c02f1bf7d`; APK SHA-256 `43270a96ecd6e4cb1e0459385b1869e937dd1637a681ce1f6f9a361cea59550f`.
+- Both APK metadata files identify `app.shiv`, debug, versionCode 1, versionName 0.1.0, minSdk 26. APK hashes differ; no byte-identical reproducibility claim. Metadata is not binary-manifest evidence.
+
+| ID | Requirement | Status on SHA 597be93 |
+|---|---|---|
+| M0-01 | Branch head/expected SHA | PASS |
+| M0-02 | Push exact-commit workflow | PASS |
+| M0-03 | PR merge-result workflow | PASS, synthetic merge distinction recorded |
+| M0-04 | Gradle project discovery / :app | PASS |
+| M0-05 | Debug APK assembly | PASS |
+| M0-06 | Unit-test task and XML | PASS: 7/7 |
+| M0-07 | Debug lint | PASS: 0 errors, 27 warnings |
+| M0-08 | Success-first shared gate exactly once | PASS at helper/unit-test level |
+| M0-09 | Failure-first late success rejected | PASS at helper/unit-test level |
+| M0-10 | Completion exception / cleanup / error policy | PASS at helper/unit-test level |
+| M0-11 | Artifact ZIP digest provenance | PASS |
+| M0-12 | Packaged APK binary manifest / launcher | NOT VERIFIED |
+| M0-13 | Android Studio sync/run configuration | NOT VERIFIED |
+| DEV-01 | Device/emulator install and cold launch | BLOCKED / NOT VERIFIED |
+| CAM-01 | Permission denial, preview, capture, real ML Kit result | BLOCKED / NOT VERIFIED |
+| CAM-02 | Actual asynchronous ImageProxy lifetime and closure | NOT VERIFIED |
+| M0-ACCEPT | M0 acceptance | NOT ACCEPTED |
+
+The documentation records the evidence available for SHA `597be93...`; future commits require their own exact-SHA CI evidence. M0 remains NOT ACCEPTED until the binary-manifest, IDE, and runtime/device gates are completed and independently verified.

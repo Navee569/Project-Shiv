@@ -263,3 +263,38 @@ This dated update records the prior exact-SHA CI, test, lint, artifact and APK e
 Android Studio sync/run configuration, APK binary manifest and launcher resolution, physical-device/emulator installation and launch, camera permission denial, preview, capture, ML Kit description, and real asynchronous ImageProxy lifetime remain NOT VERIFIED or BLOCKED. Helper tests are not represented as real CameraX/ML Kit integration evidence.
 
 **M0 decision: NOT ACCEPTED.** Do not approve or merge PR #1 or start the next milestone until the new exact-SHA CI passes, independent QA retests it, and all mandatory IDE/manifest/device requirements are satisfied.
+
+
+## Independent M0 retest evidence update — 2026-10-22 — SHA `597be93da4b45e7a8caf780fb9628d85e307cc56`
+
+This section records the independent regression report for the exact branch HEAD. It supersedes only prior statements that this revision's CI was pending; historical evidence is retained.
+
+### Exact-SHA CI and test results
+
+- Push workflow [run 39709266980](https://github.com/Navee569/Project-Shiv/actions/runs/39709266980): SUCCESS; checkout was exact commit `597be93da4b45e7a8caf780fb9628d85e307cc56`.
+- Pull-request workflow [run 39709271615](https://github.com/Navee569/Project-Shiv/actions/runs/39709271615): SUCCESS for the same PR head. Its worktree was synthetic merge commit `8f742c27ce1890a492af9f6b89b0fead38d80f38` (head `597be93...` merged into base `96e5dd78eedb8f12cf1e2aee758364284de03276`); treat this as merge-result validation, not the exact branch tree.
+- Toolchain: Temurin/OpenJDK 17.0.20.1+1, Gradle 8.9, Android platform 35, Build Tools 35.0.0, lint 8.7.3. Gradle wrapper validation and `./gradlew projects` succeeded; root project `Shiv`, module `:app`.
+- In both runs, `:app:assembleDebug`, `:app:testDebugUnitTest`, `:app:lintDebug`, and artifact upload succeeded.
+- Actual JUnit XML suite `app.shiv.PhotoCaptureCompletionTest`: **7 executed, 7 passed, 0 failed, 0 errors, 0 skipped** in each artifact. All seven test names, including `normalSuccessFirstRunsSuccessEffectsExactlyOnce`, were present and passed.
+- Lint XML in both artifacts: **0 errors, 27 warnings** — GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, MissingApplicationIcon 1. `UnsafeOptInUsageError` was absent.
+
+### Artifact provenance and APK metadata
+
+- Push artifact [ID 12396373994](https://github.com/Navee569/Project-Shiv/actions/runs/39709266980/artifacts/12396373994), size 72,897,698 bytes. GitHub digest and independently computed ZIP SHA-256 both matched: `99a1d2d94914d437acada936a11c2bc8deacca021faaed4e52a0608011eae41f`. APK size 136,026,076 bytes; APK SHA-256 `53ca69ad77fae89ecfbb24c8ea42ee22d6faf174b30609ba5f9a01a28475af53`.
+- PR artifact [ID 12396114520](https://github.com/Navee569/Project-Shiv/actions/runs/39709271615/artifacts/12396114520), size 72,897,678 bytes. GitHub digest and independently computed ZIP SHA-256 both matched: `46b37713e571c446f5144f8f6d3070abc8969ed9d3dde374308d401c02f1bf7d`. APK size 136,026,076 bytes; APK SHA-256 `43270a96ecd6e4cb1e0459385b1869e937dd1637a681ce1f6f9a361cea59550f`.
+- Both APK output metadata files report applicationId `app.shiv`, variant `debug`, versionCode 1, versionName `0.1.0`, minSdk 26. APK hashes differ; byte-for-byte reproducibility is **not** claimed. Output metadata is not binary-manifest inspection evidence.
+
+### Code review and outstanding gates
+
+The new success-first test invokes the shared production `PhotoCaptureCompletion.finishSuccess()` gate and checks both success effects, cleanup, and completion occur exactly once; duplicate success and late terminal failure are rejected, with null terminal error. Failure-first/late-success, exception propagation, cleanup-once, and error-preservation tests also pass at helper level. These deterministic unit tests do not establish real CameraX/ML Kit integration correctness.
+
+Still NOT VERIFIED or BLOCKED:
+- Android Studio Gradle sync and run-configuration resolution.
+- Inspection of the packaged APK's binary manifest and launcher resolution.
+- Physical-device/emulator install and cold launch.
+- Camera permission-denial behaviour, preview, actual capture, and real ML Kit description.
+- Actual asynchronous ImageProxy lifetime and exactly-once closure under success/failure.
+
+QA could not run Android tooling or a device/emulator in its inspection environment. Do not infer these gates from CI success, APK metadata, or helper tests.
+
+**M0 decision: NOT ACCEPTED.** PR #1 remains open/draft and unmerged. Do not approve/merge or start the next milestone until the mandatory IDE, binary-manifest, and device/runtime evidence is supplied and independently reviewed.
