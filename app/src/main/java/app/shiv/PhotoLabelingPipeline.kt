@@ -143,8 +143,10 @@ internal object PhotoLabelingExecutors {
     }
 }
 
-internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
-    PhotoLabeler<InputImage, List<ImageLabel>> {
+internal class MlKitPhotoLabeler(
+    private val delegate: ImageLabeler,
+    private val onTaskUnresolved: (Throwable) -> Unit = {}
+) : PhotoLabeler<InputImage, List<ImageLabel>> {
     override fun process(
         image: InputImage,
         onSuccess: (List<ImageLabel>) -> Unit,
@@ -164,17 +166,32 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
         } catch (registrationFailure: Throwable) {
             ListenerRegistrationFallback.schedule(
                 awaitTask = {
-                    try {
-                        InterruptSafeAwait.await(
-                            awaitOnce = {
-                                Tasks.await(task, PhotoLabelingExecutors.TASK_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                    var terminalResult: List<ImageLabel>? = null
+                    var unresolvedReported = false
+                    while (terminalResult == null) {
+                        try {
+                            terminalResult = InterruptSafeAwait.await(
+                                awaitOnce = {
+                                    Tasks.await(task, PhotoLabelingExecutors.TASK_AWAIT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                                }
+                            )
+                        } catch (timeout: TimeoutException) {
+                            // Timeout does not prove task terminality. Notify the UI once, then keep
+                            // the bounded waiter occupied until the task really terminates.
+                            if (!unresolvedReported) {
+                                unresolvedReported = true
+                                val unresolved = TaskTerminalityUnresolvedException(timeout)
+                                try {
+                                    PhotoLabelingExecutors.mainCallback.execute { onTaskUnresolved(unresolved) }
+                                } catch (dispatchFailure: RejectedExecutionException) {
+                                    Log.e("ShivPhotoLabeler", "Could not dispatch unresolved-task warning", dispatchFailure)
+                                }
                             }
-                        )
-                    } catch (timeout: TimeoutException) {
-                        throw TaskTerminalityUnresolvedException(timeout)
-                    } catch (awaitFailure: Exception) {
-                        throw task.exception ?: awaitFailure
+                        } catch (awaitFailure: Exception) {
+                            throw task.exception ?: awaitFailure
+                        }
                     }
+                    terminalResult ?: emptyList()
                 },
                 registrationFailure = registrationFailure,
                 waiter = PhotoLabelingExecutors.waiter,
