@@ -345,3 +345,12 @@ After the independent retest of SHA `8c860e197b0280c299ca890e1a0872bcf4f4fc0c`, 
 - No real physical device is attached to this GitHub-only execution environment; physical-device camera testing and actual ML Kit output cannot be truthfully marked PASS from source inspection or emulator startup alone.
 
 The new revision's build, unit tests, lint, APK manifest, emulator smoke test and static run-configuration check are all **PENDING exact-SHA CI evidence**. The camera/ImageProxy asynchronous ownership path still requires end-to-end device evidence; helper tests alone do not establish that. M0 remains **NOT ACCEPTED** until the new evidence is inspected and the remaining runtime gates are independently closed.
+
+
+## Consolidated compile and runtime remediation — 2026-10-22 — pending exact-SHA CI
+
+The independent developer remediation handoff identified a blocking compile failure in SHA `04954f747e84940f2f07c33f343804c23fd477f9`: `CameraController.PREVIEW` does not exist, and the combined expression passed a `BigInteger` where the configured CameraX API expects an `Int`. The invalid use-case expression has been removed. Preview is provided by attaching the `LifecycleCameraController` to the visible `PreviewView`; the controller's supported default use cases retain image capture.
+
+The consolidated change re-checks camera permission on lifecycle resume, binds the camera only while permission is granted, and reports camera binding/capture/processing errors. CI checks the packaged APK label and icon, clears emulator logcat before launch to avoid historic crash false positives, and asserts the app process remains alive after startup. Emulator reports are included in the existing always-run artifact step.
+
+**Verification status:** This GitHub-only edit session did not execute Gradle locally or a physical Android Studio session. Build, unit tests, lint, APK manifest, and emulator smoke checks are pending exact-SHA CI. Android Studio sync/run and real physical-camera/ML Kit/ImageProxy integration remain NOT VERIFIED until actual evidence exists. M0 remains NOT ACCEPTED.

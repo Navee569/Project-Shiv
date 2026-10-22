@@ -142,3 +142,22 @@ Source changes in the next revision explicitly enable both CameraX preview and i
 | Physical-device camera and ML Kit | NOT VERIFIED | Actual device capture, ML Kit callback/result and logs |
 | Real asynchronous ImageProxy closure | NOT VERIFIED | Instrumented callback/lifecycle test on device/emulator |
 | M0 acceptance | NOT ACCEPTED | All mandatory criteria independently verified |
+
+
+## Consolidated compile and runtime remediation — 2026-10-22 — pending exact-SHA CI
+
+The candidate had a confirmed CameraX compile blocker: `CameraController.PREVIEW` is not a supported constant and the use-case expression had the wrong type. The invalid expression has been removed and the lifecycle controller is attached to `PreviewView`. Camera permission is rechecked on resume; camera binding is conditional on permission.
+
+| ID | Requirement | Current candidate status |
+|---|---|---|
+| M0-COMP-01 | CameraX API compiles | PENDING exact-SHA build |
+| M0-CAM-01 | Permission denial/grant/revocation state handling | Source updated; runtime NOT VERIFIED |
+| M0-CAM-02 | Preview and capture on emulator/device | NOT VERIFIED |
+| M0-CAM-03 | Real ML Kit image labeling result | NOT VERIFIED |
+| M0-CAM-04 | Real asynchronous ImageProxy lifetime and exactly-once closure | Helper tests exist; end-to-end integration NOT VERIFIED |
+| M0-APK-01 | Binary APK package, launcher, label, icon | PENDING exact-SHA manifest report |
+| M0-EMU-01 | Clean install and cold launch | PENDING exact-SHA emulator report |
+| M0-IDE-01 | Android Studio sync and run configuration | NOT VERIFIED |
+| M0-ACCEPT | M0 acceptance | NOT ACCEPTED |
+
+Do not promote any pending or not-verified status to PASS without exact-SHA logs or direct test evidence.

@@ -23,33 +23,25 @@ jobs:
     name: Build, unit tests, and lint
     runs-on: ubuntu-latest
     timeout-minutes: 35
-
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # setup-android@v3 defaults to the retired `tools` SDK package.
-          # Install only the supported platform-tools package here.
           packages: platform-tools
           accept-android-sdk-licenses: true
-
       - name: Install Android SDK platform and build tools
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses >/dev/null
-
       - name: Validate Android Studio run configuration
         shell: bash
         run: |
@@ -57,7 +49,6 @@ jobs:
           python3 - <<'PY'
           import pathlib
           import xml.etree.ElementTree as ET
-
           config = pathlib.Path(".run/App.run.xml")
           settings = pathlib.Path("settings.gradle.kts")
           app_build = pathlib.Path("app/build.gradle.kts")
@@ -72,18 +63,15 @@ jobs:
           assert module is not None and module.attrib.get("name") == "Shiv.app", "Run configuration module must be Shiv.app"
           assert 'include(":app")' in settings.read_text(), "Gradle settings do not include :app"
           assert 'applicationId = "app.shiv"' in app_build.read_text(), "Application ID mismatch"
-          print("Run configuration XML valid; Shiv.app module and app.shiv application module declarations agree.")
+          print("Run configuration XML valid; Shiv.app module and app.shiv declarations agree.")
           PY
-
       - name: Record toolchain
         run: |
           java -version
           ./gradlew --version
           ./gradlew projects
-
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
-
       - name: Inspect packaged APK manifest and launcher
         shell: bash
         run: |
@@ -96,7 +84,8 @@ jobs:
           "$AAPT" dump badging "$APK" | tee app/build/reports/apk-verification/manifest-inspection.txt
           grep -F "package: name='app.shiv'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
-
+          grep -F "label='Shiv'" app/build/reports/apk-verification/manifest-inspection.txt
+          grep -E "application-icon-[0-9]+:" app/build/reports/apk-verification/manifest-inspection.txt
       - name: Install and cold-launch APK in Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -111,23 +100,23 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm clear app.shiv
             adb shell am force-stop app.shiv
+            adb logcat -c
             adb shell am start -W -n app.shiv/.MainActivity | tee app/build/reports/emulator-smoke/launch.txt
             grep -E "Status: ok" app/build/reports/emulator-smoke/launch.txt
             sleep 5
+            adb shell pidof app.shiv | tee app/build/reports/emulator-smoke/process.txt
+            test -s app/build/reports/emulator-smoke/process.txt
             adb shell dumpsys activity activities > app/build/reports/emulator-smoke/activities.txt
             grep -F "app.shiv/.MainActivity" app/build/reports/emulator-smoke/activities.txt
             adb logcat -d -t 6000 > app/build/reports/emulator-smoke/logcat.txt
-            if grep -E "FATAL EXCEPTION|Process: app.shiv, PID:" app/build/reports/emulator-smoke/logcat.txt; then
-              echo "Fatal app crash detected in emulator logcat." >&2
+            if grep -F "Process: app.shiv, PID:" app/build/reports/emulator-smoke/logcat.txt; then
+              echo "Fatal app crash detected in fresh emulator logcat." >&2
               exit 1
             fi
-
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
-
       - name: Run debug lint
         run: ./gradlew :app:lintDebug --stacktrace
-
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4
