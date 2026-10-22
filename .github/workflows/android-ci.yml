@@ -127,27 +127,30 @@ jobs:
             fi
       - name: Collect emulator boot/smoke diagnostics on failure
         if: always() && steps.emulator_smoke.outcome != 'success'
+        timeout-minutes: 2
         shell: bash
         run: |
+          set +e
           mkdir -p app/build/reports/emulator-smoke
+          report="app/build/reports/emulator-smoke/boot-diagnostics.txt"
           {
             echo "UTC: $(date -u +%FT%TZ)"
             echo "Runner: $(uname -a)"
             echo "Android SDK: ${ANDROID_HOME:-unset}"
             echo "ADB version:"
-            adb version || true
+            timeout 5s adb version 2>&1 || echo "ADB version command timed out or failed."
             echo "ADB devices:"
-            adb devices -l || true
+            timeout 8s adb devices -l 2>&1 || echo "ADB devices command timed out or failed."
             echo "Emulator processes:"
             ps -ef | grep -E '[e]mulator|[q]emu|[a]db' || true
             echo "SDK emulator binaries:"
             find "${ANDROID_HOME:-/nonexistent}/emulator" -maxdepth 1 -type f -name emulator -ls 2>/dev/null || true
             echo "Device properties (if booted):"
-            adb shell getprop 2>&1 || true
-          } > app/build/reports/emulator-smoke/boot-diagnostics.txt 2>&1
-          adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || true
-          adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || true
-          adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || true
+            timeout 8s adb shell getprop 2>&1 || echo "getprop timed out or failed; emulator may be unavailable."
+          } > "$report" 2>&1
+          timeout 8s adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || echo "logcat unavailable or timed out" > app/build/reports/emulator-smoke/boot-logcat.txt
+          timeout 8s adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || echo "crash buffer unavailable or timed out" > app/build/reports/emulator-smoke/boot-crash-buffer.txt
+          timeout 8s adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || echo "bootstat unavailable or timed out" > app/build/reports/emulator-smoke/bootstat.txt
       - name: Run unit tests
         if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace

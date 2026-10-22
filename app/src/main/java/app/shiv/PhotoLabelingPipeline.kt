@@ -49,7 +49,7 @@ internal object PhotoLabelingPipeline {
 
         fun record(result: Result<R>) {
             synchronized(lock) {
-                if (outcome == null) outcome = result
+                if (!terminal.get() && outcome == null) outcome = result
             }
         }
 
