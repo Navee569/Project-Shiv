@@ -4,6 +4,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import javax.crypto.Cipher
+import javax.crypto.AEADBadTagException
+import javax.crypto.spec.GCMParameterSpec
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -51,6 +54,44 @@ class BackupStreamsTest {
     @Test fun plaintextCapAndEnvelopeOverheadFitExactPackedLimit() {
         assertEquals(150 * 1024 * 1024, MAX_BACKUP_BYTES)
         assertEquals(MAX_BACKUP_BYTES, BACKUP_HEADER_BYTES + MAX_BACKUP_PLAINTEXT_BYTES + BACKUP_TAG_BYTES)
+    }
+
+
+    private fun packedBackup(payload: ByteArray, passphrase: CharArray): ByteArray {
+        val magic = "SHIVBK01".toByteArray(Charsets.US_ASCII)
+        val salt = ByteArray(16) { it.toByte() }
+        val iv = ByteArray(12) { (it + 1).toByte() }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, deriveBackupKey(passphrase, salt), GCMParameterSpec(128, iv))
+        cipher.updateAAD(magic)
+        return magic + salt + iv + cipher.doFinal(payload)
+    }
+
+    @Test fun decryptsAuthenticatedBackupPayload() {
+        val password = "correct horse battery".toCharArray()
+        val payload = """{"format":1,"messages":[]}""".toByteArray(Charsets.UTF_8)
+        assertArrayEquals(payload, decryptBackupPayload(packedBackup(payload, password), password))
+    }
+
+    @Test fun rejectsWrongPassphraseAndTamperedAuthenticationTag() {
+        val password = "correct horse battery".toCharArray()
+        val packed = packedBackup("{}".toByteArray(), password)
+        assertThrows(AEADBadTagException::class.java) {
+            decryptBackupPayload(packed, "wrong password 123".toCharArray())
+        }
+        val tampered = packed.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+        assertThrows(AEADBadTagException::class.java) { decryptBackupPayload(tampered, password) }
+    }
+
+    @Test fun rejectsTruncatedAndInvalidBackupHeaders() {
+        assertThrows(IllegalArgumentException::class.java) {
+            decryptBackupPayload(byteArrayOf(1, 2, 3), "correct horse battery".toCharArray())
+        }
+        val badMagic = packedBackup("{}".toByteArray(), "correct horse battery".toCharArray())
+            .also { it[0] = 0 }
+        assertThrows(IllegalArgumentException::class.java) {
+            decryptBackupPayload(badMagic, "correct horse battery".toCharArray())
+        }
     }
 
 }
