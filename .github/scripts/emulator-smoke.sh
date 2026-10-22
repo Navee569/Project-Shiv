@@ -9,10 +9,10 @@ printf 'Smoke script started at %s\n' "$(date -u +%FT%TZ)" | tee "$REPORT/script
 printf 'Working directory: %s\n' "$PWD" | tee -a "$REPORT/script-started.txt"
 
 run_bounded() {
-  label="$1"
-  seconds="$2"
+  local label="$1"
+  local seconds="$2"
   shift 2
-  output="$REPORT/${label}.txt"
+  local output="$REPORT/${label}.txt"
   if [ "$label" = "install" ]; then
     run_monitored_install "$seconds" "$@"
     return $?
@@ -67,15 +67,16 @@ capture_diagnostics() {
 # Capture bounded snapshots while package installation is active. Postmortem
 # collection after emulator teardown cannot explain a live install stall.
 snapshot_command() {
-  label="$1"; seconds="$2"; shift 2
-  base="$REPORT/install-live-${snapshot_index}-${label}"
+  local label="$1"; local seconds="$2"; shift 2
+  local base="$REPORT/install-live-${snapshot_index}-${label}"
+  local status
   printf '%s\n' "$*" > "${base}-command.txt"
   if timeout "${seconds}s" "$@" > "${base}.txt" 2>&1; then status=0; else status=$?; fi
   printf 'timestamp=%s exit=%s timeout=%ss\n' "$(timestamp)" "$status" "$seconds" > "${base}-status.txt"
 }
 
 capture_install_snapshot() {
-  snapshot_index="$1"
+  local snapshot_index="$1"
   printf 'Install live snapshot %s at %s\n' "$snapshot_index" "$(timestamp)" | tee "$REPORT/install-live-${snapshot_index}-timestamp.txt"
   snapshot_command adb-version 5 adb version
   snapshot_command adb-server-status 5 adb server-status
@@ -88,14 +89,23 @@ capture_install_snapshot() {
   snapshot_command adb-port-5037 5 sh -c 'ss -ltnp | grep ":5037"'
   snapshot_command host-memory 5 free -h
   snapshot_command host-disk 5 df -h /
+  snapshot_command apk-size 5 stat --format="APK bytes: %s" app/build/outputs/apk/debug/app-debug.apk
+  snapshot_command apk-sha256 8 sha256sum app/build/outputs/apk/debug/app-debug.apk
+  snapshot_command guest-all-logcat 15 adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 2000
 }
 
 run_monitored_install() {
-  seconds="$1"; shift
-  install_log="$REPORT/install.txt"
+  local seconds="$1"; shift
+  local install_log="$REPORT/install.txt"
+  local install_pid
+  local snapshot_index=0
+  local process_state
+  local status
+  printf 'Running install (timeout %ss):' "$seconds" | tee "$REPORT/install-command.txt"
+  printf ' %q' "$@" | tee -a "$REPORT/install-command.txt"
+  printf '\n' | tee -a "$REPORT/install-command.txt"
   timeout "${seconds}s" "$@" >"$install_log" 2>&1 &
   install_pid=$!
-  snapshot_index=0
   while :; do
     process_state=""
     if process_state="$(ps -o stat= -p "$install_pid" 2>/dev/null)"; then :; fi
@@ -114,6 +124,7 @@ run_monitored_install() {
     status=$?
     printf 'install exit=%s timeout=%ss\n' "$status" "$seconds" | tee "$REPORT/install-status.txt" >&2
     cat "$install_log" >&2
+    capture_install_snapshot failure
     return "$status"
   fi
 }
