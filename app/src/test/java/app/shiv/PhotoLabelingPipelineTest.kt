@@ -405,8 +405,6 @@ class PhotoLabelingPipelineTest {
         assertTrue(restored.get())
     }
 
-}
-
 
     @Test
     fun fallbackAwaitUsesNamedArgumentAndReturnsTerminalResult() {
@@ -435,3 +433,4 @@ class PhotoLabelingPipelineTest {
         assertEquals(0, completions)
         assertEquals(1, diagnostics)
     }
+}
