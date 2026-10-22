@@ -238,3 +238,10 @@ The consolidated remediation candidate adds runner disk cleanup/preflight, corre
 | Overall M0 | NOT ACCEPTED |
 
 Follow-up candidate: shell script uses POSIX `set -eu`; fallback waits through interruption until task terminality and restores the interrupt flag. Fresh exact-SHA workflows and further adapter/concurrency tests remain mandatory.
+
+
+## Independent QA retest — 2026-10-22 — candidate SHA `f26c6900c2e15cc12b4feca3c0ae9af5c1a80f37`
+
+Independent QA verdict: **NOT ACCEPTED**. Exact-source push run [39739443060](https://github.com/Navee569/Project-Shiv/actions/runs/39739443060) and PR run [39739449813](https://github.com/Navee569/Project-Shiv/actions/runs/39739449813) both failed during emulator smoke after the POSIX shell issue was corrected. The push run encountered an ADB broken pipe and `emulator-5554 offline`; the PR run hung at `adb install` until the 20-minute step timeout. Neither run verified APK installation or cold launch. Both runs passed build, 18 unit tests, and lint (0 errors, 26 warnings). Exact artifact and APK hashes are in the independent QA report; those results apply only to this SHA.
+
+QA also found that the listener-registration fallback blocks synchronously in the CameraX main-executor path and can invoke `onFailure` twice if the callback itself throws. The follow-up candidate changes the fallback to a worker waiter and main-thread callback dispatch, adds bounded per-command ADB timeouts and device-state checks, and adds focused fallback tests. These changes are **PENDING exact-SHA CI**. Executor-rejection paths intentionally do not signal completion, to avoid premature image release; they require review because they retain ownership without completing the user flow. M0 remains **NOT ACCEPTED**.

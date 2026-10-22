@@ -122,21 +122,40 @@ jobs:
           heap-size: 512M
           script: |
             set -eu
-            mkdir -p app/build/reports/emulator-smoke
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm clear app.shiv
-            adb shell am force-stop app.shiv
-            adb logcat -c
-            adb shell am start -W -n app.shiv/.MainActivity | tee app/build/reports/emulator-smoke/launch.txt
-            grep -E "Status: ok" app/build/reports/emulator-smoke/launch.txt
+            REPORT="app/build/reports/emulator-smoke"
+            mkdir -p "$REPORT"
+            run_bounded() {
+              label="$1"
+              seconds="$2"
+              shift 2
+              output="$REPORT/${label}.txt"
+              echo "Running ${label} (timeout ${seconds}s): $*"
+              if timeout "${seconds}s" "$@" >"$output" 2>&1; then
+                cat "$output"
+              else
+                status=$?
+                cat "$output" >&2 || true
+                echo "Command '${label}' failed with exit code ${status} (timeout ${seconds}s)." >&2
+                return "$status"
+              fi
+            }
+            run_bounded adb-devices-before 10 adb devices -l
+            grep -E 'emulator-[0-9]+[[:space:]]+device([[:space:]]|$)' "$REPORT/adb-devices-before.txt"
+            run_bounded install 180 adb install -r app/build/outputs/apk/debug/app-debug.apk
+            run_bounded pm-clear 30 adb shell pm clear app.shiv
+            grep -F "Success" "$REPORT/pm-clear.txt"
+            run_bounded force-stop 30 adb shell am force-stop app.shiv
+            run_bounded logcat-clear 20 adb logcat -c
+            run_bounded launch 45 adb shell am start -W -n app.shiv/.MainActivity
+            grep -E "Status: ok" "$REPORT/launch.txt"
             sleep 5
-            adb shell pidof app.shiv | tee app/build/reports/emulator-smoke/process.txt
-            test -s app/build/reports/emulator-smoke/process.txt
-            adb shell dumpsys activity activities > app/build/reports/emulator-smoke/activities.txt
-            grep -F "app.shiv/.MainActivity" app/build/reports/emulator-smoke/activities.txt
-            adb logcat -d -t 6000 > app/build/reports/emulator-smoke/logcat.txt
-            adb logcat -b crash -d > app/build/reports/emulator-smoke/crash-buffer.txt
-            if grep -E "Process: app\\.shiv, PID:|ANR in app\\.shiv" app/build/reports/emulator-smoke/logcat.txt app/build/reports/emulator-smoke/crash-buffer.txt; then
+            run_bounded process 20 adb shell pidof app.shiv
+            test -s "$REPORT/process.txt"
+            run_bounded activities 30 adb shell dumpsys activity activities
+            grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
+            run_bounded logcat 20 adb logcat -d -t 6000
+            run_bounded crash-buffer 20 adb logcat -b crash -d
+            if grep -E "Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
               echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
               exit 1
             fi

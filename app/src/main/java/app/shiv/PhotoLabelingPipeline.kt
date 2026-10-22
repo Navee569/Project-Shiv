@@ -1,9 +1,15 @@
 package app.shiv
 
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabel
 import com.google.mlkit.vision.label.ImageLabeler
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 internal object InterruptSafeAwait {
     fun <T> await(awaitOnce: () -> T, restoreInterrupt: () -> Unit = { Thread.currentThread().interrupt() }): T {
@@ -28,9 +34,61 @@ internal interface PhotoLabeler<I, R> {
 }
 
 /**
- * Keeps the input alive until the ML Kit task is terminal, including listener-registration
- * failure. The exceptional fallback waits uninterruptibly, then restores the interrupt flag.
+ * Waits for a task after listener registration fails without blocking the caller.
+ * Results are dispatched on the main executor to match the normal Task listener contract.
+ * If either executor rejects work, completion is not signalled: the pipeline must retain
+ * image ownership rather than closing an image that may still be in use.
  */
+internal object ListenerRegistrationFallback {
+    fun schedule(
+        awaitTask: () -> Unit,
+        registrationFailure: Throwable,
+        waiter: Executor,
+        callbackExecutor: Executor,
+        onFailure: (Throwable) -> Unit,
+        onComplete: () -> Unit,
+        onSchedulingFailure: (Throwable) -> Unit = {}
+    ): Boolean {
+        return try {
+            waiter.execute {
+                val terminalFailure = try {
+                    awaitTask()
+                    registrationFailure
+                } catch (taskFailure: Throwable) {
+                    if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
+                    taskFailure
+                }
+                try {
+                    callbackExecutor.execute {
+                        try {
+                            onFailure(terminalFailure)
+                        } finally {
+                            onComplete()
+                        }
+                    }
+                } catch (rejected: RejectedExecutionException) {
+                    onSchedulingFailure(rejected)
+                }
+            }
+            true
+        } catch (rejected: RejectedExecutionException) {
+            onSchedulingFailure(rejected)
+            false
+        }
+    }
+}
+
+internal object PhotoLabelingExecutors {
+    val waiter: Executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "shiv-mlkit-fallback").apply { isDaemon = true }
+    }
+    val mainCallback: Executor = Executor { command ->
+        if (!Handler(Looper.getMainLooper()).post(command)) {
+            throw RejectedExecutionException("Main-thread callback could not be scheduled")
+        }
+    }
+}
+
 internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
     PhotoLabeler<InputImage, List<ImageLabel>> {
     override fun process(
@@ -50,17 +108,17 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                 }
             }
         } catch (registrationFailure: Throwable) {
-            // Do not create a worker whose start could fail and accidentally release the image.
-            // This rare exceptional path may block its caller, but retains ownership until terminality.
-            try {
-                InterruptSafeAwait.await(awaitOnce = { Tasks.await(task) })
-                onFailure(registrationFailure)
-            } catch (taskFailure: Throwable) {
-                if (taskFailure !== registrationFailure) taskFailure.addSuppressed(registrationFailure)
-                onFailure(taskFailure)
-            } finally {
-                onComplete()
-            }
+            ListenerRegistrationFallback.schedule(
+                awaitTask = { InterruptSafeAwait.await(awaitOnce = { Tasks.await(task) }); Unit },
+                registrationFailure = registrationFailure,
+                waiter = PhotoLabelingExecutors.waiter,
+                callbackExecutor = PhotoLabelingExecutors.mainCallback,
+                onFailure = onFailure,
+                onComplete = onComplete,
+                onSchedulingFailure = {
+                    Log.e("ShivPhotoLabeler", "Fallback scheduling failed; retaining image ownership", it)
+                }
+            )
         }
     }
 

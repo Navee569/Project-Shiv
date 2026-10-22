@@ -26,3 +26,17 @@ Confirmed failures: API 35 emulator userdata required 7372.80 MB with about 5619
 Confirmed findings: both workflows failed before APK installation because `/usr/bin/sh` rejected `set -o pipefail`; JUnit passed 17/17 and lint passed with 0 errors/26 warnings. The fallback waiter could treat InterruptedException as task termination and release the ImageProxy early; worker-start failure was also unsafe. Adapter/fallback and deterministic concurrency tests were missing. Documentation was stale after workflows completed.
 
 Consolidated follow-up fixes the POSIX shell mismatch and changes fallback waiting to retry interruptions until the task is terminal, restoring the interrupt flag afterward. Remaining adapter/concurrency coverage and exact-SHA CI are still required; M0 remains NOT ACCEPTED.
+
+
+## Independent QA retest — 2026-10-22 — candidate SHA `f26c6900c2e15cc12b4feca3c0ae9af5c1a80f37`
+
+Confirmed findings from exact-SHA push run 39739443060 and PR run 39739449813:
+- D-001 original POSIX shell incompatibility: fixed in source; old pipefail error did not recur.
+- D-006 BLOCKER: emulator smoke still failed before install/cold launch. Push run ADB broken pipe/offline; PR run adb install timed out.
+- D-007 MEDIUM: ADB smoke commands lacked individual timeouts and clear device-state validation.
+- D-002 HIGH: synchronous ML Kit listener-registration fallback can block the main/UI thread.
+- D-003 MEDIUM: fallback catch scope can reclassify a consumer callback exception and call onFailure twice.
+- D-004 HIGH/coverage: adapter-level listener-registration fallback and deterministic concurrency coverage are insufficient.
+- D-005 MEDIUM: status/test/defect docs became stale after the exact-SHA workflows completed.
+
+A follow-up candidate adds bounded ADB command execution and focused fallback scheduling/callback tests, moves waiting off the caller thread, and dispatches fallback callbacks to the main executor. All fixes are PENDING exact-SHA workflow and independent retest. M0 remains NOT ACCEPTED.

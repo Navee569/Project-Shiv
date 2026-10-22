@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 class PhotoLabelingPipelineTest {
     private class FakeLabeler(
@@ -192,6 +194,101 @@ class PhotoLabelingPipelineTest {
         assertEquals("terminal", terminal)
         assertEquals(2, attempts)
         assertTrue(restoredInterrupt)
+    }
+
+    @Test fun registrationFallbackWaitsOffCallerThreadAndDispatchesFailureOnce() {
+        val waiting = mutableListOf<Runnable>()
+        val callbacks = mutableListOf<Runnable>()
+        val registration = IllegalStateException("listener registration failed")
+        var awaits = 0
+        var failureCalls = 0
+        var completions = 0
+
+        val scheduled = ListenerRegistrationFallback.schedule(
+            awaitTask = { awaits++ },
+            registrationFailure = registration,
+            waiter = Executor { waiting.add(it) },
+            callbackExecutor = Executor { callbacks.add(it) },
+            onFailure = { assertSame(registration, it); failureCalls++ },
+            onComplete = { completions++ }
+        )
+
+        assertTrue(scheduled)
+        assertEquals(1, waiting.size)
+        assertEquals(0, awaits)
+        assertEquals(0, failureCalls)
+        assertEquals(0, completions)
+        waiting.single().run()
+        assertEquals(1, awaits)
+        assertEquals(1, callbacks.size)
+        assertEquals(0, failureCalls)
+        callbacks.single().run()
+        assertEquals(1, failureCalls)
+        assertEquals(1, completions)
+    }
+
+    @Test fun registrationFallbackDoesNotRepeatFailureWhenConsumerCallbackThrows() {
+        val waiting = mutableListOf<Runnable>()
+        val callbacks = mutableListOf<Runnable>()
+        val callbackFailure = IllegalArgumentException("consumer callback failed")
+        var failureCalls = 0
+        var completions = 0
+        ListenerRegistrationFallback.schedule(
+            awaitTask = {},
+            registrationFailure = IllegalStateException("registration failed"),
+            waiter = Executor { waiting.add(it) },
+            callbackExecutor = Executor { callbacks.add(it) },
+            onFailure = { failureCalls++; throw callbackFailure },
+            onComplete = { completions++ }
+        )
+
+        waiting.single().run()
+        try {
+            callbacks.single().run()
+            throw AssertionError("Expected callback exception")
+        } catch (actual: IllegalArgumentException) {
+            assertSame(callbackFailure, actual)
+        }
+        assertEquals(1, failureCalls)
+        assertEquals(1, completions)
+    }
+
+    @Test fun registrationFallbackPreservesTaskFailureAndRegistrationCause() {
+        val waiting = mutableListOf<Runnable>()
+        val callbacks = mutableListOf<Runnable>()
+        val taskFailure = IllegalStateException("task failed")
+        val registration = IllegalArgumentException("registration failed")
+        var observed: Throwable? = null
+        ListenerRegistrationFallback.schedule(
+            awaitTask = { throw taskFailure },
+            registrationFailure = registration,
+            waiter = Executor { waiting.add(it) },
+            callbackExecutor = Executor { callbacks.add(it) },
+            onFailure = { observed = it },
+            onComplete = {}
+        )
+        waiting.single().run()
+        callbacks.single().run()
+        assertSame(taskFailure, observed)
+        assertEquals(1, taskFailure.suppressed.size)
+        assertSame(registration, taskFailure.suppressed.single())
+    }
+
+    @Test fun registrationFallbackDoesNotSignalCompletionWhenWaiterRejects() {
+        var failures = 0
+        var completions = 0
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = {},
+            registrationFailure = IllegalStateException("registration failed"),
+            waiter = Executor { throw RejectedExecutionException("test rejection") },
+            callbackExecutor = Executor { it.run() },
+            onFailure = { failures++ },
+            onComplete = { completions++ },
+            onSchedulingFailure = {}
+        )
+        assertFalse(accepted)
+        assertEquals(0, failures)
+        assertEquals(0, completions)
     }
 
 }
