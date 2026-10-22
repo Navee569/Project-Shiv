@@ -10,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import java.io.IOException
+import java.io.File
 import javax.crypto.CipherOutputStream
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -31,29 +32,38 @@ class EncryptedBackup(context: Context) {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, deriveKey(passphrase, salt), GCMParameterSpec(128, iv))
             cipher.updateAAD(MAGIC)
+            val temporary = File.createTempFile("shiv-backup-", ".tmp", app.cacheDir)
             try {
-                val output = app.contentResolver.openOutputStream(uri, "wt")
-                requireNotNull(output) { "Could not create the selected backup file." }.use { raw ->
-                    raw.write(MAGIC)
-                    raw.write(salt)
-                    raw.write(iv)
-                    val encrypted = CipherOutputStream(raw, cipher)
-                    val bounded = BoundedOutputStream(encrypted, MAX_BACKUP_PLAINTEXT_BYTES)
-                    val writer = JsonWriter(java.io.OutputStreamWriter(bounded, Charsets.UTF_8))
-                    writer.isLenient = false
-                    try {
-                        writeSnapshot(writer)
-                        writer.flush()
-                    } finally {
-                        writer.close()
+                try {
+                    temporary.outputStream().use { raw ->
+                        raw.write(MAGIC)
+                        raw.write(salt)
+                        raw.write(iv)
+                        val encrypted = CipherOutputStream(raw, cipher)
+                        val bounded = BoundedOutputStream(encrypted, MAX_BACKUP_PLAINTEXT_BYTES)
+                        val writer = JsonWriter(java.io.OutputStreamWriter(bounded, Charsets.UTF_8))
+                        writer.isLenient = false
+                        try {
+                            writeSnapshot(writer)
+                            writer.flush()
+                        } finally {
+                            writer.close()
+                        }
                     }
+                } catch (failure: Throwable) {
+                    if (failure is IOException && failure.message?.contains("maximum supported size") == true) {
+                        throw IllegalArgumentException("This backup is too large to export safely (150 MiB maximum).", failure)
+                    }
+                    throw failure
                 }
-            } catch (failure: Throwable) {
-                runCatching { app.contentResolver.delete(uri, null, null) }
-                if (failure is IOException && failure.message?.contains("maximum supported size") == true) {
-                    throw IllegalArgumentException("This backup is too large to export safely (150 MiB maximum).", failure)
+                // Do not touch the user-selected destination until the complete capped backup exists.
+                val output = app.contentResolver.openOutputStream(uri, "wt")
+                requireNotNull(output) { "Could not create the selected backup file." }.use { destination ->
+                    temporary.inputStream().use { it.copyTo(destination, 8192) }
+                    destination.flush()
                 }
-                throw failure
+            } finally {
+                temporary.delete()
             }
         } finally {
             passphrase.fill('\u0000')
