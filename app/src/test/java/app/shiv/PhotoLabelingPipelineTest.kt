@@ -406,3 +406,32 @@ class PhotoLabelingPipelineTest {
     }
 
 }
+
+
+    @Test
+    fun fallbackAwaitUsesNamedArgumentAndReturnsTerminalResult() {
+        val terminal = InterruptSafeAwait.await(
+            awaitOnce = { "terminal-result" }
+        )
+        assertEquals("terminal-result", terminal)
+    }
+
+    @Test
+    fun unresolvedFallbackDoesNotCompleteWhenTerminalityCannotBeEstablished() {
+        val waiting = mutableListOf<Runnable>()
+        var completions = 0
+        var diagnostics = 0
+        val accepted = ListenerRegistrationFallback.schedule(
+            awaitTask = { throw TaskTerminalityUnresolvedException(java.util.concurrent.TimeoutException("not terminal")) },
+            registrationFailure = IllegalStateException("registration failed"),
+            waiter = Executor { waiting.add(it) },
+            onSuccess = { completions++ },
+            onFailure = { completions++ },
+            onComplete = { completions++ },
+            onSchedulingFailure = { diagnostics++ }
+        )
+        assertTrue(accepted)
+        waiting.single().run()
+        assertEquals(0, completions)
+        assertEquals(1, diagnostics)
+    }
