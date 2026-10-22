@@ -225,8 +225,6 @@ class PhotoCaptureCompletionTest {
         assertEquals(1, completionCallbacks)
     }
 
-}
-
 
     @Test
     fun concurrentReleaseAndFinishAttemptImageCloseExactlyOnce() {
@@ -275,3 +273,4 @@ class PhotoCaptureCompletionTest {
         assertEquals(1, closes)
         assertEquals(1, callbacks)
     }
+}
