@@ -72,6 +72,31 @@ jobs:
           grep -F "package: name='app.shiv'" app/build/reports/apk-verification/manifest-inspection.txt
           grep -F "launchable-activity: name='app.shiv.MainActivity'" app/build/reports/apk-verification/manifest-inspection.txt
 
+      - name: Install and cold-launch APK in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p app/build/reports/emulator-smoke
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm clear app.shiv
+            adb shell am force-stop app.shiv
+            adb shell am start -W -n app.shiv/.MainActivity | tee app/build/reports/emulator-smoke/launch.txt
+            grep -E "Status: ok" app/build/reports/emulator-smoke/launch.txt
+            sleep 5
+            adb shell dumpsys activity activities > app/build/reports/emulator-smoke/activities.txt
+            grep -F "app.shiv/.MainActivity" app/build/reports/emulator-smoke/activities.txt
+            adb logcat -d -t 6000 > app/build/reports/emulator-smoke/logcat.txt
+            if grep -E "FATAL EXCEPTION|Process: app.shiv, PID:" app/build/reports/emulator-smoke/logcat.txt; then
+              echo "Fatal app crash detected in emulator logcat." >&2
+              exit 1
+            fi
+
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
@@ -90,3 +115,4 @@ jobs:
             app/build/outputs/apk/debug/output-metadata.json
             app/build/outputs/apk/debug/*.apk
             app/build/reports/apk-verification/**
+            app/build/reports/emulator-smoke/**

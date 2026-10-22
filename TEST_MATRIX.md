@@ -98,3 +98,31 @@ The documentation records the evidence available for SHA `597be93...`; future co
 The CI workflow now includes a post-assembly check using Android Build Tools `aapt dump badging` against `app-debug.apk`. It records the output and asserts the packaged application ID is `app.shiv` and the launchable activity is `app.shiv.MainActivity`; the report is included in the workflow artifact.
 
 Status: **PENDING exact-SHA CI verification**. Do not mark the binary-manifest criterion PASS until the new workflow succeeds and its actual output is inspected. Even if this check passes, Android Studio run-configuration resolution, device/emulator installation and cold launch, permission denial, preview/capture, real ML Kit output, and actual asynchronous ImageProxy lifetime remain NOT VERIFIED/BLOCKED. M0 remains NOT ACCEPTED.
+
+
+## Independent M0 retest — exact source SHA 8c860e197b0280c299ca890e1a0872bcf4f4fc0c — 2026-10-22
+
+Evidence from the independent report:
+
+- Exact-source push run [39712010450](https://github.com/Navee569/Project-Shiv/actions/runs/39712010450): SUCCESS.
+- PR merge-result run [39712016130](https://github.com/Navee569/Project-Shiv/actions/runs/39712016130): SUCCESS on synthetic merge SHA `e21426dc26247226087a5273a9ef58dde75ed1ac`; source PR head remained `8c860e197b0280c299ca890e1a0872bcf4f4fc0c`.
+- Build, project discovery, unit-test task, lint and artifact upload passed. JUnit XML: 7/7 passed. Lint: 0 errors, 27 warnings.
+- Binary APK manifest gate: PASS; package `app.shiv`, versionCode 1, versionName `0.1.0`, launcher `app.shiv.MainActivity`.
+- Push artifact ID `12397658751`, APK SHA-256 `4193e608c111026aeaa8727a8d7ee0a6a8dce86d0016ed98753beead5ad0e203`.
+- PR artifact ID `12397003355`, APK SHA-256 `2d9bf52a3611a165aa2f6b9fbf530c441fead244f8e66fbe82c60f2d3e3b8f45`. The APK hashes differ; reproducibility is not asserted.
+
+| Requirement | Result on SHA 8c860e1 |
+|---|---|
+| Gradle project discovery / app module | PASS |
+| Debug APK assembly | PASS |
+| Unit tests | PASS: 7/7 |
+| Lint | PASS: 0 errors, 27 warnings |
+| Binary APK package/launcher inspection | PASS |
+| Artifact digest provenance | PASS |
+| Android Studio sync and run configuration | NOT VERIFIED |
+| Physical device install and cold launch | NOT VERIFIED |
+| Camera permission denial, preview/capture, real ML Kit output | NOT VERIFIED |
+| Real asynchronous ImageProxy lifetime/closure | NOT VERIFIED |
+| M0 acceptance | NOT ACCEPTED |
+
+The workflow change in this commit adds a clean-install emulator cold-launch smoke test and archives launch/activity/logcat evidence. Its result is pending on the new commit; do not infer PASS before inspecting that exact-SHA run. Emulator launch does not prove physical-camera or real camera callback correctness.

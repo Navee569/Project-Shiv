@@ -307,3 +307,27 @@ After independent retest of `eb218cbb02a6f501dd456b9e70b6da25170b772b`, the QA r
 **Verification status:** This is a workflow change, not yet verified evidence. The new workflow must complete on its own exact commit; inspect its logs and uploaded manifest report before marking the automated binary-manifest check PASS. This does not verify Android Studio sync/run configuration, installation/cold launch, camera permission behaviour, preview/capture, ML Kit inference, or real asynchronous ImageProxy lifetime. Those remain NOT VERIFIED/BLOCKED.
 
 **M0 remains NOT ACCEPTED.** Preserve PR #1 as open and unmerged until all mandatory criteria have independently verifiable evidence.
+
+
+## Independent M0 retest — exact source SHA 8c860e197b0280c299ca890e1a0872bcf4f4fc0c — 2026-10-22
+
+The independent report inspected the exact branch-tree push run and the separate PR merge-result run for this revision:
+
+- Exact-commit push workflow [39712010450](https://github.com/Navee569/Project-Shiv/actions/runs/39712010450): SUCCESS on source SHA `8c860e197b0280c299ca890e1a0872bcf4f4fc0c`.
+- PR workflow [39712016130](https://github.com/Navee569/Project-Shiv/actions/runs/39712016130): SUCCESS for the same PR head; the tested worktree was synthetic merge SHA `e21426dc26247226087a5273a9ef58dde75ed1ac`, with base `96e5dd78eedb8f12cf1e2aee758364284de03276`. This is merge-result validation, not the exact branch tree.
+- Toolchain: OpenJDK 17.0.20.1, Gradle 8.9, Android platform 35, Build Tools 35.0.0, lint 8.7.3. Gradle project discovery, `:app:assembleDebug`, `:app:testDebugUnitTest`, `:app:lintDebug`, and artifact upload passed in both runs.
+- JUnit XML suite `app.shiv.PhotoCaptureCompletionTest`: 7/7 passed, zero failures/errors/skips.
+- Lint: zero errors and 27 warnings (GradleDependency 15, ObsoleteSdkInt 6, Recycle 2, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, MissingApplicationIcon 1).
+- Packaged binary manifest inspection passed: `aapt dump badging` reported `package: name='app.shiv' versionCode='1' versionName='0.1.0'` and `launchable-activity: name='app.shiv.MainActivity' label='' icon=''`.
+- Push artifact ID `12397658751`: archive digest independently matched `116803628393670796c1d71dfc0a7d1b2f366fba49a22fec954f25f511a4ab5a`; APK SHA-256 `4193e608c111026aeaa8727a8d7ee0a6a8dce86d0016ed98753beead5ad0e203`.
+- PR artifact ID `12397003355`: archive digest independently matched `9cc2bcc4f3236152c61283073db1be8e57ce5c355cc9609a2a9cc8665b303003`; APK SHA-256 `2d9bf52a3611a165aa2f6b9fbf530c441fead244f8e66fbe82c60f2d3e3b8f45`. Both APKs are 136,026,076 bytes; hashes differ, so no byte-identical reproducibility claim is made.
+
+### Remaining acceptance gaps (not silently waived)
+
+- Android Studio Gradle sync and actual resolution/execution of `.run/App.run.xml`: NOT VERIFIED.
+- Install and cold launch on a physical device: NOT VERIFIED.
+- Camera permission denial, preview, real capture, and actual ML Kit description: NOT VERIFIED.
+- Actual asynchronous CameraX `ImageProxy` lifetime and exactly-once closure through real callbacks: NOT VERIFIED.
+- Lint still reports 27 warnings; the existing warning set includes missing application icon metadata.
+
+**Decision: M0 NOT ACCEPTED.** PR #1 remains open/draft and unmerged. This evidence is tied only to SHA `8c860e1...`; the next commit requires its own CI and independent retest evidence. The following consolidated change adds an emulator install/cold-launch smoke check, but cannot substitute for a physical-device camera test or Android Studio validation.
