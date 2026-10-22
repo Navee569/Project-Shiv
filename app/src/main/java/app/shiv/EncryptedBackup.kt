@@ -191,17 +191,6 @@ class EncryptedBackup(context: Context) {
         finally { spec.clearPassword() }
     }
 
-    private fun <T> jsonArrayTyped(values: List<T>, convert: (T) -> JSONObject) = JSONArray().apply { values.forEach { put(convert(it)) } }
-    private fun profileJson(v: UserProfile) = JSONObject().put("id", v.id).put("name", v.name).put("notes", v.notes).put("updatedAt", v.updatedAt)
-    private fun messageJson(v: ChatMessage) = JSONObject().put("id", v.id).put("text", v.text).put("fromUser", v.fromUser).put("createdAt", v.createdAt).put("tier", v.tier)
-    private fun memoryJson(v: MemoryFact) = JSONObject().put("id", v.id).put("text", v.text).put("createdAt", v.createdAt)
-    private fun eventJson(v: EventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("source", v.source).put("createdAt", v.createdAt)
-    private fun pendingEventJson(v: PendingEventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("createdAt", v.createdAt)
-    private fun actionJson(v: ActionLogEntry) = JSONObject().put("id", v.id).put("action", v.action).put("tier", v.tier).put("outcome", v.outcome).put("createdAt", v.createdAt)
-    private fun ruleJson(v: ReminderRule) = JSONObject().put("ruleKey", v.ruleKey).put("value", v.value).put("updatedAt", v.updatedAt)
-    private fun draftJson(v: ReplyDraft) = JSONObject().put("id", v.id).put("person", v.person).put("body", v.body).put("createdAt", v.createdAt)
-    private fun tierJson(v: ActionTierSetting) = JSONObject().put("actionKey", v.actionKey).put("tier", v.tier)
-    private fun settingsJson(v: ShivSettings) = JSONObject().put("id", v.id).put("proactiveEnabled", v.proactiveEnabled).put("quietStartMinute", v.quietStartMinute).put("quietEndMinute", v.quietEndMinute).put("maxDailyInterruptions", v.maxDailyInterruptions)
     private fun readProfile(o: JSONObject) = UserProfile(o.optInt("id", 1), o.getString("name"), o.getString("notes"), o.getLong("updatedAt"))
     private fun readMessage(o: JSONObject) = ChatMessage(o.getString("id"), o.getString("text"), o.getBoolean("fromUser"), o.getLong("createdAt"), o.optString("tier").takeUnless { it == "null" || it.isEmpty() })
     private fun readMemory(o: JSONObject) = MemoryFact(o.getString("id"), o.getString("text"), o.getLong("createdAt"))
