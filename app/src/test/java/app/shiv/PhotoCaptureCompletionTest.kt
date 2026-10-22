@@ -226,3 +226,52 @@ class PhotoCaptureCompletionTest {
     }
 
 }
+
+
+    @Test
+    fun concurrentReleaseAndFinishAttemptImageCloseExactlyOnce() {
+        val start = java.util.concurrent.CountDownLatch(1)
+        val ready = java.util.concurrent.CountDownLatch(2)
+        val closes = java.util.concurrent.atomic.AtomicInteger()
+        val callbacks = java.util.concurrent.atomic.AtomicInteger()
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes.incrementAndGet() },
+            onComplete = { callbacks.incrementAndGet() }
+        )
+        val releaseThread = Thread {
+            ready.countDown()
+            start.await()
+            completion.releaseImage()
+        }
+        val finishThread = Thread {
+            ready.countDown()
+            start.await()
+            completion.finish()
+        }
+        releaseThread.start()
+        finishThread.start()
+        assertEquals(true, ready.await(3, java.util.concurrent.TimeUnit.SECONDS))
+        start.countDown()
+        releaseThread.join(3000)
+        finishThread.join(3000)
+        assertEquals(false, releaseThread.isAlive)
+        assertEquals(false, finishThread.isAlive)
+        assertEquals(1, closes.get())
+        assertEquals(1, callbacks.get())
+    }
+
+    @Test
+    fun duplicateReleaseAndFinishDoNotRepeatCloseOrCompletion() {
+        var closes = 0
+        var callbacks = 0
+        val completion = PhotoCaptureCompletion(
+            closeImage = { closes++ },
+            onComplete = { callbacks++ }
+        )
+        assertEquals(null, completion.releaseImage())
+        assertEquals(null, completion.releaseImage())
+        assertEquals(true, completion.finish())
+        assertEquals(false, completion.finish())
+        assertEquals(1, closes)
+        assertEquals(1, callbacks)
+    }
