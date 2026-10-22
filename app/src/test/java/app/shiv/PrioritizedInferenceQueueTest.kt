@@ -136,7 +136,8 @@ class PrioritizedInferenceQueueTest {
     }
 
 
-    @Test fun closeMakesEveryQueuedCallerTerminal() = runBlocking {
+    @Test fun closeMakesEveryQueuedCallerTerminal() {
+        runBlocking {
         val queue = PrioritizedInferenceQueue()
         val activeStarted = CompletableDeferred<Unit>()
         val releaseActive = CompletableDeferred<Unit>()
@@ -162,6 +163,7 @@ class PrioritizedInferenceQueueTest {
         } finally {
             releaseActive.complete(Unit)
             queue.close()
+        }
         }
     }
 
