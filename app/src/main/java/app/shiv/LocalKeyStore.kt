@@ -27,6 +27,16 @@ class LocalKeyStore(private val context: Context) {
                 throw DatabaseKeyRecoveryException("Shiv could not unlock its existing database key. The encrypted database was preserved; restore from a valid encrypted backup if available.", failure)
             }
         }
+        if (databaseKeyState(
+                hasWrappedMetadata = false,
+                databaseFileExists = context.getDatabasePath("shiv-memory.db").exists()
+            ) == DatabaseKeyState.MISSING_METADATA_WITH_DATABASE
+        ) {
+            throw DatabaseKeyRecoveryException(
+                "Shiv found an existing encrypted database but its wrapped key metadata is missing. " +
+                    "The database was preserved; restore from a valid encrypted backup if available."
+            )
+        }
         val raw = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         val cipher = cipher(Cipher.ENCRYPT_MODE, getOrCreateWrappingKey(), null)
         val packed = cipher.iv + cipher.doFinal(raw)
