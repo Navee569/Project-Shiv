@@ -88,7 +88,17 @@ fun PhotoCapture(onClose: () -> Unit, onDescription: (String) -> Unit) {
                                 if (failure != null) error = "The photo couldn’t be processed. Please try again."
                             }
                         )
-                        val adapter = PhotoCaptureAnalysisAdapter(done, onDescription, onClose)
+                        activeAdapter?.abandonUi()
+                        val adapter = PhotoCaptureAnalysisAdapter(
+                            completion = done,
+                            onDescription = onDescription,
+                            onClose = onClose,
+                            onAnalysisUnresolved = {
+                                working = false
+                                error = "Photo analysis is taking longer than expected. You can close this screen or try again; the image will remain protected until analysis actually stops."
+                            }
+                        )
+                        activeAdapter = adapter
                         try {
                             val media = proxy.image
                             if (media == null) { done.finish(IllegalStateException("Empty camera image")); return }
