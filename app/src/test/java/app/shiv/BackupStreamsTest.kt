@@ -47,4 +47,10 @@ class BackupStreamsTest {
         assertArrayEquals(byteArrayOf(1, 2, 3), sink.toByteArray())
     }
 
+
+    @Test fun plaintextCapAndEnvelopeOverheadFitExactPackedLimit() {
+        assertEquals(150 * 1024 * 1024, MAX_BACKUP_BYTES)
+        assertEquals(MAX_BACKUP_BYTES, BACKUP_HEADER_BYTES + MAX_BACKUP_PLAINTEXT_BYTES + BACKUP_TAG_BYTES)
+    }
+
 }
