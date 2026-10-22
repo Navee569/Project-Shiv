@@ -74,15 +74,15 @@ internal object ListenerRegistrationFallback {
                 Result.failure(taskFailure)
             }
 
-            var callbackFailure: Throwable? = null
+            var callbackFailure: Exception? = null
             try {
                 outcome.fold(onSuccess, onFailure)
-            } catch (failure: Throwable) {
+            } catch (failure: Exception) {
                 callbackFailure = failure
             } finally {
                 try {
                     onComplete()
-                } catch (completionFailure: Throwable) {
+                } catch (completionFailure: Exception) {
                     val primary = callbackFailure
                     if (primary == null) callbackFailure = completionFailure
                     else if (primary !== completionFailure) {
@@ -172,7 +172,7 @@ internal class MlKitPhotoLabeler(private val delegate: ImageLabeler) :
                         )
                     } catch (timeout: TimeoutException) {
                         throw TaskTerminalityUnresolvedException(timeout)
-                    } catch (awaitFailure: Throwable) {
+                    } catch (awaitFailure: Exception) {
                         throw task.exception ?: awaitFailure
                     }
                 },
