@@ -5,6 +5,12 @@ import java.io.InputStream
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.io.IOException
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.AEADBadTagException
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 internal const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
 internal const val BACKUP_HEADER_BYTES = 8 + 16 + 12
@@ -65,5 +71,31 @@ internal class BoundedOutputStream(
         if (written + additional > maxBytes.toLong()) {
             throw IOException("Output exceeds the maximum supported size.")
         }
+    }
+}
+
+/** Validates the bounded portable-backup envelope and authenticates it before JSON parsing. */
+internal fun decryptBackupPayload(packed: ByteArray, passphrase: CharArray): ByteArray {
+    val magic = "SHIVBK01".toByteArray(Charsets.US_ASCII)
+    require(packed.size in (BACKUP_HEADER_BYTES + BACKUP_TAG_BYTES)..MAX_BACKUP_BYTES) {
+        "This backup file has an invalid size."
+    }
+    require(packed.copyOfRange(0, magic.size).contentEquals(magic)) {
+        "This is not a Shiv encrypted backup."
+    }
+    val salt = packed.copyOfRange(magic.size, magic.size + 16)
+    val iv = packed.copyOfRange(magic.size + 16, magic.size + 28)
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.DECRYPT_MODE, deriveBackupKey(passphrase, salt), GCMParameterSpec(128, iv))
+    cipher.updateAAD(magic)
+    return cipher.doFinal(packed.copyOfRange(magic.size + 28, packed.size))
+}
+
+internal fun deriveBackupKey(password: CharArray, salt: ByteArray): SecretKeySpec {
+    val spec = PBEKeySpec(password, salt, 310_000, 256)
+    return try {
+        SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded, "AES")
+    } finally {
+        spec.clearPassword()
     }
 }
