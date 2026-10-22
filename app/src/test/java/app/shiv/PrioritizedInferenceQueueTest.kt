@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.RejectedExecutionException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,7 +54,7 @@ class PrioritizedInferenceQueueTest {
         queue.close()
         val outcomes = withTimeout(3_000) { requests.awaitAll() }
         assertEquals(64, outcomes.size)
-        assertTrue(outcomes.all { it.isSuccess || it.exceptionOrNull() != null })
+        assertTrue("A submission hung until its timeout", outcomes.none { it.exceptionOrNull() is TimeoutCancellationException })
     }
 
     @Test fun concurrentSubmissionsRespectQueueCapacity() = runBlocking {
