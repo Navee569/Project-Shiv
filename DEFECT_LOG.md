@@ -179,3 +179,26 @@ Historical failed-run entries are retained. No physical device, real Keystore fa
 | M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Android/data integrity and security | Actual Keystore fault injection, Room transaction/rollback integration, backup URI failure/restore rollback, production action-tier entry points, offline network capture, physical Galaxy S23 and full security testing remain unverified. | Add/run appropriate platform-level tests or retain as blockers according to project-owner criteria. Never claim PASS from source review or green JVM CI alone. |
 
 Prior-candidate CI summary: push run 39902332198 and PR run 39902335066 both succeeded; each required workflow had 72 tests, 0 failures/errors/skips, and lint 0 errors / 26 warnings. Both hosted emulator smoke checks passed. Push queue logs 10/10 individually passed; exact-source queue execution reported 10/10 zero exit codes but logs were not retained in its artifact. APK metadata and SHA-256 values are recorded in STATUS.md. M1 remains BLOCKED / NOT ACCEPTED until evidence-retention closure and broader acceptance requirements are addressed.
+
+
+## M1 QA remediation status — 2026-10-23 — exact-source run 39923689666
+
+| ID | Severity | Updated finding | Status / closure criteria |
+|---|---|---|---|
+| M1-DOC-FRESHNESS-002 | Medium | STATUS.md, TEST_MATRIX.md, and DEFECT_LOG.md did not record run 39923689666 or source SHA `966aa26ab63bf72b15848496db5b3930e377670e`. Dated evidence addenda are now being added to all three documents. | **OPEN pending** fresh push and exact-source PR workflows for the resulting documentation commit, plus independent re-fetch confirming the three documents agree. Preserve all prior history. |
+| M1-QUEUE-ARTIFACT-001 | High | Exact-source artifact 12488143989 was inspected for source SHA `966aa26ab63bf72b15848496db5b3930e377670e`; it retained the summary, run-01.log through run-10.log, and ten corresponding JUnit XML reports. All ten runs were reported valid and passing. | **Resolved for candidate SHA `966aa26ab63bf72b15848496db5b3930e377670e` only**, subject to fresh independent verification on the new documentation commit. Do not erase the prior candidate's artifact-retention failure. |
+| M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Keystore fault injection, Room transaction/rollback integration, backup URI write failure and restore rollback, production action-tier/permission end-to-end behavior, offline network capture, physical Galaxy S23, and comprehensive security assessment remain unverified. | **OPEN — acceptance blocker.** Add and execute appropriate platform-level tests or retain as blockers. Never close based on source review, JVM CI, APK build, or hosted emulator alone. |
+| M1-APK-REPRO-001 | Low / investigate if required | Regular and exact-source APKs were each 136,059,539 bytes but had different SHA-256 values; regular job used merge SHA `79a4b7623b67f1ca0acb09887e0812d1fd3b240f`, exact-source job used `966aa26ab63bf72b15848496db5b3930e377670e`. | **Investigate only if byte-for-byte reproducibility is a formal requirement.** Different source trees mean the hash difference alone does not establish a defect. |
+| M1-REGULAR-SHA-001 | Medium / evidence classification | Regular job queue results were stamped with merge SHA, not PR head SHA. | Keep regular job evidence separate; exact-head queue acceptance relies on exact-source job 120315249653 and artifact 12488143989. |
+
+### Evidence recorded for run 39923689666
+
+- Run: https://github.com/Navee569/Project-Shiv/actions/runs/39923689666
+- Regular job 120315249339: SUCCESS on merge SHA `79a4b7623b67f1ca0acb09887e0812d1fd3b240f`.
+- Exact-source job 120315249653: SUCCESS; source and checkout SHA `966aa26ab63bf72b15848496db5b3930e377670e`.
+- Exact-source queue artifact 12488143989; verification report artifact 12489255574.
+- Ten exact-source queue repetitions: each exit code 0, 10 tests, 0 failures/errors/skips, target task executed, JUnit validated.
+- Full suite 72/72; lint 0 errors / 26 warnings; hosted emulator smoke PASS (not physical-device evidence).
+- Exact-source APK SHA-256 `5eba4bbb68e164e9ab06de98d3a4627efaa10f953743029e5508081056630278`, size 136,059,539 bytes.
+
+M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 remains open, draft, and unmerged.
