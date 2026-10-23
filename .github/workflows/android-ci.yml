@@ -199,10 +199,31 @@ jobs:
           timeout 8s adb logcat -d -t 6000 > app/build/reports/emulator-smoke/boot-logcat.txt 2>&1 || echo "logcat unavailable or timed out" > app/build/reports/emulator-smoke/boot-logcat.txt
           timeout 8s adb logcat -b crash -d > app/build/reports/emulator-smoke/boot-crash-buffer.txt 2>&1 || echo "crash buffer unavailable or timed out" > app/build/reports/emulator-smoke/boot-crash-buffer.txt
           timeout 8s adb shell dumpsys bootstat > app/build/reports/emulator-smoke/bootstat.txt 2>&1 || echo "bootstat unavailable or timed out" > app/build/reports/emulator-smoke/bootstat.txt
-      - name: Run inference queue tests first
+      - name: Repeat inference queue tests 10 times
         id: queue_tests
         if: always() && steps.build.outcome == 'success'
-        run: ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --stacktrace
+        shell: bash
+        run: |
+          set -uo pipefail
+          report_dir="app/build/reports/repeated-queue-tests"
+          mkdir -p "$report_dir"
+          failed=0
+          summary="$report_dir/repeated-queue-summary.txt"
+          : > "$summary"
+          for run_number in $(seq 1 10); do
+            log="$report_dir/run-$(printf '%02d' "$run_number").log"
+            echo "Queue test repetition $run_number/10 at SHA $(git rev-parse HEAD)"
+            ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace > "$log" 2>&1
+            status=$?
+            printf 'run=%02d sha=%s exit_code=%s log=%s\n' "$run_number" "$(git rev-parse HEAD)" "$status" "$log" | tee -a "$summary"
+            if [ "$status" -ne 0 ]; then
+              failed=1
+              tail -n 80 "$log" || true
+            fi
+          done
+          echo "All ten queue-test invocations completed. See per-run logs and summary artifact."
+          cat "$summary"
+          exit "$failed"
       - name: Run unit tests
         if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
@@ -334,9 +355,30 @@ jobs:
       - name: Build exact-source APK
         id: exact_build
         run: ./gradlew :app:assembleDebug --stacktrace
-      - name: Run exact-source inference queue tests first
+      - name: Repeat exact-source inference queue tests 10 times
         if: always() && steps.exact_build.outcome == 'success'
-        run: ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --stacktrace
+        shell: bash
+        run: |
+          set -uo pipefail
+          report_dir="app/build/reports/repeated-queue-tests"
+          mkdir -p "$report_dir"
+          failed=0
+          summary="$report_dir/repeated-queue-summary.txt"
+          : > "$summary"
+          for run_number in $(seq 1 10); do
+            log="$report_dir/run-$(printf '%02d' "$run_number").log"
+            echo "Exact-source queue test repetition $run_number/10 at SHA $(git rev-parse HEAD)"
+            ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace > "$log" 2>&1
+            status=$?
+            printf 'run=%02d sha=%s exit_code=%s log=%s\n' "$run_number" "$(git rev-parse HEAD)" "$status" "$log" | tee -a "$summary"
+            if [ "$status" -ne 0 ]; then
+              failed=1
+              tail -n 80 "$log" || true
+            fi
+          done
+          echo "All ten exact-source queue-test invocations completed. See per-run logs and summary artifact."
+          cat "$summary"
+          exit "$failed"
       - name: Run exact-source unit tests
         if: always() && steps.exact_build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace

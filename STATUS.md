@@ -558,3 +558,42 @@ Previous M1 retest evidence:
 - Push run: https://github.com/Navee569/Project-Shiv/actions/runs/39896496608 — FAILED at `:app:compileDebugKotlin`.
 - PR run: https://github.com/Navee569/Project-Shiv/actions/runs/39896500019 — FAILED at `:app:compileDebugKotlin`.
 - Follow-up fix commit CI: https://github.com/Navee569/Project-Shiv/actions/runs/39898022978 (push), https://github.com/Navee569/Project-Shiv/actions/runs/39898027426 (PR).
+
+
+## M1 exact-SHA retest addendum — 2026-10-23
+
+**Source SHA independently retested:** `1629273b0ce29b57118828e295225b5b98929cb8`  
+**Decision for that source SHA:** CI PASS; M1 remains **BLOCKED / NOT ACCEPTED** due to remaining evidence and integration coverage obligations.
+
+### Workflow evidence
+- Push run [39900500053](https://github.com/Navee569/Project-Shiv/actions/runs/39900500053): **SUCCESS**, build/unit-tests/lint job `120240739253`.
+- PR run [39900503027](https://github.com/Navee569/Project-Shiv/actions/runs/39900503027): **SUCCESS**, exact-source job `120240748770`.
+- Exact-source checkout and source assertion both matched `1629273b0ce29b57118828e295225b5b98929cb8`.
+- PR general job `120240748544` used synthetic merge SHA `a66b6f2912a83a46d3e5dae7a3bcf1e5b48a99a5`; it is supplementary, not exact-head proof.
+
+### Test and lint results
+Both required workflows reported 72 tests, 0 failures, 0 errors, and 0 skipped:
+- ActionTierPolicyTest: 4
+- BackupStreamsTest: 9
+- DatabaseKeyStateTest: 3
+- NotificationEventOrchestratorTest: 7
+- PhotoCaptureCompletionTest: 15
+- PhotoLabelingPipelineTest: 24
+- PrioritizedInferenceQueueTest: 10
+
+Lint: **0 errors, 26 warnings** — GradleDependency 15, ObsoleteSdkInt 7, Recycle 1, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1.
+
+### APK and emulator evidence
+- Push APK artifact [12479047636](https://github.com/Navee569/Project-Shiv/actions/runs/39900500053/artifacts/12479047636), 136,059,539 bytes, SHA-256 `eee7d067809890098f6105832c3e77484e12b2549c7673e2418f25d1855c3db0`.
+- Exact-source PR APK artifact [12478853527](https://github.com/Navee569/Project-Shiv/actions/runs/39900503027/artifacts/12478853527), 136,059,539 bytes, SHA-256 `f14690137250c66d4e3957e10ceabbec210111121957f1982690b93a5c3c1d18`.
+- Report artifacts: push [12478888490](https://github.com/Navee569/Project-Shiv/actions/runs/39900500053/artifacts/12478888490); PR [12479395583](https://github.com/Navee569/Project-Shiv/actions/runs/39900503027/artifacts/12479395583).
+- Both APKs independently verified against their evidence. Metadata: `app.shiv`, versionCode 1, versionName 0.1.0, minSdk 26, launcher `app.shiv.MainActivity`, label Shiv, icon present.
+- Hosted emulator smoke passed install, clear-data, strict cold launch (`Status: ok`), PID/activity, crash-buffer, and ANR assertions in push and exact-source PR jobs.
+- The same source SHA produced different APK hashes at the same byte size across runners. This is a reproducibility observation, not by itself a functional failure.
+
+### Outstanding acceptance gaps
+- The tester could not perform ten separate local queue-test invocations because it had no checked-out repository/Gradle environment. CI queue tests passed, but the prior workflow only ran the queue task once per job. The CI workflow is now being updated to run ten separately logged queue-test invocations on future commits.
+- Actual Android Keystore loss/corruption and preservation of existing encrypted data; Room confirmation transaction concurrency/duplicate/rollback behavior; backup restore rollback and Android ContentResolver URI write failures; production action-tier/permission enforcement; offline network capture; physical Galaxy S23 and full security testing remain **NOT RUN / unverified**.
+- This report's results apply to source SHA `1629273b0ce29b57118828e295225b5b98929cb8`. The documentation/workflow update in this commit requires its own fresh push and PR CI runs.
+
+PR #1 remains OPEN, DRAFT, and UNMERGED. Do not mark M1 accepted based only on green CI.

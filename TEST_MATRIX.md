@@ -399,3 +399,31 @@ The previous unmatched-quote defect and skipped-smoke finding are closed for sou
 | M1-ACTION-01 | Production action-tier/notification/permission paths | JVM + Android integration | NOT RUN | Helper tests alone do not prove production entry points |
 | M1-APK-01 | APK provenance / manifest / checksum | Build artifact inspection | NOT RUN on fix SHA | Must tie APK metadata and SHA-256 to exact source SHA and successful workflow |
 | M1-EMU-01 | Strict emulator cold-launch / crash / ANR smoke | Emulator CI | NOT RUN on failed SHA; pending on fix SHA | A skipped or blocked emulator task is not PASS |
+
+
+## M1 exact-SHA retest evidence — 2026-10-23
+
+| Gate | Push run 39900500053 | Exact-source PR run 39900503027 | Evidence / limitation |
+|---|---|---|---|
+| Source SHA | PASS | PASS | `1629273b0ce29b57118828e295225b5b98929cb8`; PR exact-source checkout assertion matched |
+| Kotlin / Room KSP compile and APK assembly | PASS | PASS | Prior public DAO return-type visibility compile blocker fixed |
+| Queue-only test task | PASS | PASS | 10 tests passed in each required workflow; ten separate repeated runs were not yet available |
+| Full JUnit suite | PASS | PASS | 72 tests, 0 failures, 0 errors, 0 skipped in each workflow |
+| Lint | PASS | PASS | 0 errors, 26 warnings |
+| APK manifest / provenance | PASS | PASS | app.shiv, version 1 / 0.1.0, minSdk 26, launcher app.shiv.MainActivity, label Shiv, icon present |
+| Hosted emulator smoke | PASS | PASS | Install, clear-data, cold launch Status: ok, PID/activity, crash and ANR assertions |
+| Android Keystore key loss/corruption integration | NOT RUN | NOT RUN | JVM key-state tests do not prove platform Keystore behavior |
+| Room confirmation concurrency / duplicate / rollback integration | NOT RUN | NOT RUN | Transaction integration/failure injection remains required |
+| Android backup URI write failure / restore rollback | NOT RUN | NOT RUN | Streaming helper tests do not prove ContentResolver or DB rollback behavior |
+| Production action-tier and permission entry points | PARTIAL | PARTIAL | Helper tests pass; end-to-end production entry points remain unverified |
+| Physical Samsung Galaxy S23 | NOT RUN | NOT RUN | Hosted emulator is not a physical-device test |
+| Offline network capture / full security testing | NOT RUN | NOT RUN | No network-capture or penetration-test evidence |
+
+### Exact artifact evidence
+- Push APK artifact 12479047636: 136,059,539 bytes; SHA-256 `eee7d067809890098f6105832c3e77484e12b2549c7673e2418f25d1855c3db0`.
+- Exact-source PR APK artifact 12478853527: 136,059,539 bytes; SHA-256 `f14690137250c66d4e3957e10ceabbec210111121957f1982690b93a5c3c1d18`.
+- Push report artifact 12478888490; PR report artifact 12479395583.
+- Lint warning categories: GradleDependency 15, ObsoleteSdkInt 7, Recycle 1, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1.
+- Both same-SHA APK artifacts had matching size but different hashes. Reproducible-build status remains unconfirmed.
+
+**Decision:** M1 remains BLOCKED / NOT ACCEPTED pending ten separately recorded queue-only runs, accurate documentation on the final commit, and explicit closure or project-owner scoping of remaining Android/data-integrity coverage.

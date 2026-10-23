@@ -146,3 +146,25 @@ Historical failed-run entries above are retained unchanged; closure here applies
 | M1-QUEUE-UNVERIFIED-001 | High | Inference queue tests | Queue tests, including priority/FIFO and close/capacity races, were not executed because compilation failed. | Independent M1 retest report for SHA `9c29f21738c2c0ddd0ae747bd408da6890d9a284`. | Run queue-only test first, then full suite on a successful exact SHA; review JUnit XML and assertion outcomes. |
 | M1-DATA-UNVERIFIED-001 | High | Backup, Keystore, Room, action tiers | Data-integrity and Android integration paths remain unverified; source inspection is not behavioral proof. | Independent M1 retest report dated 2026-10-23. | Add/run relevant failure-injection and Android integration tests; document NOT RUN/BLOCKED areas honestly. |
 | M1-DOC-STALE-001 | Medium | QA documentation | Previous documents reflected older M0 history and did not record current M1 blocker. | Independent M1 retest report dated 2026-10-23. | This addendum records blocker and fix commit. Refresh exact tested SHA, workflow results, test counts, lint counts, APK checksum and emulator evidence after successful runs. |
+
+
+## M1 retest disposition — 2026-10-23
+
+| ID | Severity | Area | Current evidence | Status / next action |
+|---|---|---|---|---|
+| M1-QUEUE-ORDER-TEST-001 | High | Priority/FIFO queue test setup race | Fixed on SHA `1629273b0ce29b57118828e295225b5b98929cb8`; push run 39900500053 and PR exact-source run 39900503027 passed; exact assertion remains `active, high-1, high-2, middle, low`. | CI passed once per event workflow. Add repeated separately logged runs in CI; do not claim ten local runs were performed. |
+| M1-COMP-DAO-001 | Resolved for tested SHA | Kotlin / Room KSP visibility | Public `ConfirmedPendingEvent` compiled and debug APK assembled on the exact tested SHA. | Fix verified by compilation on that candidate; keep historical failure record. |
+| M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Keystore, Room transaction, backup/restore, production action-tier behavior | JVM helper tests pass, but actual platform/data-integrity failure injection is not evidenced. | Add targeted tests at appropriate Android integration layer or explicitly scope as a release blocker; never label PASS from source review alone. |
+| M1-DOC-STALE-001 | Medium | QA evidence freshness | This addendum records completed CI evidence for source SHA `1629273b0ce29b57118828e295225b5b98929cb8`. | The current documentation/workflow commit still requires its own fresh push and PR workflows. |
+| M1-APK-REPRO-001 | Low / investigate if required | APK reproducibility | Same source SHA and same APK size but distinct verified SHA-256 across push and exact-source PR runners. | Not proven functional defect. Confirm whether byte-for-byte reproducibility is a project requirement; document or investigate accordingly. |
+
+### Completed evidence for source SHA 1629273b0ce29b57118828e295225b5b98929cb8
+- Push run 39900500053: SUCCESS; job 120240739253.
+- PR run 39900503027: SUCCESS; exact-source job 120240748770. PR general job 120240748544 used synthetic merge SHA `a66b6f2912a83a46d3e5dae7a3bcf1e5b48a99a5`.
+- Both required workflows: 72 tests, 0 failures, 0 errors, 0 skipped; lint 0 errors / 26 warnings.
+- Push APK artifact 12479047636: 136,059,539 bytes, SHA-256 `eee7d067809890098f6105832c3e77484e12b2549c7673e2418f25d1855c3db0`.
+- Exact-source PR APK artifact 12478853527: 136,059,539 bytes, SHA-256 `f14690137250c66d4e3957e10ceabbec210111121957f1982690b93a5c3c1d18`.
+- Report artifacts: 12478888490 (push) and 12479395583 (PR).
+- Strict hosted emulator smoke passed in both required workflows.
+
+Historical failed-run entries are retained. No physical device, real Keystore fault injection, Room rollback integration, backup URI failure integration, offline network capture, or full security testing is claimed. M1 remains BLOCKED / NOT ACCEPTED.
