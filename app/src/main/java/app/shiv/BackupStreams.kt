@@ -29,10 +29,10 @@ internal fun requireBackupFields(present: Set<String>) {
 }
 internal fun validateBackupEnvelope(json: JSONObject) {
     requireBackupFields(json.keys().asSequence().toSet())
-    require(json.opt("format") is Number && json.getInt("format") == 1) {
+    require(requireJsonLong(json, "format", 1L..1L) == 1L) {
         "This backup format is not supported."
     }
-    require(json.opt("createdAt") is Number && json.getLong("createdAt") >= 0L) {
+    require(requireJsonLong(json, "createdAt", 0L..Long.MAX_VALUE) >= 0L) {
         "This backup has an invalid creation timestamp."
     }
     val profile = json.get("profile")
@@ -48,26 +48,70 @@ internal fun validateBackupEnvelope(json: JSONObject) {
     val settings = json.opt("settings")
     require(settings is JSONObject) { "This backup has an invalid settings object." }
     requireSettingsSchema(settings as JSONObject)
+    validateBackupRecords(json)
+}
+
+/** Validate record types before any Room write; JSONObject getters otherwise coerce strings. */
+private fun validateBackupRecords(root: JSONObject) {
+    fun record(o: JSONObject, strings: List<String>, longs: List<String>,
+               nullable: List<String> = emptyList(), booleans: List<String> = emptyList()) {
+        strings.forEach { require(o.opt(it) is String) { "Invalid backup string '$it'." } }
+        longs.forEach { requireJsonLong(o, it, 0L..Long.MAX_VALUE) }
+        nullable.forEach {
+            require(o.has(it) && (o.get(it) == JSONObject.NULL || o.get(it) is String)) {
+                "Invalid nullable backup string '$it'."
+            }
+        }
+        booleans.forEach { require(o.opt(it) is Boolean) { "Invalid backup Boolean '$it'." } }
+    }
+    if (!root.isNull("profile")) {
+        val p = root.getJSONObject("profile")
+        record(p, listOf("name", "notes"), listOf("updatedAt"))
+        requireJsonLong(p, "id", 1L..1L)
+    }
+    val arrays = listOf("messages", "memories", "events", "pendingEvents", "actions", "rules", "drafts", "actionTiers")
+    arrays.forEach { key ->
+        val array = root.getJSONArray(key)
+        for (index in 0 until array.length()) {
+            val o = array.opt(index)
+            require(o is JSONObject) { "Invalid backup record '$key' at $index." }
+            when (key) {
+                "messages" -> record(o, listOf("id", "text"), listOf("createdAt"), listOf("tier"), listOf("fromUser"))
+                "memories" -> record(o, listOf("id", "text"), listOf("createdAt"))
+                "events" -> record(o, listOf("id", "title", "source"), listOf("startsAt", "createdAt"), listOf("place", "person"))
+                "pendingEvents" -> record(o, listOf("id", "title"), listOf("startsAt", "createdAt"), listOf("place", "person"))
+                "actions" -> record(o, listOf("id", "action", "tier", "outcome"), listOf("createdAt"))
+                "rules" -> record(o, listOf("ruleKey", "value"), listOf("updatedAt"))
+                "drafts" -> record(o, listOf("id", "person", "body"), listOf("createdAt"))
+                "actionTiers" -> record(o, listOf("actionKey", "tier"), emptyList())
+            }
+        }
+    }
 }
 
 internal fun requireSettingsSchema(settings: JSONObject) {
-    val fields = mapOf(
-        "id" to Number::class.java,
-        "proactiveEnabled" to java.lang.Boolean::class.java,
-        "quietStartMinute" to Number::class.java,
-        "quietEndMinute" to Number::class.java,
-        "maxDailyInterruptions" to Number::class.java
-    )
-    fields.forEach { (key, type) ->
-        val value = settings.opt(key)
-        require(value != null && type.isInstance(value)) {
-            "This backup has a missing or invalid settings field '$key'."
-        }
+    requireJsonLong(settings, "id", 1L..1L)
+    require(settings.opt("proactiveEnabled") is Boolean) {
+        "This backup has an invalid proactiveEnabled setting."
     }
-    require(settings.getInt("id") > 0) { "This backup has an invalid settings id." }
-    require(settings.getInt("quietStartMinute") in 0..1439) { "This backup has an invalid quiet start minute." }
-    require(settings.getInt("quietEndMinute") in 0..1439) { "This backup has an invalid quiet end minute." }
-    require(settings.getInt("maxDailyInterruptions") in 0..20) { "This backup has an invalid daily interruption limit." }
+    requireJsonLong(settings, "quietStartMinute", 0L..1439L)
+    requireJsonLong(settings, "quietEndMinute", 0L..1439L)
+    requireJsonLong(settings, "maxDailyInterruptions", 0L..20L)
+}
+
+/** Reject coercion, fractions and overflow before converting untrusted JSON numbers. */
+internal fun requireJsonLong(json: JSONObject, key: String, range: LongRange): Long {
+    val raw = json.opt(key)
+    require(raw is Number) { "This backup has a missing or nonnumeric '$key'." }
+    val value = try {
+        java.math.BigDecimal(raw.toString()).longValueExact()
+    } catch (failure: ArithmeticException) {
+        throw IllegalArgumentException("This backup has a nonintegral or overflowing '$key'.", failure)
+    } catch (failure: NumberFormatException) {
+        throw IllegalArgumentException("This backup has an invalid '$key'.", failure)
+    }
+    require(value in range) { "This backup has an out-of-range '$key'." }
+    return value
 }
 
 internal const val BACKUP_HEADER_BYTES = 8 + 16 + 12

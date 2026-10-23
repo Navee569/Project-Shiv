@@ -18,10 +18,19 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
+tasks.register("printDebugTestRuntime") {
+    doLast {
+        configurations.getByName("debugUnitTestRuntimeClasspath").files.forEach {
+            println(it.absolutePath)
+        }
+    }
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
@@ -53,5 +62,7 @@ dependencies {
     // Android's local-unit-test android.jar stubs org.json methods; use the real JSON implementation
     // so schema and restore-envelope tests exercise actual JSONObject runtime types.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

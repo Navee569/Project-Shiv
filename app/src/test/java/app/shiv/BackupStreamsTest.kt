@@ -13,6 +13,39 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class BackupStreamsTest {
+    @Test fun jsonRuntimeUsesRealImplementation() {
+        val origin = org.json.JSONObject::class.java.protectionDomain.codeSource.location.toString()
+        println("JSONObject origin=$origin")
+        println("JSONArray origin=" + org.json.JSONArray::class.java.protectionDomain.codeSource.location)
+        org.junit.Assert.assertTrue(origin, origin.contains("json-20240303"))
+        assertEquals(1, org.json.JSONObject("""{"value":1}""").getInt("value"))
+    }
+
+    @Test fun rejectsFractionalOverflowingAndCoercedNumbers() {
+        val invalid = listOf<Any>(1.5, -0.5, Long.MAX_VALUE, "1", true, org.json.JSONObject.NULL,
+            java.math.BigInteger("18446744073709551617"))
+        for (value in invalid) {
+            val json = org.json.JSONObject().put("value", value)
+            assertThrows("value=$value", IllegalArgumentException::class.java) {
+                requireJsonLong(json, "value", 0L..1439L)
+            }
+        }
+        assertEquals(Long.MAX_VALUE, requireJsonLong(
+            org.json.JSONObject().put("value", Long.MAX_VALUE), "value", 0L..Long.MAX_VALUE))
+    }
+
+    @Test fun rejectsSettingsFractionsOverflowAndNonSingletonIds() {
+        for (key in listOf("id", "quietStartMinute", "quietEndMinute", "maxDailyInterruptions")) {
+            for (value in listOf<Any>(0.5, java.math.BigInteger("4294967297"), "1", false)) {
+                val settings = org.json.JSONObject("""{"id":1,"proactiveEnabled":true,"quietStartMinute":1320,"quietEndMinute":480,"maxDailyInterruptions":3}""")
+                    .put(key, value)
+                assertThrows("$key=$value", IllegalArgumentException::class.java) { requireSettingsSchema(settings) }
+            }
+        }
+        val settings = org.json.JSONObject("""{"id":2,"proactiveEnabled":true,"quietStartMinute":1320,"quietEndMinute":480,"maxDailyInterruptions":3}""")
+        assertThrows(IllegalArgumentException::class.java) { requireSettingsSchema(settings) }
+    }
+
     @Test fun acceptsBytesAtLimit() {
         val source = byteArrayOf(1, 2, 3, 4)
         assertArrayEquals(source, readBoundedBytes(ByteArrayInputStream(source), 4))
@@ -82,6 +115,14 @@ class BackupStreamsTest {
             .put("drafts", org.json.JSONArray()).put("actionTiers", org.json.JSONArray())
             .put("settings", org.json.JSONObject("""{"id":1,"proactiveEnabled":true,"quietStartMinute":1320,"quietEndMinute":480,"maxDailyInterruptions":3}"""))
         validateBackupEnvelope(complete)
+        for (format in listOf<Any>(1.5, "1", true, java.math.BigInteger("4294967297"))) {
+            val invalid = org.json.JSONObject(complete.toString()).put("format", format)
+            assertThrows(IllegalArgumentException::class.java) { validateBackupEnvelope(invalid) }
+        }
+        for (createdAt in listOf<Any>(-0.5, -1, "1", java.math.BigInteger("9223372036854775808"))) {
+            val invalid = org.json.JSONObject(complete.toString()).put("createdAt", createdAt)
+            assertThrows(IllegalArgumentException::class.java) { validateBackupEnvelope(invalid) }
+        }
         complete.remove("memories")
         assertThrows(IllegalArgumentException::class.java) { validateBackupEnvelope(complete) }
     }

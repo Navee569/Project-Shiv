@@ -33,6 +33,14 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+      - name: Preserve JVM test runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p app/build/reports/test-runtime
+          ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath --console=plain 2>&1 | tee app/build/reports/test-runtime/dependencies.txt
+          ./gradlew :app:printDebugTestRuntime --console=plain 2>&1 | tee app/build/reports/test-runtime/classpath.txt
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -176,7 +184,13 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
+          script: |
+            set +e
+            ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
+            smoke_status=$?
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace --console=plain
+            restore_status=$?
+            test "$smoke_status" -eq 0 && test "$restore_status" -eq 0
       - name: Collect emulator boot/smoke diagnostics on failure
         if: always() && steps.emulator_smoke.outcome != 'success'
         timeout-minutes: 2
@@ -354,6 +368,7 @@ jobs:
           path: |
             app/build/reports/**
             app/build/test-results/**
+            app/build/outputs/androidTest-results/**
             app/build/outputs/apk/debug/output-metadata.json
             app/build/outputs/apk/debug/*.apk
             app/build/reports/apk-verification/**
@@ -373,12 +388,19 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+          SYNTHETIC_MERGE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           CHECKED_OUT_SHA="$(git rev-parse HEAD)"
           echo "source_sha=$SOURCE_SHA"
           echo "checked_out_sha=$CHECKED_OUT_SHA"
+          echo "target_sha=$TARGET_SHA"
+          echo "synthetic_merge_sha=$SYNTHETIC_MERGE_SHA"
           test "$CHECKED_OUT_SHA" = "$SOURCE_SHA"
+          test "$SOURCE_SHA" = "$TARGET_SHA"
+          mkdir -p app/build/reports/source-provenance
+          printf 'source_sha=%s\nchecked_out_sha=%s\ntarget_sha=%s\nsynthetic_merge_sha=%s\n' "$SOURCE_SHA" "$CHECKED_OUT_SHA" "$TARGET_SHA" "$SYNTHETIC_MERGE_SHA" > app/build/reports/source-provenance/exact-source.txt
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -386,6 +408,14 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+      - name: Preserve JVM test runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p app/build/reports/test-runtime
+          ./gradlew :app:dependencies --configuration debugUnitTestRuntimeClasspath --console=plain 2>&1 | tee app/build/reports/test-runtime/dependencies.txt
+          ./gradlew :app:printDebugTestRuntime --console=plain 2>&1 | tee app/build/reports/test-runtime/classpath.txt
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -483,7 +513,35 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
+          script: |
+            set +e
+            ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
+            smoke_status=$?
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace --console=plain
+            restore_status=$?
+            test "$smoke_status" -eq 0 && test "$restore_status" -eq 0
+      - name: Retain exact-source emulator boot diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p app/build/reports/emulator-smoke
+          {
+            date -u
+            uname -a
+            id
+            ls -l /dev/kvm
+            ps -ef | grep -E '[e]mulator|[q]emu|[a]db'
+            timeout 8s adb devices -l
+            echo "adb_devices_exit=$?"
+            timeout 8s adb shell getprop sys.boot_completed
+            echo "boot_property_exit=$?"
+            for root in "${ANDROID_AVD_HOME:-$HOME/.android/avd}" "$HOME/.android/avd"; do
+              find "$root" -name config.ini -exec cat {} \;
+            done
+          } > app/build/reports/emulator-smoke/exact-boot-diagnostics.txt 2>&1
+          timeout 8s adb logcat -b all -d -v threadtime -t 6000 > app/build/reports/emulator-smoke/exact-boot-logcat.txt 2>&1
+          echo "logcat_exit=$?" >> app/build/reports/emulator-smoke/exact-boot-diagnostics.txt
       - name: Verify exact-source APK provenance
         if: always() && steps.exact_build.outcome == 'success'
         shell: bash
@@ -529,3 +587,7 @@ jobs:
             app/build/reports/lint-results-debug.xml
             app/build/reports/emulator-smoke/**
             app/build/reports/repeated-queue-tests/**
+            app/build/reports/test-runtime/**
+            app/build/reports/source-provenance/**
+            app/build/reports/androidTests/**
+            app/build/outputs/androidTest-results/**

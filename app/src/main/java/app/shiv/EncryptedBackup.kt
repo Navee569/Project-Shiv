@@ -16,9 +16,9 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 
 /** Password-encrypted portable backup. The passphrase is never persisted. */
-class EncryptedBackup(context: Context) {
+class EncryptedBackup internal constructor(context: Context, private val database: ShivDatabase) {
+    constructor(context: Context) : this(context, ShivDatabase.get(context.applicationContext))
     private val app = context.applicationContext
-    private val database = ShivDatabase.get(app)
     private val dao = database.dao()
 
     suspend fun export(uri: Uri, passphrase: CharArray) = withContext(Dispatchers.IO) {
@@ -54,10 +54,30 @@ class EncryptedBackup(context: Context) {
                     throw failure
                 }
                 // Do not touch the user-selected destination until the complete capped backup exists.
-                val output = app.contentResolver.openOutputStream(uri, "wt")
-                requireNotNull(output) { "Could not create the selected backup file." }.use { destination ->
-                    temporary.inputStream().use { it.copyTo(destination, 8192) }
-                    destination.flush()
+                try {
+                    val output = app.contentResolver.openOutputStream(uri, "wt")
+                    requireNotNull(output) { "Could not create the selected backup file." }.use { destination ->
+                        temporary.inputStream().use { it.copyTo(destination, 8192) }
+                        destination.flush()
+                    }
+                } catch (failure: Exception) {
+                    // SAF does not guarantee atomic replacement. Remove a partial new export when
+                    // the provider permits deletion, and retain any cleanup error for diagnosis.
+                    try {
+                        if (uri.scheme == "file") {
+                            val file = File(requireNotNull(uri.path))
+                            if (file.exists() && !file.delete()) throw IOException("Could not remove partial backup.")
+                        } else if (android.provider.DocumentsContract.isDocumentUri(app, uri)) {
+                            if (!android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri)) {
+                                throw IOException("Provider refused partial backup deletion.")
+                            }
+                        } else {
+                            app.contentResolver.delete(uri, null, null)
+                        }
+                    } catch (cleanup: Exception) {
+                        failure.addSuppressed(cleanup)
+                    }
+                    throw failure
                 }
             } finally {
                 temporary.delete()
@@ -75,7 +95,7 @@ class EncryptedBackup(context: Context) {
         val json = JSONObject(String(decryptBackupPayload(packed, passphrase), Charsets.UTF_8))
         validateBackupEnvelope(json)
         val profileValue = json.get("profile")
-        val profile = if (profileValue == JSONObject.NULL) UserProfile() else readProfile(json.getJSONObject("profile"))
+        val profile = if (profileValue == JSONObject.NULL) null else readProfile(json.getJSONObject("profile"))
         val messages = readArray(json, "messages", ::readMessage)
         val memories = readArray(json, "memories", ::readMemory)
         val events = readArray(json, "events", ::readEvent)
@@ -90,7 +110,7 @@ class EncryptedBackup(context: Context) {
         database.withTransaction {
             dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearPendingEvents()
             dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers(); dao.clearSettings()
-            dao.saveProfile(profile)
+            profile?.let { dao.saveProfile(it) }
             dao.saveMessages(messages); dao.saveMemories(memories); dao.saveEvents(events); dao.savePendingEvents(pendingEvents)
             dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers); dao.saveSettings(settings)
         }
@@ -196,7 +216,11 @@ class EncryptedBackup(context: Context) {
     private fun readRule(o: JSONObject) = ReminderRule(o.getString("ruleKey"), o.getString("value"), o.getLong("updatedAt"))
     private fun readDraft(o: JSONObject) = ReplyDraft(o.getString("id"), o.getString("person"), o.getString("body"), o.getLong("createdAt"))
     private fun readTier(o: JSONObject) = ActionTierSetting(o.getString("actionKey"), o.getString("tier"))
-    private fun readSettings(o: JSONObject) = ShivSettings(o.optInt("id", 1), o.optBoolean("proactiveEnabled", true), o.optInt("quietStartMinute", 1320), o.optInt("quietEndMinute", 480), o.optInt("maxDailyInterruptions", 3).coerceIn(0, 20))
+    private fun readSettings(o: JSONObject): ShivSettings {
+        requireSettingsSchema(o)
+        return ShivSettings(o.getInt("id"), o.getBoolean("proactiveEnabled"),
+            o.getInt("quietStartMinute"), o.getInt("quietEndMinute"), o.getInt("maxDailyInterruptions"))
+    }
     private fun <T> readArray(root: JSONObject, key: String, read: (JSONObject) -> T): List<T> {
         val array = root.optJSONArray(key)
             ?: throw IllegalArgumentException("This backup is incomplete; required array '$key' is missing or invalid.")
