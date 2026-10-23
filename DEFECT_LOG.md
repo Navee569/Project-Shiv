@@ -202,3 +202,24 @@ Prior-candidate CI summary: push run 39902332198 and PR run 39902335066 both suc
 - Exact-source APK SHA-256 `5eba4bbb68e164e9ab06de98d3a4627efaa10f953743029e5508081056630278`, size 136,059,539 bytes.
 
 M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 remains open, draft, and unmerged.
+
+
+## M1 emulator cold-launch timeout — 2026-10-23
+
+| ID | Severity | Finding on candidate SHA `9ef8f73be7a522c62cd7623da299d4151ce2e7e3` | Status / remediation |
+|---|---|---|---|
+| M1-EMU-STARTUP-001 | High / PR gate failure | PR run [39932808366](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366), regular job 120344972695 failed strict hosted emulator launch on synthetic merge SHA `ce54c6186c52c1274055a991c2e6ff68039a3ff1`: `Status: timeout`, `LaunchState: UNKNOWN (-1)`, WaitTime 13738 ms. Exact-source job 120344972366 passed on the actual PR head. | **OPEN pending fresh CI and diagnosis.** Diagnostics: app PID 2601 existed; MainActivity was RESUMED but `reportedDrawn=false` / `firstWindowDrawn=false`; crash buffer empty; logcat showed skipped frames/system load; host memory about 3.0 GiB available and 2.2 GiB swap used. Emulator warned that 4 cores would run more smoothly. This supports but does not prove resource contention/startup timing. Workflow now requests 4 cores in both jobs; strict `Status: ok` assertion remains mandatory. Fresh push and PR workflows on the final docs commit must confirm whether the failure recurs. Do not close on exact-source success alone. |
+| M1-DOC-FRESHNESS-002 | Medium | Previous milestone documents lacked the 39932801082 / 39932808366 outcomes and retained emulator diagnostics. | **OPEN pending** fresh workflows on the final documentation commit and independent re-fetch confirming all three documents match the final SHA and results. |
+| M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Keystore fault injection, Room transaction/rollback integration, backup URI write failure/restore rollback, production action-tier/permission denial, offline network capture, physical Samsung Galaxy S23, and comprehensive security assessment remain unverified. | **OPEN — acceptance blocker.** Never close based on source review, JVM CI, APK build, or hosted emulator smoke. |
+| M1-QUEUE-ARTIFACT-001 | High | Exact-source artifact 12493092228 for candidate SHA retained summary, ten run logs, and ten per-run queue JUnit XML files. Each log/report pair records the target SHA, exit 0, 10 tests, 0 failures/errors/skips, task executed and valid JUnit. | **PASS for candidate SHA only**, subject to fresh verification on final documentation commit. Historical prior artifact-retention defect remains in history. |
+
+### Evidence links and results
+
+- Push run [39932801082](https://github.com/Navee569/Project-Shiv/actions/runs/39932801082): SUCCESS; main job 120344951189. Exact-source PR job was skipped because the event was push.
+- PR run [39932808366](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366): FAILURE overall; exact-source job 120344972366 SUCCESS; regular merge-result job 120344972695 FAILURE.
+- Exact-source APK artifact [12493092228](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366/artifacts/12493092228), archive SHA-256 `36a4bb1b4d87290f5d6dbdb24e910b4e151f383fa3d40c0303015f62e9903cd1`; APK 136,059,539 bytes, SHA-256 `9e0916efe83941af90eeb3a3dd8fac561d026904b2999690789bb2ef3d6a01c8`.
+- Report artifact [12492718116](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366/artifacts/12492718116), archive SHA-256 `2f1dcbbc37f993eeb67a8bf29573156e6122ae7ba6c379460e8caec5a069fdf6`.
+- Full unit suite 72 tests, zero failures/errors/skips; lint 0 errors / 26 warnings; exact-source ten queue runs all passed.
+- Workflow adjustment commit `07a2e5ff1a5123b87d473c99c39069efe6f0db79` increases emulator CPU cores to four in both jobs. It is not considered verified until fresh runs complete on the final documentation SHA.
+
+M1 remains **BLOCKED / NOT ACCEPTED**; PR #1 must remain open, draft, and unmerged.
