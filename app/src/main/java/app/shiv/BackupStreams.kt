@@ -53,7 +53,7 @@ internal fun validateBackupEnvelope(json: JSONObject) {
 internal fun requireSettingsSchema(settings: JSONObject) {
     val fields = mapOf(
         "id" to Number::class.java,
-        "proactiveEnabled" to Boolean::class.java,
+        "proactiveEnabled" to java.lang.Boolean::class.java,
         "quietStartMinute" to Number::class.java,
         "quietEndMinute" to Number::class.java,
         "maxDailyInterruptions" to Number::class.java
