@@ -26,7 +26,7 @@ class BackupRestoreTest {
     private lateinit var file: File
     private val password get() = "independent backup test".toCharArray()
 
-    @Before fun setUp() = runBlocking {
+    @Before fun setUp() = runBlocking<Unit> {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(context, ShivDatabase::class.java).build()
         backup = EncryptedBackup(context, db)
@@ -77,7 +77,7 @@ class BackupRestoreTest {
         assertEquals("all ten affected tables must be unchanged", before, snapshot())
     }
 
-    @Test fun malformedRecordsInEveryCollectionLeaveAllTablesUnchanged() = runBlocking {
+    @Test fun malformedRecordsInEveryCollectionLeaveAllTablesUnchanged() = runBlocking<Unit> {
         val valid = exported()
         val before = snapshot()
         for (key in listOf("messages", "memories", "events", "pendingEvents", "actions", "rules", "drafts", "actionTiers")) {
@@ -93,7 +93,7 @@ class BackupRestoreTest {
         }
     }
 
-    @Test fun sqliteFailureAfterWritesRollsBackEveryAffectedTable() = runBlocking {
+    @Test fun sqliteFailureAfterWritesRollsBackEveryAffectedTable() = runBlocking<Unit> {
         val json = exported()
         val before = snapshot()
         json.put("profile", JSONObject.NULL).put("messages", JSONArray())
@@ -106,7 +106,7 @@ class BackupRestoreTest {
         }
     }
 
-    @Test fun historicalNullProfileRestoresSuccessfully() = runBlocking {
+    @Test fun historicalNullProfileRestoresSuccessfully() = runBlocking<Unit> {
         val json = exported().put("profile", JSONObject.NULL)
         write(json)
         val before = snapshot()
@@ -117,7 +117,7 @@ class BackupRestoreTest {
         assertTrue(secret.all { it == '\u0000' })
     }
 
-    @Test fun corruptTruncatedAndWrongPasswordInputsPreserveAllTables() = runBlocking {
+    @Test fun corruptTruncatedAndWrongPasswordInputsPreserveAllTables() = runBlocking<Unit> {
         exported()
         val packed = file.readBytes()
         val before = snapshot()
@@ -135,7 +135,7 @@ class BackupRestoreTest {
         assertTrue(secret.all { it == '\u0000' })
     }
 
-    @Test fun destinationOpenFailureClearsPassphraseAndTemporaryOutput() = runBlocking {
+    @Test fun destinationOpenFailureClearsPassphraseAndTemporaryOutput() = runBlocking<Unit> {
         val before = context.cacheDir.listFiles()!!.filter { it.name.startsWith("shiv-backup-") }.toSet()
         val directory = File(context.cacheDir, "backup-destination-directory").also { it.mkdirs() }
         val secret = password
@@ -147,7 +147,7 @@ class BackupRestoreTest {
         directory.delete()
     }
 
-    @Test fun destinationWriteFailureDeletesPartialOutputAndClearsPassphrase() = runBlocking {
+    @Test fun destinationWriteFailureDeletesPartialOutputAndClearsPassphrase() = runBlocking<Unit> {
         val uri = Uri.parse("content://app.shiv.test.failing-backup/output")
         val before = snapshot()
         val secret = password
