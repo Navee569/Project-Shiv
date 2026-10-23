@@ -624,3 +624,25 @@ PR #1 remains OPEN, DRAFT, and UNMERGED. Do not mark M1 accepted based only on g
 
 ### Remaining M1 acceptance gaps
 Actual Android Keystore loss/corruption and encrypted DB preservation; Room confirmation transaction concurrency/rollback; backup restore and ContentResolver URI failures; production action-tier/permission paths; offline-only network capture; physical Samsung Galaxy S23; and full security testing remain NOT RUN / unverified. M1 remains BLOCKED / NOT ACCEPTED. PR #1 must remain open, draft, and unmerged.
+
+
+## M1 independent exact-source CI retest — 2026-10-23 — source SHA `966aa26ab63bf72b15848496db5b3930e377670e`
+
+**Evidence-only baseline:** workflow run [39923689666](https://github.com/Navee569/Project-Shiv/actions/runs/39923689666). This section records that run's evidence and preserves prior findings; it does not imply the documentation changes in this commit have already been tested.
+
+- Branch candidate/source SHA: `966aa26ab63bf72b15848496db5b3930e377670e`.
+- Regular CI job 120315249339: SUCCESS. It checked out merge SHA `79a4b7623b67f1ca0acb09887e0812d1fd3b240f`; its queue repetitions are merge-result evidence, not exact PR-head evidence.
+- Exact-source PR job 120315249653: SUCCESS. The checkout assertion reported both `source_sha` and `checked_out_sha` as `966aa26ab63bf72b15848496db5b3930e377670e`.
+- Exact-source queue artifact: [artifact 12488143989](https://github.com/Navee569/Project-Shiv/actions/runs/39923689666/artifacts/12488143989). Verification reports: [artifact 12489255574](https://github.com/Navee569/Project-Shiv/actions/runs/39923689666/artifacts/12489255574).
+- Exact-source queue result: 10 separately recorded repetitions; each reported exit code 0, 10 tests, 0 failures, 0 errors, 0 skipped, task_executed=1, junit_valid=1. The report archive was inspected and contained the summary, run-01.log through run-10.log, and ten per-run JUnit XML reports. Each XML parsed and identified `app.shiv.PrioritizedInferenceQueueTest` with exactly 10 cases and no failures/errors/skips.
+- Full unit suite: 72 tests, 0 failures, 0 errors, 0 skipped. Lint: 0 errors, 26 warnings. Workflow step summaries show build, unit tests, lint, and report upload succeeded.
+- Hosted emulator smoke and crash-marker regression checks passed. This is hosted-emulator evidence only; physical Samsung Galaxy S23 behavior is NOT VERIFIED.
+- Exact-source APK: 136,059,539 bytes; SHA-256 `5eba4bbb68e164e9ab06de98d3a4627efaa10f953743029e5508081056630278`. Regular job APK: 136,059,539 bytes; SHA-256 `9720a9e77155a387b52a25c900133236025dc654360c0e6a08590866f9d590c9`. The regular job built a different checked-out commit, so differing hashes do not prove a reproducibility defect.
+- Artifact archive digests recorded by the independent inspection: report ZIP `f323bd11ed71d4b49ecbcaa1256f83a7cf857ca1c78390fc7ce25604219cb71f`; regular APK ZIP `46d0819bfbdda9f7ac1adb06bf8e9e4aea09dd0c3563566aa2dc12147447e0c3`; exact-source APK ZIP `c0ddb3f09d1af5e1f471fe6d4e4bbf65247697fd946f63ff1eac32bf70cce555`. Treat these as recorded digests until rechecked against freshly downloaded bytes.
+- The three milestone documents had not recorded run 39923689666 / this SHA before this remediation. This addendum is the documentation remediation; its resulting commit still requires fresh CI and a subsequent independent review.
+
+### Acceptance blockers retained
+
+M1 remains **BLOCKED / NOT ACCEPTED**. Direct evidence is still absent for Keystore fault injection; Room transaction/rollback integration; backup URI write failure and restore rollback; production action-tier/permission end-to-end behavior; offline network capture; physical Galaxy S23 verification; and comprehensive security testing. Do not close `M1-DATA-UNVERIFIED-001` based on JVM CI, source review, APK build, or hosted emulator smoke.
+
+PR #1 must remain OPEN, DRAFT, and UNMERGED.
