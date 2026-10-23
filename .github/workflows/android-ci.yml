@@ -156,7 +156,11 @@ jobs:
           bash -n .github/scripts/emulator-smoke.sh
           bash -n .github/scripts/emulator-device-selection.sh
           bash -n .github/scripts/test-emulator-device-selection.sh
-          echo "PASS: emulator smoke and device-selection shell scripts parse successfully."
+          bash -n .github/scripts/emulator-crash-detection.sh
+          bash -n .github/scripts/test-emulator-crash-detection.sh
+          bash .github/scripts/test-emulator-device-selection.sh
+          bash .github/scripts/test-emulator-crash-detection.sh
+          echo "PASS: all required emulator smoke shell scripts parse and crash-marker regression tests pass."
       - name: Install and cold-launch APK in Android emulator
         id: emulator_smoke
         uses: reactivecircus/android-emulator-runner@v2
@@ -204,26 +208,57 @@ jobs:
         if: always() && steps.build.outcome == 'success'
         shell: bash
         run: |
-          set -uo pipefail
-          report_dir="app/build/reports/repeated-queue-tests"
-          mkdir -p "$report_dir"
-          failed=0
-          summary="$report_dir/repeated-queue-summary.txt"
-          : > "$summary"
-          for run_number in $(seq 1 10); do
-            log="$report_dir/run-$(printf '%02d' "$run_number").log"
-            echo "Queue test repetition $run_number/10 at SHA $(git rev-parse HEAD)"
-            ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace > "$log" 2>&1
-            status=$?
-            printf 'run=%02d sha=%s exit_code=%s log=%s\n' "$run_number" "$(git rev-parse HEAD)" "$status" "$log" | tee -a "$summary"
-            if [ "$status" -ne 0 ]; then
-              failed=1
-              tail -n 80 "$log" || true
-            fi
-          done
-          echo "All ten queue-test invocations completed. See per-run logs and summary artifact."
-          cat "$summary"
-          exit "$failed"
+                    set -uo pipefail
+                    report_dir="app/build/reports/repeated-queue-tests"
+                    mkdir -p "$report_dir"
+                    failed=0
+                    summary="$report_dir/repeated-queue-summary.txt"
+                    : > "$summary"
+                    source_xml="app/build/test-results/testDebugUnitTest/TEST-app.shiv.PrioritizedInferenceQueueTest.xml"
+                    for run_number in $(seq 1 10); do
+                      run_id="$(printf '%02d' "$run_number")"
+                      sha="$(git rev-parse HEAD)"
+                      log="$report_dir/run-$run_id.log"
+                      result_xml="$report_dir/run-$run_id-TEST-app.shiv.PrioritizedInferenceQueueTest.xml"
+                      rm -f "$source_xml" "$result_xml"
+                      printf 'Queue test repetition %s/10 at SHA %s\n' "$run_number" "$sha" | tee "$log"
+                      ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace >> "$log" 2>&1
+                      status=$?
+                      task_fresh=1
+                      if grep -Eq ':app:testDebugUnitTest UP-TO-DATE' "$log"; then
+                        task_fresh=0
+                      fi
+                      tests=NA
+                      failures=NA
+                      errors=NA
+                      skipped=NA
+                      xml_status=1
+                      if [ -s "$source_xml" ]; then
+                        cp "$source_xml" "$result_xml"
+                        if validation="$(python3 .github/scripts/validate-queue-junit.py "$result_xml" 2>&1)"; then
+                          xml_status=0
+                          tests="$(printf '%s\n' "$validation" | sed -n 's/^tests=//p')"
+                          failures="$(printf '%s\n' "$validation" | sed -n 's/^failures=//p')"
+                          errors="$(printf '%s\n' "$validation" | sed -n 's/^errors=//p')"
+                          skipped="$(printf '%s\n' "$validation" | sed -n 's/^skipped=//p')"
+                        else
+                          printf 'JUnit validation failed: %s\n' "$validation" | tee -a "$log" >&2
+                        fi
+                      else
+                        echo "Missing targeted JUnit XML: $source_xml" | tee -a "$log" >&2
+                      fi
+                      printf 'run=%s sha=%s exit_code=%s tests=%s failures=%s errors=%s skipped=%s task_executed=%s junit_valid=%s log=%s result_xml=%s\n' \
+                        "$run_id" "$sha" "$status" "$tests" "$failures" "$errors" "$skipped" "$task_fresh" "$((xml_status == 0))" "$log" "$result_xml" | tee -a "$summary"
+                      printf 'queue_result sha=%s tests=%s failures=%s errors=%s skipped=%s task_executed=%s junit_valid=%s\n' \
+                        "$sha" "$tests" "$failures" "$errors" "$skipped" "$task_fresh" "$((xml_status == 0))" >> "$log"
+                      if [ "$status" -ne 0 ] || [ "$task_fresh" -ne 1 ] || [ "$xml_status" -ne 0 ]; then
+                        failed=1
+                        tail -n 80 "$log" || true
+                      fi
+                    done
+                    echo "Completed ten queue-test invocations. Each must have a validated per-run JUnit record."
+                    cat "$summary"
+                    exit "$failed"
       - name: Run unit tests
         if: always() && steps.build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
@@ -359,26 +394,57 @@ jobs:
         if: always() && steps.exact_build.outcome == 'success'
         shell: bash
         run: |
-          set -uo pipefail
-          report_dir="app/build/reports/repeated-queue-tests"
-          mkdir -p "$report_dir"
-          failed=0
-          summary="$report_dir/repeated-queue-summary.txt"
-          : > "$summary"
-          for run_number in $(seq 1 10); do
-            log="$report_dir/run-$(printf '%02d' "$run_number").log"
-            echo "Exact-source queue test repetition $run_number/10 at SHA $(git rev-parse HEAD)"
-            ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace > "$log" 2>&1
-            status=$?
-            printf 'run=%02d sha=%s exit_code=%s log=%s\n' "$run_number" "$(git rev-parse HEAD)" "$status" "$log" | tee -a "$summary"
-            if [ "$status" -ne 0 ]; then
-              failed=1
-              tail -n 80 "$log" || true
-            fi
-          done
-          echo "All ten exact-source queue-test invocations completed. See per-run logs and summary artifact."
-          cat "$summary"
-          exit "$failed"
+                    set -uo pipefail
+                    report_dir="app/build/reports/repeated-queue-tests"
+                    mkdir -p "$report_dir"
+                    failed=0
+                    summary="$report_dir/repeated-queue-summary.txt"
+                    : > "$summary"
+                    source_xml="app/build/test-results/testDebugUnitTest/TEST-app.shiv.PrioritizedInferenceQueueTest.xml"
+                    for run_number in $(seq 1 10); do
+                      run_id="$(printf '%02d' "$run_number")"
+                      sha="$(git rev-parse HEAD)"
+                      log="$report_dir/run-$run_id.log"
+                      result_xml="$report_dir/run-$run_id-TEST-app.shiv.PrioritizedInferenceQueueTest.xml"
+                      rm -f "$source_xml" "$result_xml"
+                      printf 'Exact-source queue test repetition %s/10 at SHA %s\n' "$run_number" "$sha" | tee "$log"
+                      ./gradlew :app:testDebugUnitTest --tests app.shiv.PrioritizedInferenceQueueTest --rerun-tasks --stacktrace >> "$log" 2>&1
+                      status=$?
+                      task_fresh=1
+                      if grep -Eq ':app:testDebugUnitTest UP-TO-DATE' "$log"; then
+                        task_fresh=0
+                      fi
+                      tests=NA
+                      failures=NA
+                      errors=NA
+                      skipped=NA
+                      xml_status=1
+                      if [ -s "$source_xml" ]; then
+                        cp "$source_xml" "$result_xml"
+                        if validation="$(python3 .github/scripts/validate-queue-junit.py "$result_xml" 2>&1)"; then
+                          xml_status=0
+                          tests="$(printf '%s\n' "$validation" | sed -n 's/^tests=//p')"
+                          failures="$(printf '%s\n' "$validation" | sed -n 's/^failures=//p')"
+                          errors="$(printf '%s\n' "$validation" | sed -n 's/^errors=//p')"
+                          skipped="$(printf '%s\n' "$validation" | sed -n 's/^skipped=//p')"
+                        else
+                          printf 'JUnit validation failed: %s\n' "$validation" | tee -a "$log" >&2
+                        fi
+                      else
+                        echo "Missing targeted JUnit XML: $source_xml" | tee -a "$log" >&2
+                      fi
+                      printf 'run=%s sha=%s exit_code=%s tests=%s failures=%s errors=%s skipped=%s task_executed=%s junit_valid=%s log=%s result_xml=%s\n' \
+                        "$run_id" "$sha" "$status" "$tests" "$failures" "$errors" "$skipped" "$task_fresh" "$((xml_status == 0))" "$log" "$result_xml" | tee -a "$summary"
+                      printf 'queue_result sha=%s tests=%s failures=%s errors=%s skipped=%s task_executed=%s junit_valid=%s\n' \
+                        "$sha" "$tests" "$failures" "$errors" "$skipped" "$task_fresh" "$((xml_status == 0))" >> "$log"
+                      if [ "$status" -ne 0 ] || [ "$task_fresh" -ne 1 ] || [ "$xml_status" -ne 0 ]; then
+                        failed=1
+                        tail -n 80 "$log" || true
+                      fi
+                    done
+                    echo "Completed ten queue-test invocations. Each must have a validated per-run JUnit record."
+                    cat "$summary"
+                    exit "$failed"
       - name: Run exact-source unit tests
         if: always() && steps.exact_build.outcome == 'success'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
