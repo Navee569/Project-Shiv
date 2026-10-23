@@ -76,8 +76,11 @@ class PrioritizedInferenceQueueTest {
             }
         }
         gate.complete(Unit)
+        // The active task is held, so the first completed submission must be an
+        // immediate capacity rejection. Do not stop merely because the queue reached 32;
+        // the rejection may be scheduled just after that observation.
         withTimeout(2_000) {
-            while (queue.queuedCount < 32 && outcomes.none { it.isCompleted }) yield()
+            while (outcomes.none { it.isCompleted }) yield()
         }
         assertTrue("Waiting queue exceeded its configured capacity", queue.queuedCount <= 32)
         val completedFailures = outcomes.filter { it.isCompleted }
