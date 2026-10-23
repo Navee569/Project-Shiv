@@ -83,17 +83,31 @@ class PendingEventReceiver : BroadcastReceiver() {
                     NotificationManagerCompat.from(context).cancel(eventId.hashCode())
                     return@launch
                 }
-                val candidate = dao.pendingEvent(eventId) ?: return@launch
-                if (!isPendingEventValid(candidate, System.currentTimeMillis())) {
-                    dao.deletePendingEvent(candidate.id)
-                    return@launch
+                val confirmed = dao.confirmPendingEvent(
+                    id = eventId,
+                    now = System.currentTimeMillis(),
+                    source = intent.getStringExtra("eventSource") ?: "LISTENING"
+                ) ?: return@launch
+                NotificationManagerCompat.from(context.applicationContext).cancel(eventId.hashCode())
+                try {
+                    AlarmScheduler.schedule(
+                        context.applicationContext,
+                        confirmed.event,
+                        confirmed.reminderLeadMinutes
+                    )
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    // The event and its audit record are already committed. Record scheduling
+                    // failure explicitly rather than losing the error or replaying confirmation.
+                    dao.logAction(
+                        ActionLogEntry(
+                            action = "Reminder scheduling failed after confirmation",
+                            tier = ActionTier.ASK_FIRST.name,
+                            outcome = confirmed.event.id + ":" + failure.javaClass.simpleName
+                        )
+                    )
                 }
-                val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = confirmedEventSource(intent.getStringExtra("eventSource")), createdAt = candidate.createdAt)
-                dao.saveEvent(event)
-                dao.deletePendingEvent(candidate.id)
-                val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
-                AlarmScheduler.schedule(context.applicationContext, event, lead)
-                dao.logAction(ActionLogEntry(action = "Saved a listening event after confirmation", tier = ActionTier.ASK_FIRST.name, outcome = event.title))
             } finally { pending.finish() }
         }
     }
