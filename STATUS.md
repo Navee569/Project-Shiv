@@ -544,3 +544,17 @@ The tester confirmed the previous shell syntax and emulator smoke blockers are f
 - Documentation evidence from source SHA `790c72555aa8b71b7b28f296eef5e9030788c238` is now recorded in this file.
 - The documentation-only commit created from this update must itself receive fresh push and PR workflow results; those results are not yet known at authoring time.
 - Keep M0 NOT ACCEPTED until both new exact-SHA workflows pass and independent QA retests the final documentation commit.
+
+
+## M1 remediation update — 2026-10-23
+
+**Previous independently tested head:** `9c29f21738e10ff2b6589a3636832a12fe91022d` — NOT ACCEPTED.  
+**Confirmed blocker:** public `ShivDao.confirmPendingEvent()` exposed internal return type `ConfirmedPendingEvent`, causing Kotlin and generated Room/KSP compilation failure.  
+**Fix commit:** `67a9085eb2af7ae210fe9d4cce6889749f92ba49` changes `ConfirmedPendingEvent` to a public data class at the source API boundary. Generated KSP files were not edited manually.
+
+**Verification state at this update:** fresh exact-SHA push and PR workflows were queued/in progress for the fix commit. No build, test, lint, APK, or emulator result is claimed here. M1 remains NOT ACCEPTED pending successful exact-SHA checks and independent retest. PR #1 remains OPEN, DRAFT, UNMERGED.
+
+Previous M1 retest evidence:
+- Push run: https://github.com/Navee569/Project-Shiv/actions/runs/39896496608 — FAILED at `:app:compileDebugKotlin`.
+- PR run: https://github.com/Navee569/Project-Shiv/actions/runs/39896500019 — FAILED at `:app:compileDebugKotlin`.
+- Follow-up fix commit CI: https://github.com/Navee569/Project-Shiv/actions/runs/39898022978 (push), https://github.com/Navee569/Project-Shiv/actions/runs/39898027426 (PR).
