@@ -174,4 +174,47 @@ class BackupStreamsTest {
         }
     }
 
+
+    @Test fun rejectsMalformedRecordInEveryBackupCollectionBeforeDatabaseMutation() {
+        val collections = listOf("messages", "memories", "events", "pendingEvents",
+            "actions", "rules", "drafts", "actionTiers")
+        fun emptyEnvelope() = org.json.JSONObject()
+            .put("format", 1).put("createdAt", 1L)
+            .put("profile", org.json.JSONObject.NULL)
+            .put("messages", org.json.JSONArray())
+            .put("memories", org.json.JSONArray())
+            .put("events", org.json.JSONArray())
+            .put("pendingEvents", org.json.JSONArray())
+            .put("actions", org.json.JSONArray())
+            .put("rules", org.json.JSONArray())
+            .put("drafts", org.json.JSONArray())
+            .put("actionTiers", org.json.JSONArray())
+            .put("settings", org.json.JSONObject()
+                .put("id", 1).put("proactiveEnabled", false)
+                .put("quietStartMinute", 0).put("quietEndMinute", 0)
+                .put("maxDailyInterruptions", 0))
+
+        // Empty collections and a historical null profile remain accepted.
+        validateBackupEnvelope(emptyEnvelope())
+        for (collection in collections) {
+            val malformedObject = emptyEnvelope().put(collection,
+                org.json.JSONArray().put(org.json.JSONObject()))
+            assertThrows("missing required record fields in $collection",
+                IllegalArgumentException::class.java) {
+                validateBackupEnvelope(malformedObject)
+            }
+            val malformedScalar = emptyEnvelope().put(collection,
+                org.json.JSONArray().put("not-an-object"))
+            assertThrows("scalar record in $collection",
+                IllegalArgumentException::class.java) {
+                validateBackupEnvelope(malformedScalar)
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateBackupEnvelope(emptyEnvelope().put("profile", org.json.JSONObject()))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateBackupEnvelope(emptyEnvelope().put("profile", "invalid-profile"))
+        }
+    }
 }
