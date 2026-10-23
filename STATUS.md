@@ -2,7 +2,7 @@
 
 | Feature | Status | Verification | Last verified commit | Limitations | Open defects |
 |---|---|---|---|---|---|
-| M0 baseline build | PARTIAL | Local assembleDebug, testDebugUnitTest (3 tests), and lintDebug pass; CI rerun pending | Local checks: c25fc42 | None known for M0. | Initial CI stopped in Android SDK setup because the action requested the removed `tools` package; workflow now relies on the runner SDK. |
+| M0 baseline build | VERIFIED | Local assembleDebug, testDebugUnitTest (3 tests), and lintDebug pass; GitHub Actions run 40042340290 passed | 4d3de1e | None known for M0. | None. |
 
 ## M0 root cause
 
@@ -16,4 +16,4 @@
 - Lint exposed missing Android 13 notification permission handling, a CameraX image opt-in, and a camera hardware feature declaration; these were corrected.
 - The build was run with JDK 17. The shell default is JDK 8, so CI explicitly installs JDK 17.
 - No local.properties, model weights, APK/AAB files, or signing keys are tracked by Git; ignore rules now cover local model and build artifacts.
-- Three deterministic proactive-policy unit tests pass locally. The first CI attempt failed during Android SDK setup before Gradle tasks ran; a workflow correction is pending CI.
+- Three deterministic proactive-policy unit tests pass locally. The initial CI attempt stopped before Gradle because the Android setup action requested the removed `tools` package. The corrected workflow uses the Android SDK already present on the hosted runner; GitHub Actions run 40042340290 passed.
