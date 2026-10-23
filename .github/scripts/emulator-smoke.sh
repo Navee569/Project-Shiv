@@ -173,6 +173,37 @@ grep -Fx '1' "$REPORT/boot-completed.txt" || {
 }
 printf 'Android boot completed: sys.boot_completed=1\n' | tee "$REPORT/boot-ready.txt"
 
+# Retain direct AVD configuration and guest-visible CPU evidence. The action's
+# requested cores and config write are not proof of the effective guest count.
+cpu_report="$REPORT/effective-cpu-evidence.txt"
+{
+  echo "timestamp=$(date -u +%FT%TZ)"
+  echo "serial=$DEVICE_SERIAL"
+  echo "requested_cores=${ANDROID_EMULATOR_CORES:-unknown}"
+  echo "AVD config files:"
+  avd_root="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+  found_config=0
+  for avd_config in "$avd_root/test.avd/config.ini" "$HOME/.android/avd/test.avd/config.ini"; do
+    if [ -f "$avd_config" ]; then
+      found_config=1
+      echo "--- $avd_config"
+      cat "$avd_config"
+    fi
+  done
+  echo "avd_config_found=$found_config"
+  echo "Emulator/QEMU process command lines:"
+  ps -eo pid,ppid,args | grep -E '[e]mulator|[q]emu' || true
+  echo "Guest online CPU mask:"
+  timeout 10s adb -s "$DEVICE_SERIAL" shell cat /sys/devices/system/cpu/online 2>&1 || true
+  echo "Guest online CPU count:"
+  timeout 10s adb -s "$DEVICE_SERIAL" shell getconf _NPROCESSORS_ONLN 2>&1 || true
+  echo "Guest /proc/cpuinfo processor records:"
+  timeout 10s adb -s "$DEVICE_SERIAL" shell cat /proc/cpuinfo 2>&1 || true
+  echo "Guest CPU-related properties:"
+  timeout 10s adb -s "$DEVICE_SERIAL" shell getprop 2>&1 | grep -Ei 'cpu|smp|abi' || true
+} > "$cpu_report" 2>&1
+cat "$cpu_report"
+
 capture_launch_diagnostics() {
   local phase="$1"
   local prefix="$REPORT/launch-diagnostics-$phase"

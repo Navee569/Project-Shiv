@@ -783,3 +783,34 @@ Four-core configuration remains NOT VERIFIED: fresh artifacts still do not retai
 Still NOT VERIFIED: Keystore key-loss/corruption and safe preservation; Room transaction/rollback atomicity; backup URI failure, malformed/partial backup and restore rollback; production action-tier/permission-denial behavior; offline-only/network capture/no hidden cloud fallback; physical Samsung Galaxy S23; comprehensive security assessment. Green hosted CI does not accept M1. PR #1 remains OPEN / DRAFT / UNMERGED.
 
 These results are now recorded for the tested SHA. This documentation commit must receive fresh push and PR workflows, which must be checked independently; M1 remains BLOCKED / NOT ACCEPTED until documentation freshness, direct four-core evidence, and mandatory acceptance gates are resolved or explicitly scoped by the project owner.
+
+
+## Fresh CI follow-up — documentation commit SHA 7552ab8d7033f573366f23ad71895f9c21f1a81d — 2026-10-23
+
+### Workflow results and provenance
+- Push workflow [39949857107](https://github.com/Navee569/Project-Shiv/actions/runs/39949857107): SUCCESS on source SHA `7552ab8d7033f573366f23ad71895f9c21f1a81d`; main job 120401391960 SUCCESS, PR-only job 120401394400 SKIPPED as expected.
+- PR workflow [39949863339](https://github.com/Navee569/Project-Shiv/actions/runs/39949863339): SUCCESS. Exact-source job 120401413657 SUCCESS with source SHA and checked-out SHA both `7552ab8d7033f573366f23ad71895f9c21f1a81d`. Regular merge-result job 120401413812 SUCCESS with synthetic merge SHA `d229f9de965de8e5dd955574c83a0a48478d74e8`; its artifact evidence records source SHA 7552ab8d... and checked-out SHA d229f9de.... Never conflate the PR source and merge-result build.
+
+Artifacts independently downloaded and SHA-256 checked against GitHub artifact digests:
+- Push APK artifact 12500567416, ZIP size 72,901,415 bytes, SHA-256 `68cee878e77908ceca61b9f41694d58fd68ca68b94c0b469fbe683d8dc07804b`.
+- Push reports artifact 12500697048, ZIP size 73,199,096 bytes, SHA-256 `50a62ac415c913be2751fb7f4086995f388a2cd6d224a02ebb796ed1186fd124`.
+- PR exact-source artifact 12500084192, ZIP size 73,156,877 bytes, SHA-256 `4aa2349303f244ad1cf6ef381cc2cb1a0fc6a90eda764c6de11c73b347d36d8c`.
+- PR regular merge APK artifact 12499444576, ZIP size 72,901,439 bytes, SHA-256 `d9f93fe9e65291512c70f23ded63ec256ecce9dcc02ae32242b8f780dc858770`.
+- PR reports artifact 12500436830, ZIP size 73,182,107 bytes, SHA-256 `3105188f2a7bad66d6b7921c62ba61c6a24c655f2a507ddd00456e4709723372`.
+- Exact-source APK SHA-256 `1d2664a32557d6c6b61f124a888b96c49d34fea88b4d3e98e4d6728d5bdafb67`, size 136,059,539 bytes. Merge-result APK SHA-256 `f9d35ac27abdaebd34f325f88a418e145e56b9a1c3b0dcac6eb7d47140f094f3`, size 136,059,539 bytes.
+- Manifest for both: application ID `app.shiv`, versionCode 1, versionName `0.1.0`, minSdk 26, targetSdk 35, launcher `app.shiv.MainActivity`, label `Shiv`, icon present.
+
+### Tests and emulator evidence
+- Fresh PR exact-source and merge-result report archives each contain seven JUnit suite XML files: 72 tests, 0 failures, 0 errors, 0 skipped.
+- Each has exactly ten repeated queue logs and ten matching JUnit XML reports. Exact-source queue records show SHA 7552ab8d..., exit_code=0, tests=10, failures=0, errors=0, skipped=0, task_executed=1, junit_valid=1.
+- Lint: 26 warnings, 0 errors (GradleDependency 15; ObsoleteSdkInt 7; InlinedApi 1; OldTargetApi 1; DataExtractionRules 1; Recycle 1).
+- Cold launch passed: push WaitTime 12540 ms; PR exact-source 12488 ms; PR merge-result 15486 ms. All report exit 0, `Status: ok`, `LaunchState: COLD`; logcat and crash-buffer captures exited 0.
+- Full runner logs still show transient `adb: device offline` during emulator startup before ADB comes online and smoke proceeds. Successful final smoke/logcat evidence does not prove the transport issue is permanently resolved. Preserve the startup timeline and recovery diagnostics. Historical run 39936972682 / job 120359223524 remains a genuine regular merge-result logcat exit 255 while ADB was offline; do not erase or relabel it.
+
+### Four-core configuration
+Four-core guest execution remains **NOT VERIFIED**. The run logs show action input `Cores: 4` and config write `hw.cpu.ncore=4`, but also warn requested SMP CPUs exceed KVM's recommended two and that the AVD is currently using two. The existing artifact does not contain the effective AVD config.ini or direct guest CPU count. A follow-up change now adds `effective-cpu-evidence.txt` collection to the emulator smoke report, recording the actual config.ini, emulator/QEMU command line, guest online CPU mask, `getconf _NPROCESSORS_ONLN`, and guest `/proc/cpuinfo`. This is instrumentation, not proof until a new workflow artifact demonstrates the actual count.
+
+### M1 status and unresolved gates
+M1 remains **NOT ACCEPTED / BLOCKED**. Still NOT VERIFIED: (1) Android Keystore key-loss/corruption injection and safe data preservation; (2) Room transaction rollback/failure atomicity; (3) backup URI write failure, malformed/partial backup, restore rollback; (4) production action-tier and permission-denial paths; (5) offline-only network capture/no hidden cloud fallback; (6) physical Samsung Galaxy S23; (7) comprehensive security assessment. Hosted unit tests and emulator smoke do not substitute for these direct tests. PR #1 must remain open, draft, and unmerged.
+
+This commit records the just-completed workflows and adds effective CPU evidence collection. The new documentation/instrumentation commit must itself receive fresh push and PR workflows. After those finish, update this record with their exact outcomes and artifacts in a subsequent documentation commit; do not claim a commit's own future workflow results are already documented on that SHA.
