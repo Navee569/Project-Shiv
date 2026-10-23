@@ -173,7 +173,7 @@ jobs:
           emulator-boot-timeout: 1200
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
           disable-animations: true
-          cores: 2
+          cores: 4
           ram-size: 2048M
           heap-size: 512M
           script: bash .github/scripts/emulator-smoke.sh
@@ -472,7 +472,7 @@ jobs:
           emulator-boot-timeout: 1200
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
           disable-animations: true
-          cores: 2
+          cores: 4
           ram-size: 2048M
           heap-size: 512M
           script: bash .github/scripts/emulator-smoke.sh
