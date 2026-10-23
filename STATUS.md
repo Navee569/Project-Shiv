@@ -709,3 +709,53 @@ Both jobs pass `cores: 4` to `reactivecircus/android-emulator-runner@v2`; its se
 The independent tester found STATUS.md, TEST_MATRIX.md and DEFECT_LOG.md were stale for the 39936964872 / 39936972682 results. This addendum records those prior-candidate results and remediation. The final docs commit itself still requires fresh workflows and independent re-fetch.
 
 M1 remains **BLOCKED / NOT ACCEPTED**. NOT VERIFIED: Keystore loss/corruption fault injection; Room transaction/rollback integration; backup URI write failure and malformed/partial backup restore rollback; production action-tier and permission-denial behavior; offline-only/network-capture proof; physical Samsung Galaxy S23; comprehensive security assessment. PR #1 must remain OPEN, DRAFT, and UNMERGED.
+
+
+## Independent retest update — 2026-10-23 — exact source SHA `7ed3514d8dae780ba4cbdd6ca8a87ba222dc4c6f`
+
+This dated addendum records the latest independent tester evidence. It does not replace or erase any earlier failure or result. **M1 remains BLOCKED / NOT ACCEPTED; PR #1 remains OPEN, DRAFT, UNMERGED.**
+
+### Latest workflow results
+
+- Push run [39942727223](https://github.com/Navee569/Project-Shiv/actions/runs/39942727223), event `push`: overall SUCCESS; main job 120378302376 SUCCESS on exact branch head `7ed3514d8dae780ba4cbdd6ca8a87ba222dc4c6f`. Exact-source PR job skipped as expected for a push event.
+- PR run [39942734835](https://github.com/Navee569/Project-Shiv/actions/runs/39942734835), event `pull_request`: overall SUCCESS. Exact-source job 120378314916 SUCCESS and asserts source SHA = checkout SHA = `7ed3514d8dae780ba4cbdd6ca8a87ba222dc4c6f`. Regular merge-result job 120378315122 SUCCESS on synthetic merge SHA `79d7732c09c75c48577962334e5a352413ab367d`. Do not conflate that merge-result SHA with the PR head SHA.
+- Strict cold launch passed for exact source: exit 0, `Status: ok`, `LaunchState: COLD`, WaitTime 8731 ms. Regular merge-result strict launch passed: exit 0, `Status: ok`, `LaunchState: COLD`, WaitTime 11578 ms. Mandatory full logcat and crash-buffer captures both exited 0 before subsequent activity assertions.
+- ADB emitted transient `adb: device offline` messages during emulator startup in both workflow logs. These did not recur as failures in mandatory post-launch logcat/crash-buffer capture. This is observed transient startup behavior only; cause and permanent resolution are not proven. Historical PR run [39936972682](https://github.com/Navee569/Project-Shiv/actions/runs/39936972682), regular job 120359223524, remains a real failure: `adb -s emulator-5554 logcat -b all -d -v threadtime -t 6000` exited 255 while transport was offline. Do not relabel or erase it.
+
+### Artifacts, checksums, and test evidence
+
+| Evidence | Push run 39942727223 | Exact-source PR run 39942734835 |
+|---|---|---|
+| Main / exact-source job | 120378302376 | 120378314916 |
+| Regular merge-result job | N/A for push | 120378315122; synthetic merge SHA `79d7732c09c75c48577962334e5a352413ab367d` |
+| APK artifact ID | 12496879163 | 12496884786 |
+| APK archive SHA-256 (GitHub digest and independently recomputed ZIP SHA-256) | `cd429bd3b2bc304ceba16dc1312a82bc9878379a5dc34a82d809478e478925b2` | `eae04c025db819ddc2790a9307adbdedf8c935df71b8400869ad79d51d9cc324` |
+| Verification report artifact ID | 12498115274 | 12497293053 |
+| Report archive SHA-256 (GitHub digest and independently recomputed ZIP SHA-256) | `2c1b3a5d91b8bada408123cff88260617b4afac403633d3c44f56ca11eb1735f` | `e7b304e93e916d0a0ce0f3f7dd3053de3ff1224d9e5953c880129960e22c8948` |
+| APK size | 136,059,539 bytes | 136,059,539 bytes |
+| APK SHA-256 | `320bddd236fa612cb6d435dadee3fe6bd909f863e207e6174891f33e83eca3b1` | `fbed6ecc3835f8eaf96cc3541d854b4b1d91d5e33704fc423730d11edc4dac3a` |
+
+The exact-source APK provenance JSON source SHA and checkout SHA match the PR head. Exact-source manifest: application ID `app.shiv`, versionCode 1, versionName `0.1.0`, minSdk 26, targetSdk 35, launcher `app.shiv.MainActivity`, label `Shiv`, icon present. The regular merge-result APK is a separate build: SHA-256 `574608e693e3c52c19ddb75d3e7523437d987fd70969a2367c41dd49a6520143`, size 136,059,539 bytes; do not use that hash as the exact-source APK hash.
+
+- Exact-source report archive: seven main JUnit XML reports, 72 tests, 0 failures, 0 errors, 0 skipped.
+- Repeated queue evidence: exactly ten logs and ten matching per-run JUnit XML reports; each row records actual exact head SHA, exit_code=0, tests=10, failures/errors/skipped=0, task_executed=1, junit_valid=1. JUnit reports independently parsed as valid.
+- Lint XML: 26 warnings, 0 errors. Categories must be summarized from the retained XML before changing warning-category counts; prior candidate category counts are not assumed to describe this run.
+- Archive digests listed above were independently recalculated from downloaded ZIP bytes and match GitHub's published digest.
+
+### Four-core discrepancy — still open
+
+Workflow input and action setup report `Cores: 4`, and configuration write logs `hw.cpu.ncore=4`; however, QEMU warned that four requested SMP CPUs exceed the KVM-recommended two, and emulator output warned AVD `test` would run more smoothly with four cores while currently using two. The latest success artifacts do not retain the actual AVD `config.ini` / effective guest configuration. Therefore effective four-core guest operation remains **NOT VERIFIED**. Preserve warnings and gather direct effective config/guest evidence in a retained artifact; do not infer success from action input alone.
+
+### Acceptance gates still NOT VERIFIED
+
+- Android Keystore key-loss/corruption fault injection and safe data preservation.
+- Room transaction/rollback integration and failure atomicity.
+- Backup URI write failure, malformed/partial backup handling, and restore rollback.
+- Production action-tier and permission-denial behavior.
+- Offline-only behavior and network capture proving no hidden cloud fallback.
+- Physical Samsung Galaxy S23 verification.
+- Comprehensive security assessment.
+
+### Documentation freshness gate and next action
+
+This addendum is being added to all three required documents on the branch. The new documentation commit must receive fresh push and PR workflows. After completion, independently re-fetch `STATUS.md`, `TEST_MATRIX.md`, and `DEFECT_LOG.md` from that exact new head and verify they record the new run IDs/job IDs and outcomes. Until that follow-up check passes, documentation freshness is not accepted. Do not merge or close PR #1.
