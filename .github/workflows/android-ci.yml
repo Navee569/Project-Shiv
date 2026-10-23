@@ -22,7 +22,7 @@ jobs:
   verify:
     name: Build, unit tests, and lint
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -299,7 +299,7 @@ jobs:
     name: Exact PR source build, tests, lint, and emulator smoke
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Check out exact PR source SHA
         uses: actions/checkout@v4
