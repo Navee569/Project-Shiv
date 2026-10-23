@@ -1,5 +1,39 @@
 # Project Shiv Test Matrix
 
+## Current remediation matrix — product source 914f5eaad5aceafa8f4c68840259d0386bd1af2e
+
+Observed 2026-10-23. M1 remains NOT ACCEPTED / BLOCKED. This section reports the product revision above, not future checks of its documentation follow-up.
+
+| Check | Result | Direct evidence / limitation |
+|---|---|---|
+| Full JVM suite | PASS | Valid XML: 80 tests, 0 failures, 0 errors, 0 skipped; seven suites |
+| Real JSON runtime | PASS | BackupStreamsTest system-out identifies JSONObject and JSONArray in org.json:json:20240303 JAR |
+| Debug app assembly | PASS | Local consolidated Gradle result; app.shiv / MainActivity verified with aapt |
+| Android restore-test APK assembly | PASS | Six Android tests compile; execution remains BLOCKED |
+| Debug lint | PASS with warnings | 0 errors, 27 warnings: GradleDependency 17, ObsoleteSdkInt 7, DataExtractionRules 1, InlinedApi 1, Recycle 1 |
+| Envelope/settings validation | PASS (JVM) | Fractions, overflow, wrong types, singleton settings id, missing arrays, historical null profile envelope |
+| Full URI restore path: malformed collection records/settings, corrupt/truncated/wrong password input | BLOCKED | BackupRestoreTest implemented and compiled, no running Android device |
+| Real Room rollback after writes begin | BLOCKED | SQLite BEFORE INSERT abort trigger on final settings insertion; test asserts exact pre-restore contents across all ten tables, not just helper output |
+| Historical profile:null restore | BLOCKED | Direct production restore test compiled; no Android execution |
+| URI destination open/write failures | BLOCKED | Direct export tests compiled, test-only provider rejects writes; verifies partial-output cleanup/passphrase clearing when executable |
+| Four-guest-CPU proof | BLOCKED | Script asserts requested/configured 4, one canonical config, mask 0-3, online count 4, processor IDs 0-3; hosted jobs did not start |
+| Hosted push 39999347493 | FAIL | Terminal billing/spending-limit admission failure; no execution, no artifacts |
+| Hosted PR 39999354009 | FAIL | Both jobs terminal billing/spending-limit admission failures; no execution, no artifacts |
+| Source/checkout/target equality and synthetic merge provenance | BLOCKED | Assertions configured; no hosted checkout ran at this source |
+| Offline-only/no outbound network | NOT VERIFIED | APK still contains transitive INTERNET/ACCESS_NETWORK_STATE permissions; no network capture |
+| Keystore key loss/corruption and safe recovery | NOT VERIFIED | No new device evidence |
+| Production action-tier/permission-denial negatives | NOT VERIFIED | Existing helper tests do not establish production enforcement |
+| Deterministic ADB-offline fault and recovery | NOT VERIFIED | Historical real failure preserved; no new fault-injection run |
+| Physical Galaxy S23 | BLOCKED | adb devices returned none |
+| Comprehensive security scenarios/mitigations/retest | NOT VERIFIED | Mandatory acceptance gate remains open |
+
+Local consolidated command: `gradlew.bat --no-daemon --max-workers=2 "-Pkotlin.compiler.execution.strategy=in-process" :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:printDebugTestRuntime --console=plain --stacktrace`. Result BUILD SUCCESSFUL. Local snapshot normalized trailing blank lines at staging; hosted exact-source verification remains mandatory. Local emulator cannot boot because the hypervisor driver is missing.
+
+No GitHub archives exist for either fresh run: archive SHA-256/digest comparison, artifact IDs, hosted APK hash, cold-launch wait/state, queue repeats, logcat/crash exits, and effective guest CPU evidence are unavailable. Local APK SHA-256 is 2c7e5f67d45353aa8260f34d4c2197b4ac1a4bf1aeb9ac1c3aba7ebdb7b868d0 (136075923 bytes); do not present it as a hosted artifact hash.
+
+History remains: 6880cd1d PR 39972768372 / push 39972762765 failed before execution (billing annotation now recovered); older 35bfc7bb PR 39961937452 / push 39961928171 failed; synthetic merge b3ac9bcee7c59db5903b644493ebc964154551ec stays separate; 39936972682 / job 120359223524 mandatory logcat failed with exit 255 during ADB offline, not timeout. No historical failure was erased or rerun.
+
+
 Statuses: NOT RUN, PASS, FAIL, BLOCKED. A source declaration or successful compile is not a behavioural PASS.
 
 | ID | Requirement | Test type | Current status | Required evidence |

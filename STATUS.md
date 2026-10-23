@@ -1,5 +1,40 @@
 # Project Shiv — Developer Milestone Status Report
 
+## Current remediation checkpoint — 2026-10-23
+
+**M1: NOT ACCEPTED / BLOCKED.** This checkpoint supersedes historical completion claims below. Product source: `914f5eaad5aceafa8f4c68840259d0386bd1af2e`, parent `6880cd1d79444f9bacf1b6566fcc2356a77779b8`. PR #1 remains open, draft, unmerged. This report describes that product revision; it makes no claim about future checks of this documentation commit.
+
+| Area | Implementation and evidence | Status |
+|---|---|---|
+| Backup numeric/settings/record validation | Reject coercion, fractions, overflow, missing fields and malformed collection records before writes; no settings default/clamp. Unit suite: 80 tests, 0 failures/errors/skips. JSON classes loaded from json-20240303.jar. | BUILT AND TESTED (JVM); device behavior unverified |
+| Restore and historical null profile | Preserve absent profile; six production restore/export-path Android tests compiled, including final-insert SQLite failure and all-ten-table rollback comparison. | BUILT BUT NOT TESTED ON DEVICE |
+| Export failure cleanup | Attempt partial destination deletion and retain cleanup exceptions; provider-controlled SAF deletion/replacement cannot be guaranteed. | BUILT BUT NOT TESTED ON DEVICE |
+| App/test APKs and lint | Consolidated local build passed. Lint: 0 errors, 27 warnings. | BUILT AND TESTED (build/lint only) |
+| Exact-source CI and emulator evidence | New source/target/checkout assertions, separate synthetic merge SHA, runtime classpath reports, Android tests, strict four-core CPU assertions, and always-upload reports configured. | BLOCKED at GitHub runner admission |
+| Physical S23, Keystore fault injection, production action permission negatives, network capture and comprehensive security retest | No new PASS evidence. In-memory Room tests do not establish SQLCipher/Keystore safety. | BLOCKED / NOT VERIFIED |
+
+### Observed verification at 914f5ea
+
+Local JDK 17.0.20.1, Gradle wrapper 8.9, compile SDK 35. Executed:
+`gradlew.bat --no-daemon --max-workers=2 "-Pkotlin.compiler.execution.strategy=in-process" :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:printDebugTestRuntime --console=plain --stacktrace`.
+Final result: BUILD SUCCESSFUL (80 actionable tasks, 25 executed, 55 up-to-date). Local snapshot differs from committed files only in trailing blank-line normalization; exact-source hosted CI remains required. Valid JUnit XML: 80 tests across seven suites, no failures/errors/skips. Lint categories: GradleDependency 17, ObsoleteSdkInt 7, DataExtractionRules 1, InlinedApi 1, Recycle 1. Shell syntax, existing selection/crash tests, YAML parsing and embedded Python syntax passed.
+
+APK: 136075923 bytes; SHA-256 `2c7e5f67d45353aa8260f34d4c2197b4ac1a4bf1aeb9ac1c3aba7ebdb7b868d0`; app.shiv, versionCode 1, versionName 0.1.0, launcher app.shiv.MainActivity. These are local artifact measurements, not GitHub artifact digests. Merged APK includes transitive INTERNET and ACCESS_NETWORK_STATE permissions; no offline-only or no-egress PASS claim is justified.
+
+ADB returned no connected devices. A read-only local emulator launch failed because the Android Emulator hypervisor driver is missing. The six Android tests were compiled, not executed. Earlier local offline-cache, generated-JAR-lock, and misquoted-option failures are retained in local evidence; the consolidated retry passed.
+
+### Fresh hosted CI — terminal outcomes
+
+- Push [39999347493](https://github.com/Navee569/Project-Shiv/actions/runs/39999347493): FAILURE; regular job 120571083415 failed before execution; PR-only exact job skipped by its event condition.
+- PR [39999354009](https://github.com/Navee569/Project-Shiv/actions/runs/39999354009): FAILURE; exact job 120571105892 and regular job 120571106280 failed before execution.
+- GitHub check annotations confirm jobs were not started because account payments failed or the spending limit needs increasing. This is an account-level admission blocker, not a newly observed unit-test assertion.
+- Both artifact listings are empty. No archive IDs/digests, hosted APK hashes, queue repetition results, emulator launch/logcat results, guest CPU evidence, or synthetic-merge build results exist for these runs. No earlier hashes were reused.
+
+The same account annotation was recovered for 6880cd1d PR run 39972768372 and push run 39972762765. Preserve their failed conclusions; logs still return BlobNotFound, and PR artifacts are empty. Preserve 35bfc7bb PR 39961937452 / push 39961928171 failures, its separate synthetic merge b3ac9bcee7c59db5903b644493ebc964154551ec, and historical ADB-offline logcat exit 255 in 39936972682 / job 120359223524. None was rerun, deleted, or reclassified as PASS.
+
+Next: owner resolves GitHub account billing/spending restriction; execute fresh push/PR checks and direct Android tests, address findings, collect all mandatory security/device evidence, and obtain independent QA. No billing setting was changed by the developer.
+
+
 **Report date:** 2026-10-21  
 **Milestone:** M0 — Repository discovery and baseline build verification  
 **Milestone state:** IN PROGRESS — acceptance not yet demonstrated  

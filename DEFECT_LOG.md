@@ -1,5 +1,26 @@
 # Defect and Blocker Log
 
+## Remediation checkpoint — 2026-10-23, product source 914f5eaad5aceafa8f4c68840259d0386bd1af2e
+
+M1 NOT ACCEPTED / BLOCKED. The entries below supersede assumptions about 6880cd1d's new failing assertions while preserving all historical outcomes.
+
+- **Fixed in code; JVM regression PASS:** JSON integer getters truncated fractions/wrapped overflow; settings parser silently defaulted/clamped malformed input. Validate exact integral values and ranges before conversion; require settings id=1 and exact Boolean type; remove defaults/clamping.
+- **Fixed in code; Android retest BLOCKED:** profile:null previously became an invented default profile. Restore now preserves absence.
+- **Fixed in code; Android retest BLOCKED:** JSONObject record getters could coerce field types. Validate every collection record before any transaction writes.
+- **Fixed in code; Android retest BLOCKED:** destination copy failures could leave partial exports. Attempt destination cleanup and preserve cleanup errors on the original exception. SAF providers may refuse deletion and cannot guarantee atomic replacement; this remains a documented limitation.
+- **Coverage added, not a behavioral PASS:** six direct Android backup tests compile, including real SQLite failure at the final settings insert and exact comparison of all ten tables after rollback. Also cover malformed records per collection, settings type failures, truncated/corrupt input, wrong password, null profile, URI open/write failures and passphrase clearing. No device execution occurred.
+- **Confirmed external CI blocker:** GitHub annotations for both 6880cd1d and 914f5ea state jobs were not started due to failed account payments or spending-limit restrictions. This explains absent runners/steps/logs/artifacts; no new assertion stack trace is inferred. Owner action is required; no account financial setting was changed.
+- **Confirmed fresh failures preserved:** 914f5ea push 39999347493 (job 120571083415) and PR 39999354009 (jobs 120571105892, 120571106280) are terminal FAILURE. Artifact lists empty. New always-upload steps cannot execute before a runner is admitted.
+- **Local environment blocker:** no connected devices; read-only API 37 AVD launch failed because the Android Emulator hypervisor driver is missing. Physical S23 and Android restore execution remain BLOCKED.
+- **Privacy acceptance gap:** locally built APK has transitive INTERNET and ACCESS_NETWORK_STATE permissions. No network-capture/no-egress proof exists; offline-only acceptance is NOT VERIFIED.
+- **Other mandatory open gates:** Keystore key loss/corruption with preservation/recovery; encrypted persistence; production action-tier and unauthorized-action negatives; deterministic ADB-offline fault/recovery; comprehensive security assessment; physical S23 verification.
+- **Verification bookkeeping:** final consolidated local build/app-test APK assembly/unit tests/lint passed; 80 JVM tests, no failures/errors/skips, lint 27 warnings/0 errors. Earlier local offline dependency-cache failure, Windows generated-JAR lock, and misquoted PowerShell option were diagnosed and retained rather than hidden. No test or gate was removed.
+
+Historical 35bfc7bb141d798c1e26c1747592145b4c9f6de8 PR 39961937452 and push 39961928171 remain failed; exact-source job 120442925076 had unit-test failure and emulator boot timeout. Its synthetic merge b3ac9bcee7c59db5903b644493ebc964154551ec is not the source SHA. Historical ADB-offline run 39936972682 / job 120359223524 mandatory logcat exit 255 remains a real failure, never relabeled timeout/pass. 6880cd1d PR 39972768372 and push 39972762765 remain failed.
+
+This report describes product source 914f5ea, not future workflow outcomes of its documentation commit. Independent QA and all mandatory evidence are still required.
+
+
 This log records confirmed defects separately from unverified risks. Do not label a suspicion as a reproduced defect.
 
 ## Open blockers
