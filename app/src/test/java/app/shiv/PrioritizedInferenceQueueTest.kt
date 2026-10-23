@@ -4,7 +4,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.RejectedExecutionException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -49,12 +48,10 @@ class PrioritizedInferenceQueueTest {
     @Test fun concurrentSubmitCloseRaceAlwaysTerminates() = runBlocking {
         val queue = PrioritizedInferenceQueue()
         val start = CompletableDeferred<Unit>()
-        val requests = coroutineScope {
-            (1..64).map {
-                async {
-                    start.await()
-                    runCatching { withTimeout(2_000) { queue.submit(1, 60_000, { -1 }) { 1 } } }
-                }
+        val requests = (1..64).map {
+            async {
+                start.await()
+                runCatching { withTimeout(2_000) { queue.submit(1, 60_000, { -1 }) { 1 } } }
             }
         }
         start.complete(Unit)
@@ -72,20 +69,24 @@ class PrioritizedInferenceQueueTest {
         val active = async { queue.submit(100, 60_000, { -1 }) { activeStarted.complete(Unit); releaseActive.await(); 1 } }
         activeStarted.await()
         val gate = CompletableDeferred<Unit>()
-        val outcomes = coroutineScope {
-            (1..64).map {
-                async {
-                    gate.await()
-                    runCatching { queue.submit(1, 60_000, { -1 }) { 2 } }
-                }
+        val outcomes = (1..64).map {
+            async {
+                gate.await()
+                runCatching { queue.submit(1, 60_000, { -1 }) { 2 } }
             }
         }
         gate.complete(Unit)
-        val submissions = withTimeout(2_000) { outcomes.awaitAll() }
-        val rejected = submissions.count { it.exceptionOrNull() is RejectedExecutionException }
-        assertTrue("Expected capacity rejection; outcomes=$submissions", rejected > 0)
+        withTimeout(2_000) {
+            while (queue.queuedCount < 32 && outcomes.none { it.isCompleted }) yield()
+        }
+        assertTrue("Waiting queue exceeded its configured capacity", queue.queuedCount <= 32)
+        val completedFailures = outcomes.filter { it.isCompleted }
+            .map { runCatching { it.await() }.exceptionOrNull() }
+        val rejected = completedFailures.count { it is RejectedExecutionException }
+        assertTrue("Expected capacity rejection when 32 requests are queued; failures=$completedFailures", rejected > 0)
         queue.close()
         releaseActive.complete(Unit)
+        withTimeout(3_000) { outcomes.awaitAll() }
         runCatching { withTimeout(2_000) { active.await() } }
         Unit
         }
@@ -164,6 +165,39 @@ class PrioritizedInferenceQueueTest {
             releaseActive.complete(Unit)
             queue.close()
         }
+        }
+    }
+
+
+    @Test fun higherPriorityRunsFirstAndEqualPriorityIsFifo() = runBlocking {
+        val queue = PrioritizedInferenceQueue()
+        val activeStarted = CompletableDeferred<Unit>()
+        val releaseActive = CompletableDeferred<Unit>()
+        val executionOrder = mutableListOf<String>()
+        val active = async {
+            queue.submit(0, 60_000, { "stale-active" }) {
+                activeStarted.complete(Unit)
+                releaseActive.await()
+                executionOrder += "active"
+                "active"
+            }
+        }
+        val queued = listOf(
+            async { queue.submit(10, 60_000, { "stale-low" }) { executionOrder += "low"; "low" } },
+            async { queue.submit(100, 60_000, { "stale-high-1" }) { executionOrder += "high-1"; "high-1" } },
+            async { queue.submit(100, 60_000, { "stale-high-2" }) { executionOrder += "high-2"; "high-2" } },
+            async { queue.submit(50, 60_000, { "stale-middle" }) { executionOrder += "middle"; "middle" } }
+        )
+        try {
+            withTimeout(2_000) { activeStarted.await() }
+            withTimeout(2_000) { while (queue.queuedCount < queued.size) yield() }
+            releaseActive.complete(Unit)
+            val all = listOf(active) + queued
+            withTimeout(3_000) { all.awaitAll() }
+            assertEquals(listOf("active", "high-1", "high-2", "middle", "low"), executionOrder)
+        } finally {
+            releaseActive.complete(Unit)
+            queue.close()
         }
     }
 
