@@ -646,3 +646,32 @@ Actual Android Keystore loss/corruption and encrypted DB preservation; Room conf
 M1 remains **BLOCKED / NOT ACCEPTED**. Direct evidence is still absent for Keystore fault injection; Room transaction/rollback integration; backup URI write failure and restore rollback; production action-tier/permission end-to-end behavior; offline network capture; physical Galaxy S23 verification; and comprehensive security testing. Do not close `M1-DATA-UNVERIFIED-001` based on JVM CI, source review, APK build, or hosted emulator smoke.
 
 PR #1 must remain OPEN, DRAFT, and UNMERGED.
+
+
+## Independent retest: hosted emulator cold-launch timeout — 2026-10-23
+
+This addendum preserves the failure in PR run [39932808366](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366) and records the initial mitigation. These results are for source SHA `9ef8f73be7a522c62cd7623da299d4151ce2e7e3`; they do **not** verify the subsequent workflow/docs commits.
+
+### Run outcomes and exact-source provenance
+
+- Push run [39932801082](https://github.com/Navee569/Project-Shiv/actions/runs/39932801082): SUCCESS on branch SHA `9ef8f73be7a522c62cd7623da299d4151ce2e7e3`, main job 120344951189. Build, APK manifest inspection, hosted emulator smoke, ten queue repetitions, full unit tests, lint, and artifact upload succeeded. The exact-source PR job was skipped on this push event; this is not exact-source PR evidence.
+- PR run [39932808366](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366): overall FAILURE. Exact-source job 120344972366 succeeded and asserted `source_sha = checked_out_sha = 9ef8f73be7a522c62cd7623da299d4151ce2e7e3`. Regular job 120344972695 failed its strict hosted emulator cold-launch assertion after build, queue tests, full unit tests, and lint succeeded. It checked out synthetic merge SHA `ce54c6186c52c1274055a991c2e6ff68039a3ff1`; classify this as merge-result evidence, not exact-head evidence.
+- Exact-source artifact [12493092228](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366/artifacts/12493092228): ZIP SHA-256 `36a4bb1b4d87290f5d6dbdb24e910b4e151f383fa3d40c0303015f62e9903cd1`; APK size 136,059,539 bytes; APK SHA-256 `9e0916efe83941af90eeb3a3dd8fac561d026904b2999690789bb2ef3d6a01c8`. APK evidence records the exact source SHA. Manifest: application ID `app.shiv`, versionCode 1, versionName 0.1.0, minSdk 26, targetSdk 35, launcher `app.shiv.MainActivity`, label `Shiv`, icon present.
+- Exact-source tests: 72 tests, 0 failures, 0 errors, 0 skipped. Queue artifact retained exactly ten logs and ten matching JUnit XML files; every run recorded the target SHA, exit 0, 10 tests, 0 failures/errors/skips, task_executed=1, junit_valid=1. Lint: 0 errors, 26 warnings (GradleDependency 15, ObsoleteSdkInt 7, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, Recycle 1).
+- Verification reports artifact [12492718116](https://github.com/Navee569/Project-Shiv/actions/runs/39932808366/artifacts/12492718116), ZIP SHA-256 `2f1dcbbc37f993eeb67a8bf29573156e6122ae7ba6c379460e8caec5a069fdf6`. Push artifacts: APK [12492892444](https://github.com/Navee569/Project-Shiv/actions/runs/39932801082/artifacts/12492892444), archive digest `b4cb2f1bbc340188d0a5e26aea1383d9f9ff8e5065f4081d3c32042120ad1656`; reports [12492369043](https://github.com/Navee569/Project-Shiv/actions/runs/39932801082/artifacts/12492369043), archive digest `16983674e299b11effd2e19b49b462836fafbe2a55c0699de17fb35fc2ac2f21`.
+
+### Strict launch failure investigation
+
+The retained regular-job diagnostics show `am start -W -n app.shiv/.MainActivity` returned exactly `Status: timeout`, `LaunchState: UNKNOWN (-1)`, and `WaitTime: 13738`; the smoke script correctly failed rather than accepting a PID/activity as success. At the captured failure point, the app process existed (PID 2601), MainActivity was RESUMED, but WindowManager reported `reportedDrawn=false` and `firstWindowDrawn=false`. The crash buffer was empty and no fatal exception/ANR marker was found in the retained crash buffer. Logcat showed frame skips and heavy emulator/system activity; the runner had about 3.0 GiB available memory and 2.2 GiB swap in use. The emulator itself warned that the AVD would run more smoothly with four CPU cores (it had two).
+
+The exact-source job on the same candidate SHA passed strict cold launch: `Status: ok`, `LaunchState: COLD`, WaitTime 8441 ms, and all PID/activity/crash/ANR assertions passed. This split result supports a hosted-emulator timing/resource-contention hypothesis but does **not** prove the root cause or rule out app startup latency.
+
+### Evidence-based workflow adjustment and verification status
+
+The smallest evidence-based mitigation is to allocate four emulator CPU cores in both hosted emulator jobs, matching the emulator's explicit performance warning. The change is in `.github/workflows/android-ci.yml` commit `07a2e5ff1a5123b87d473c99c39069efe6f0db79`; both jobs retain the strict requirement that `am start -W` exit zero and output exactly `Status: ok`. No retry, timeout suppression, or PID-based override was added.
+
+Fresh push and PR workflows must be evaluated on the final documentation commit, not this workflow commit or the previous SHA. Keep the original PR failure in history. If the merge-result job fails again, investigate and preserve diagnostics rather than calling the PR workflow green.
+
+### Acceptance blockers
+
+Keystore key loss/corruption fault injection; Room transaction/rollback integration; backup URI failure and restore rollback; production action-tier/permission denial behavior; offline network capture/no hidden cloud fallback; physical Samsung Galaxy S23; and comprehensive security assessment remain NOT VERIFIED. M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 must remain open, draft, and unmerged.
