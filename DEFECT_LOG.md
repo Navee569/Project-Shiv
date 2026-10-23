@@ -293,3 +293,27 @@ Workflow input and action setup report `Cores: 4`, and configuration write logs 
 ### Documentation freshness gate and next action
 
 This addendum is being added to all three required documents on the branch. The new documentation commit must receive fresh push and PR workflows. After completion, independently re-fetch `STATUS.md`, `TEST_MATRIX.md`, and `DEFECT_LOG.md` from that exact new head and verify they record the new run IDs/job IDs and outcomes. Until that follow-up check passes, documentation freshness is not accepted. Do not merge or close PR #1.
+
+
+## Fresh CI follow-up — documentation-remediation SHA a63e0aa782f9bff58c6b563ac38ef1b2a2a30fd3 — 2026-10-23
+
+Fresh workflow outcomes (this section supplements and does not erase historical evidence):
+- [Push run 39947033852](https://github.com/Navee569/Project-Shiv/actions/runs/39947033852): SUCCESS. Main job 120392092560 SUCCESS on exact SHA a63e0aa782f9bff58c6b563ac38ef1b2a2a30fd3; PR-only job 120392094468 SKIPPED as expected for push.
+- [PR run 39947041925](https://github.com/Navee569/Project-Shiv/actions/runs/39947041925): SUCCESS. Regular build/test/lint job 120392118694 SUCCESS; exact-source smoke job 120392118796 SUCCESS. Exact-source source SHA = checkout SHA = a63e0aa782f9bff58c6b563ac38ef1b2a2a30fd3. Regular PR merge-result checkout SHA = 69fe24d65af46f106a281bf15b3355d8891c2dc2; do not conflate with PR head.
+
+Fresh artifacts, independently downloaded and ZIP-SHA256 verified against GitHub digest:
+- Push APK artifact 12500165037, digest/SHA256 a9596fe270c74f25178b03bd01c860ac32441783a326db0e4bf16501e2b16eb8 (72,901,412 bytes); APK SHA256 ac2ca7fc6d678aa0d486c5704d79ab4a17582bedbc2bf75ecec04210f3dfa317.
+- Push report artifact 12498904244, digest/SHA256 c4dd3d881a20c73c9cddda58a2b42e73ff8d732ce60d68ead8bdcefe4ac92811 (73,613,355 bytes).
+- PR regular merge APK artifact 12499262719, digest/SHA256 07fc67d18fd4905e2c012ea5838fe366216fead5738c5c4c3ed170555683e03a (72,901,442 bytes); APK SHA256 7eaa9b1421ea45929d34dc90cbbac2705909ccbabef4578b7bc0931401ecbc20, synthetic checkout SHA 69fe24d65af46f106a281bf15b3355d8891c2dc2.
+- PR report artifact 12499013724, digest/SHA256 364081578bedccf9f9393e8da572acd7d618d774e6b32ad27e18e9d5c8fd4f9d (73,607,667 bytes).
+- PR exact-source APK/evidence artifact 12499606348, digest/SHA256 7b94918c260a6166a14ec81207794ab30e217200c84b4caa83879770813e3be4 (73,558,461 bytes); APK SHA256 1bbcfc6d4e36bf840430263905748ba76c1e8c1932cc58a59f0a61ca853b16ad. All APKs are 136,059,539 bytes. Exact-source manifest: app.shiv, versionCode 1, versionName 0.1.0, minSdk 26, targetSdk 35, launcher app.shiv.MainActivity, label Shiv, icon present.
+
+Test evidence for these fresh runs: seven JUnit XML reports, 72 tests / 0 failures / 0 errors / 0 skipped. Ten repeated queue logs and ten matching JUnit reports; exact-source runs target SHA a63e0aa782f9bff58c6b563ac38ef1b2a2a30fd3 and each records exit 0, 10 tests, no failures/errors/skips, task_executed=1, junit_valid=1. Lint: 26 warnings, 0 errors (GradleDependency 15, ObsoleteSdkInt 7, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, Recycle 1).
+
+Strict cold launch passed in all three tested jobs: push WaitTime 15508 ms, PR regular merge-result 13301 ms, PR exact-source 10772 ms; each reports exit 0, Status: ok, LaunchState: COLD. Mandatory logcat and crash-buffer captures exited 0 in all three. Retained report artifacts show initial ADB state online and no device-offline text in retained smoke-report files; this does not prove no message occurred in unretained runner setup logs or permanent resolution of the historical transport issue.
+
+Four-core configuration remains NOT VERIFIED: fresh artifacts still do not retain actual AVD config.ini or direct effective guest CPU/core evidence. Preserve prior QEMU/KVM warnings. Historical PR run 39936972682 / job 120359223524, logcat exit 255 while ADB offline, remains a real historical failure and must not be erased or relabelled as a timeout.
+
+Still NOT VERIFIED: Keystore key-loss/corruption and safe preservation; Room transaction/rollback atomicity; backup URI failure, malformed/partial backup and restore rollback; production action-tier/permission-denial behavior; offline-only/network capture/no hidden cloud fallback; physical Samsung Galaxy S23; comprehensive security assessment. Green hosted CI does not accept M1. PR #1 remains OPEN / DRAFT / UNMERGED.
+
+These results are now recorded for the tested SHA. This documentation commit must receive fresh push and PR workflows, which must be checked independently; M1 remains BLOCKED / NOT ACCEPTED until documentation freshness, direct four-core evidence, and mandatory acceptance gates are resolved or explicitly scoped by the project owner.
