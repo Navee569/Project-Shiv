@@ -195,6 +195,14 @@ jobs:
             timeout 8s adb devices -l 2>&1 || echo "ADB devices command timed out or failed."
             echo "Emulator processes:"
             ps -ef | grep -E '[e]mulator|[q]emu|[a]db' || true
+            echo "AVD config (CPU/memory configuration actually written to disk):"
+            avd_root="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+            for avd_config in "$avd_root/test.avd/config.ini" "$HOME/.android/avd/test.avd/config.ini"; do
+              if [ -f "$avd_config" ]; then
+                echo "--- $avd_config"
+                grep -E '^(hw\.cpu\.ncore|hw\.ramSize|vm\.heapSize|abi\.type|image\.sysdir\.1)=' "$avd_config" || true
+              fi
+            done
             echo "SDK emulator binaries:"
             find "${ANDROID_HOME:-/nonexistent}/emulator" -maxdepth 1 -type f -name emulator -ls 2>/dev/null || true
             echo "Device properties (if booted):"
