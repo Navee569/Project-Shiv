@@ -223,3 +223,23 @@ M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 remains open, draft, and unmerged.
 - Workflow adjustment commit `07a2e5ff1a5123b87d473c99c39069efe6f0db79` increases emulator CPU cores to four in both jobs. It is not considered verified until fresh runs complete on the final documentation SHA.
 
 M1 remains **BLOCKED / NOT ACCEPTED**; PR #1 must remain open, draft, and unmerged.
+
+
+## M1 regular PR smoke exit 255 / ADB offline transport — 2026-10-23
+
+| ID | Severity | Evidence / finding | Status / closure criteria |
+|---|---|---|---|
+| M1-EMU-ADB-OFFLINE-001 | High / PR gate failure | PR run 39936972682, regular job 120359223524 on synthetic merge SHA `0714eb753b06caac376b94d4e9f73a36329ff101`, failed after strict launch passed. Exact failing command: `adb -s emulator-5554 logcat -b all -d -v threadtime -t 6000`, exit 255. Artifact 12495271137 records `emulator-5554 offline transport_id:2` in boot diagnostics. Previous commands had passed; activity top output showed MainActivity. | **OPEN pending fresh CI.** Commit `86a9cd59c99e9c75fcbfb428ac61f75319a39c2e` moves mandatory logcat/crash-buffer capture ahead of heavier dumpsys activity snapshots and corrects status wording so exit 255 is not labelled as a timeout. Log capture remains mandatory; any failure remains a failure. Fresh PR run must establish whether the transport failure recurs. Current evidence does not prove why ADB went offline. |
+| M1-EMU-CORES-001 | Medium | Workflow input and action setup report `cores: 4` / `Cores: 4`, but emulator emitted warning that AVD test runs with 2 CPU cores. Prior failure artifact did not preserve AVD `config.ini`. | **OPEN / NOT VERIFIED.** Commit `b0c6ffa275c3d9a950dc445b7e69bb5dd88b8167` records actual `hw.cpu.ncore` and related properties from AVD config in failure diagnostics. Inspect fresh artifact before asserting effective four-core configuration. |
+| M1-DOC-FRESHNESS-002 | Medium | Tester found STATUS.md, TEST_MATRIX.md and DEFECT_LOG.md omitted push run 39936964872 and PR run 39936972682. | Addenda now record these outcomes and the precise logcat failure. **OPEN pending** fresh push/PR workflows on final docs SHA and independent re-fetch/consistency review. |
+| M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Keystore fault injection, Room transaction/rollback, backup URI/malformed backup/restore rollback, production action-tier/permission denial, offline-only network capture, physical Galaxy S23 and comprehensive security assessment remain unverified. | **OPEN — acceptance blocker.** Direct platform/security evidence required; no closure from JVM CI or hosted emulator smoke. |
+
+### Candidate run evidence
+
+- Push [39936964872](https://github.com/Navee569/Project-Shiv/actions/runs/39936964872): SUCCESS, push event, job 120359239132 success. Push APK artifact 12494647410, ZIP SHA-256 `59f9ddf2562a55b5b6162763d9f53339aac9a1a8ec8ec86156b612b42f79bdae`; APK 136,059,539 bytes, SHA-256 `c0920d63266555cd6b5c322bfea913a03d230e97278fcf033befbcfed648def1`.
+- PR [39936972682](https://github.com/Navee569/Project-Shiv/actions/runs/39936972682): overall FAILURE; exact-source job 120359223934 success; regular merge-result job 120359223524 failure on synthetic SHA `0714eb753b06caac376b94d4e9f73a36329ff101`.
+- Exact-source artifact 12495072068 ZIP SHA-256 `fdde00e25d85ee5c8fe22d8bf70583cfb4cbec780be2f3b2db25d0cae6f926d9`; APK 136,059,539 bytes, SHA-256 `c5c36c9808478ccad045f1e3d50866c5296dd3e23a368c78374589abacb06ff9`.
+- Report artifact 12495271137 ZIP SHA-256 `857882b62554bcfd863a4c18a3f9f7385b1c87fb7e7f18fbb693a357475a2507`.
+- Exact-source suite: 72 tests, 0 failures/errors/skips; queue 10/10 valid; lint 0 errors / 26 warnings. Exact-source cold launch Status: ok, LaunchState COLD, WaitTime 12757 ms. Regular merge-result cold launch Status: ok, LaunchState COLD, WaitTime 10082 ms, but subsequent logcat exit 255 makes the overall job FAIL.
+
+M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 must remain OPEN, DRAFT, and UNMERGED.
