@@ -184,14 +184,16 @@ class PrioritizedInferenceQueueTest {
                 "active"
             }
         }
-        val queued = listOf(
-            async { queue.submit(10, 60_000, { "stale-low" }) { executionOrder += "low"; "low" } },
-            async { queue.submit(100, 60_000, { "stale-high-1" }) { executionOrder += "high-1"; "high-1" } },
-            async { queue.submit(100, 60_000, { "stale-high-2" }) { executionOrder += "high-2"; "high-2" } },
-            async { queue.submit(50, 60_000, { "stale-middle" }) { executionOrder += "middle"; "middle" } }
-        )
         try {
+            // Establish that the priority-0 request is already executing and blocked
+            // before adding the requests whose priority/FIFO ordering is under test.
             withTimeout(2_000) { activeStarted.await() }
+            val queued = listOf(
+                async { queue.submit(10, 60_000, { "stale-low" }) { executionOrder += "low"; "low" } },
+                async { queue.submit(100, 60_000, { "stale-high-1" }) { executionOrder += "high-1"; "high-1" } },
+                async { queue.submit(100, 60_000, { "stale-high-2" }) { executionOrder += "high-2"; "high-2" } },
+                async { queue.submit(50, 60_000, { "stale-middle" }) { executionOrder += "middle"; "middle" } }
+            )
             withTimeout(2_000) { while (queue.queuedCount < queued.size) yield() }
             releaseActive.complete(Unit)
             val all = listOf(active) + queued
