@@ -454,3 +454,4 @@ jobs:
             app/build/test-results/**
             app/build/reports/lint-results-debug.xml
             app/build/reports/emulator-smoke/**
+            app/build/reports/repeated-queue-tests/**

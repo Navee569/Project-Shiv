@@ -168,3 +168,14 @@ Historical failed-run entries above are retained unchanged; closure here applies
 - Strict hosted emulator smoke passed in both required workflows.
 
 Historical failed-run entries are retained. No physical device, real Keystore fault injection, Room rollback integration, backup URI failure integration, offline network capture, or full security testing is claimed. M1 remains BLOCKED / NOT ACCEPTED.
+
+
+## M1 exact-source evidence-retention defect — 2026-10-23
+
+| ID | Severity | Area | Evidence on prior SHA `a0a837dda149b8b75f1aabdaa189557f5f455c1b` | Remediation / closure criteria |
+|---|---|---|---|---|
+| M1-QUEUE-ARTIFACT-001 | High | Exact-source PR CI artifact | PR run 39902335066, exact-source job 120246486875, recorded ten queue invocations at the exact source SHA with exit_code=0, but artifact 12480145944 omitted `repeated-queue-summary.txt` and `run-01.log` through `run-10.log`. Artifact 12479946841 contains logs from synthetic merge SHA `8c7b71db85a0139173396464ab82606bb62ec76e` and cannot substitute. | Workflow now includes `app/build/reports/repeated-queue-tests/**` in the exact-source upload path. **Open until fresh exact-source CI uploads the summary and exactly ten logs, all ten are inspected, each invocation records the new exact SHA, and every exit code is zero.** |
+| M1-DOC-FRESHNESS-002 | Medium | QA evidence freshness | Independent retest found STATUS.md, TEST_MATRIX.md and DEFECT_LOG.md did not record run IDs 39902332198 / 39902335066 and their findings. | This addendum records prior-candidate results and limitations. **Fresh verification of this documentation/workflow commit remains pending.** |
+| M1-DATA-UNVERIFIED-001 | High / acceptance blocker | Android/data integrity and security | Actual Keystore fault injection, Room transaction/rollback integration, backup URI failure/restore rollback, production action-tier entry points, offline network capture, physical Galaxy S23 and full security testing remain unverified. | Add/run appropriate platform-level tests or retain as blockers according to project-owner criteria. Never claim PASS from source review or green JVM CI alone. |
+
+Prior-candidate CI summary: push run 39902332198 and PR run 39902335066 both succeeded; each required workflow had 72 tests, 0 failures/errors/skips, and lint 0 errors / 26 warnings. Both hosted emulator smoke checks passed. Push queue logs 10/10 individually passed; exact-source queue execution reported 10/10 zero exit codes but logs were not retained in its artifact. APK metadata and SHA-256 values are recorded in STATUS.md. M1 remains BLOCKED / NOT ACCEPTED until evidence-retention closure and broader acceptance requirements are addressed.

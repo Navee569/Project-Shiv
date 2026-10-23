@@ -427,3 +427,19 @@ The previous unmatched-quote defect and skipped-smoke finding are closed for sou
 - Both same-SHA APK artifacts had matching size but different hashes. Reproducible-build status remains unconfirmed.
 
 **Decision:** M1 remains BLOCKED / NOT ACCEPTED pending ten separately recorded queue-only runs, accurate documentation on the final commit, and explicit closure or project-owner scoping of remaining Android/data-integrity coverage.
+
+
+## M1 evidence retention follow-up — 2026-10-23
+
+| Gate | Prior candidate result | Evidence / limitation | Current follow-up |
+|---|---|---|---|
+| Push workflow on SHA `a0a837dda149b8b75f1aabdaa189557f5f455c1b` | PASS | Run 39902332198, job 120246476726 | Fresh CI required for this follow-up commit |
+| Exact-source PR workflow on prior SHA | PASS | Run 39902335066, exact-source job 120246486875; checkout assertion matched source SHA | Fresh CI required for this follow-up commit |
+| Full unit tests | PASS | 72 tests, 0 failures/errors/skips in each required job; class counts recorded in STATUS.md | Recheck both current-SHA artifacts |
+| Lint | PASS | 0 errors, 26 warnings: GradleDependency 15; ObsoleteSdkInt 7; Recycle 1; InlinedApi 1; OldTargetApi 1; DataExtractionRules 1 | Recheck both current-SHA artifacts |
+| Repeated queue tests — push | PASS | 10/10 exit code 0; all ten logs individually inspected | Recheck new SHA |
+| Repeated queue tests — exact-source PR | EXECUTION PASS / LOG INSPECTION BLOCKED | Ten exit codes were zero in action log, but artifact 12480145944 omitted run logs and summary; synthetic-merge artifact is not a substitute | Workflow now explicitly uploads `app/build/reports/repeated-queue-tests/**`; inspect exact-source summary and all ten logs on new SHA |
+| APK provenance and hosted emulator smoke | PASS on prior SHA | APK artifacts 12479523710 and 12480145944; both hosted smoke gates passed | Recheck current-SHA artifacts |
+| Keystore / Room rollback / backup URI failures / production action tiers / offline network capture / physical device / full security assessment | NOT RUN / UNVERIFIED | Existing JVM tests and hosted emulator smoke do not establish these behaviors | Keep blocked unless platform-level evidence is produced or project owner explicitly scopes acceptance |
+
+**Current commit disposition:** verification pending. Do not mark M1 accepted until fresh push and exact-source PR runs pass, exact-source artifact retention is verified, documentation is current, and remaining project-owner Android/data-integrity acceptance requirements are satisfied or explicitly scoped.

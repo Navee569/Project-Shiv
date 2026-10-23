@@ -597,3 +597,30 @@ Lint: **0 errors, 26 warnings** — GradleDependency 15, ObsoleteSdkInt 7, Recyc
 - This report's results apply to source SHA `1629273b0ce29b57118828e295225b5b98929cb8`. The documentation/workflow update in this commit requires its own fresh push and PR CI runs.
 
 PR #1 remains OPEN, DRAFT, and UNMERGED. Do not mark M1 accepted based only on green CI.
+
+
+## M1 evidence closure follow-up — 2026-10-23 — prior tested SHA `a0a837dda149b8b75f1aabdaa189557f5f455c1b`
+
+**Prior candidate decision remains BLOCKED / NOT ACCEPTED.** This entry preserves the independent tester's exact-SHA findings and records the remediation now committed for fresh verification. It does not claim the new workflow/documentation commit has passed CI.
+
+### Completed evidence on prior candidate
+- Push run [39902332198](https://github.com/Navee569/Project-Shiv/actions/runs/39902332198): SUCCESS; build/unit-tests/lint job `120246476726`.
+- PR run [39902335066](https://github.com/Navee569/Project-Shiv/actions/runs/39902335066): SUCCESS; exact-source job `120246486875`.
+- Exact-source checkout assertion: `source_sha=checked_out_sha=a0a837dda149b8b75f1aabdaa189557f5f455c1b`.
+- PR general job used synthetic merge SHA `8c7b71db85a0139173396464ab82606bb62ec76e`; its artifacts are not exact-source evidence.
+- Both required jobs: 72 tests, 0 failures, 0 errors, 0 skipped. Per-class counts: ActionTierPolicyTest 4; BackupStreamsTest 9; DatabaseKeyStateTest 3; NotificationEventOrchestratorTest 7; PhotoCaptureCompletionTest 15; PhotoLabelingPipelineTest 24; PrioritizedInferenceQueueTest 10.
+- Lint: 0 errors, 26 warnings (GradleDependency 15, ObsoleteSdkInt 7, Recycle 1, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1).
+- Push queue loop: 10/10 exit code 0; all ten individual logs inspected. Exact-source PR queue loop: 10/10 exit code 0 in the action log, but its artifact omitted the per-run logs and summary. Do not substitute synthetic-merge logs.
+- Push APK artifact [12479523710](https://github.com/Navee569/Project-Shiv/actions/runs/39902332198/artifacts/12479523710): 136,059,539 bytes; SHA-256 `beb4b04b7f6c169b55f89825f4bffe87453620725ffcf784bc3f75e2614a0bc4`.
+- Exact-source PR APK artifact [12480145944](https://github.com/Navee569/Project-Shiv/actions/runs/39902335066/artifacts/12480145944): 136,059,539 bytes; SHA-256 `bb5a903247db2f96aecf495f0805258b3ab9a537e176d5c9bb708680ea9cd0ca`.
+- Report artifacts: push [12479777417](https://github.com/Navee569/Project-Shiv/actions/runs/39902332198/artifacts/12479777417); PR general report [12479946841](https://github.com/Navee569/Project-Shiv/actions/runs/39902335066/artifacts/12479946841). APK metadata: app.shiv, versionCode 1, versionName 0.1.0, minSdk 26, launcher app.shiv.MainActivity, label Shiv, icon present. Hashes were independently recomputed and matched evidence JSON.
+- Hosted emulator smoke passed on push and exact-source PR jobs, including install, clear-data, strict cold launch Status: ok, PID/activity, crash and ANR assertions.
+- Same-size APKs had different hashes; retain as a reproducibility observation unless deterministic APK output is a formal requirement.
+
+### Remediation in this commit
+- The exact-source artifact upload path now explicitly includes `app/build/reports/repeated-queue-tests/**`, in addition to the existing APK, provenance, JUnit, lint, and emulator evidence. The upload retains `if: always()` so logs can be retained after prior-step failures; missing-file behavior remains warning-only.
+- `TEST_MATRIX.md` and `DEFECT_LOG.md` receive the corresponding prior-candidate evidence and evidence-retention defect.
+- **Verification pending:** the current commit's push and exact-source PR workflows must complete; then inspect the exact-source artifact for the summary and exactly ten individual logs and inspect each log at the new exact source SHA.
+
+### Remaining M1 acceptance gaps
+Actual Android Keystore loss/corruption and encrypted DB preservation; Room confirmation transaction concurrency/rollback; backup restore and ContentResolver URI failures; production action-tier/permission paths; offline-only network capture; physical Samsung Galaxy S23; and full security testing remain NOT RUN / unverified. M1 remains BLOCKED / NOT ACCEPTED. PR #1 must remain open, draft, and unmerged.
