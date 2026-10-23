@@ -443,3 +443,29 @@ The previous unmatched-quote defect and skipped-smoke finding are closed for sou
 | Keystore / Room rollback / backup URI failures / production action tiers / offline network capture / physical device / full security assessment | NOT RUN / UNVERIFIED | Existing JVM tests and hosted emulator smoke do not establish these behaviors | Keep blocked unless platform-level evidence is produced or project owner explicitly scopes acceptance |
 
 **Current commit disposition:** verification pending. Do not mark M1 accepted until fresh push and exact-source PR runs pass, exact-source artifact retention is verified, documentation is current, and remaining project-owner Android/data-integrity acceptance requirements are satisfied or explicitly scoped.
+
+
+## M1 exact-source retest — 2026-10-23 — source SHA `966aa26ab63bf72b15848496db5b3930e377670e`
+
+Workflow run [39923689666](https://github.com/Navee569/Project-Shiv/actions/runs/39923689666) completed with both jobs successful. The exact-source job 120315249653 checked out and asserted `966aa26ab63bf72b15848496db5b3930e377670e`; the regular job 120315249339 used merge SHA `79a4b7623b67f1ca0acb09887e0812d1fd3b240f`, so its queue results are not substitutes for exact-head evidence.
+
+| ID | Requirement | Status for source SHA `966aa26ab63bf72b15848496db5b3930e377670e` | Evidence / limitation |
+|---|---|---|---|
+| M1-CI-01 | Exact-source build | PASS | Exact-source job 120315249653 succeeded; checkout assertion matched source SHA. |
+| M1-QUEUE-01 | Ten exact-source queue repetitions retained and valid | PASS | Artifact 12488143989; summary + ten logs + ten per-run JUnit XML files inspected. Each run: exit 0, 10 tests, 0 failures/errors/skips, task_executed=1, junit_valid=1. |
+| M1-UNIT-01 | Full unit-test suite | PASS | 72 tests, 0 failures, 0 errors, 0 skipped in run 39923689666. |
+| M1-LINT-01 | Debug lint | PASS | 0 errors, 26 warnings; warnings remain recorded, not suppressed. |
+| M1-EMU-01 | Hosted emulator smoke and crash/ANR checks | PASS | Exact-source hosted emulator checks succeeded; does not establish physical-device behavior. |
+| M1-APK-01 | Exact-source APK provenance | PASS | Exact-source APK 136,059,539 bytes; SHA-256 `5eba4bbb68e164e9ab06de98d3a4627efaa10f953743029e5508081056630278`. |
+| M1-REGULAR-01 | Regular CI queue results are exact-head evidence | FAIL / NOT APPLICABLE | Regular job checked out merge SHA `79a4b7623b67f1ca0acb09887e0812d1fd3b240f`; keep separate from exact-source evidence. |
+| M1-DOC-01 | Three documents current for run 39923689666 | REMEDIATION COMMITTED; fresh verification pending | This addendum is being added; new documentation commit requires fresh workflows and review. |
+| M1-DATA-01 | Keystore fault injection | NOT VERIFIED | No direct fault-injection evidence. |
+| M1-DATA-02 | Room transaction/rollback integration | NOT VERIFIED | JVM tests/compilation are not Android database integration evidence. |
+| M1-BACKUP-01 | Backup URI write failure and restore rollback | NOT VERIFIED | No direct integration evidence. |
+| M1-ACTION-01 | Production action tiers and permission denial | NOT VERIFIED | No production-entry-point end-to-end evidence. |
+| M1-OFFLINE-01 | Offline network capture / no cloud fallback | NOT VERIFIED | No suitable network capture evidence. |
+| M1-DEVICE-01 | Physical Samsung Galaxy S23 | NOT RUN / NOT VERIFIED | Hosted emulator is not a physical device. |
+| M1-SEC-01 | Comprehensive security assessment | NOT VERIFIED | No complete assessment evidence. |
+| M1-ACCEPT | M1 acceptance | BLOCKED / NOT ACCEPTED | Required platform/data/security gates remain unverified; PR #1 must remain open, draft, unmerged. |
+
+The report archive was recorded as artifact 12489255574; exact-source APK artifact 12488143989. Artifact digests are listed in STATUS.md and must be independently recomputed from downloaded bytes before marking archive integrity PASS.
