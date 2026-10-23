@@ -41,7 +41,7 @@ object PendingEventConfirmation {
         }
         val action = PendingIntent.getBroadcast(context, event.id.hashCode(), confirm, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val dismissIntent = Intent(context, PendingEventReceiver::class.java).apply {
-            action = ACTION_DISMISS
+            this.action = ACTION_DISMISS
             putExtra("eventId", event.id)
         }
         val dismissAction = PendingIntent.getBroadcast(
