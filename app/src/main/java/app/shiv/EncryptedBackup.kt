@@ -73,8 +73,10 @@ class EncryptedBackup(context: Context) {
             requireNotNull(input) { "Could not open the selected backup file." }.use { readBoundedBytes(it, MAX_BACKUP_BYTES) }
         }
         val json = JSONObject(String(decryptBackupPayload(packed, passphrase), Charsets.UTF_8))
+        requireBackupFields(json.keys().asSequence().toSet())
         require(json.optInt("format") == 1) { "This backup format is not supported." }
-        val profile = json.optJSONObject("profile")?.let(::readProfile) ?: UserProfile()
+        val profileValue = json.get("profile")
+        val profile = if (profileValue == JSONObject.NULL) UserProfile() else readProfile(json.getJSONObject("profile"))
         val messages = readArray(json, "messages", ::readMessage)
         val memories = readArray(json, "memories", ::readMemory)
         val events = readArray(json, "events", ::readEvent)
@@ -83,7 +85,7 @@ class EncryptedBackup(context: Context) {
         val rules = readArray(json, "rules", ::readRule)
         val drafts = readArray(json, "drafts", ::readDraft)
         val tiers = readArray(json, "actionTiers", ::readTier)
-        val settings = json.optJSONObject("settings")?.let(::readSettings) ?: ShivSettings()
+        val settings = readSettings(json.getJSONObject("settings"))
 
         // Replace existing data only after the file has decrypted and every record has parsed.
         database.withTransaction {
@@ -197,7 +199,8 @@ class EncryptedBackup(context: Context) {
     private fun readTier(o: JSONObject) = ActionTierSetting(o.getString("actionKey"), o.getString("tier"))
     private fun readSettings(o: JSONObject) = ShivSettings(o.optInt("id", 1), o.optBoolean("proactiveEnabled", true), o.optInt("quietStartMinute", 1320), o.optInt("quietEndMinute", 480), o.optInt("maxDailyInterruptions", 3).coerceIn(0, 20))
     private fun <T> readArray(root: JSONObject, key: String, read: (JSONObject) -> T): List<T> {
-        val array = root.optJSONArray(key) ?: return emptyList()
+        val array = root.optJSONArray(key)
+            ?: throw IllegalArgumentException("This backup is incomplete; required array '$key' is missing or invalid.")
         return (0 until array.length()).map { index -> read(array.getJSONObject(index)) }
     }
 

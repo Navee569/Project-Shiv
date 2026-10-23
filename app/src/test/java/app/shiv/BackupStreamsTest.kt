@@ -51,6 +51,20 @@ class BackupStreamsTest {
     }
 
 
+    @Test fun rejectsIncompleteBackupFieldSetInsteadOfTreatingMissingDataAsEmpty() {
+        val complete = REQUIRED_BACKUP_FIELDS.toMutableSet()
+        requireBackupFields(complete)
+        complete.remove("memories")
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            requireBackupFields(complete)
+        }
+        org.junit.Assert.assertTrue(failure.message!!.contains("memories"))
+    }
+
+    @Test fun acceptsKnownRequiredBackupFieldsAlongsideFutureOptionalFields() {
+        requireBackupFields(REQUIRED_BACKUP_FIELDS + "futureOptionalMetadata")
+    }
+
     @Test fun plaintextCapAndEnvelopeOverheadFitExactPackedLimit() {
         assertEquals(150 * 1024 * 1024, MAX_BACKUP_BYTES)
         assertEquals(MAX_BACKUP_BYTES, BACKUP_HEADER_BYTES + MAX_BACKUP_PLAINTEXT_BYTES + BACKUP_TAG_BYTES)

@@ -12,6 +12,19 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 internal const val MAX_BACKUP_BYTES = 150 * 1024 * 1024
+
+/** Required fields emitted by every supported backup. Missing collections must never mean "empty". */
+internal val REQUIRED_BACKUP_FIELDS = setOf(
+    "format", "createdAt", "profile", "messages", "memories", "events",
+    "pendingEvents", "actions", "rules", "drafts", "actionTiers", "settings"
+)
+
+internal fun requireBackupFields(present: Set<String>) {
+    val missing = REQUIRED_BACKUP_FIELDS - present
+    require(missing.isEmpty()) {
+        "This backup is incomplete; missing required fields: ${missing.sorted().joinToString(", ")}."
+    }
+}
 internal const val BACKUP_HEADER_BYTES = 8 + 16 + 12
 internal const val BACKUP_TAG_BYTES = 16
 internal const val MAX_BACKUP_PLAINTEXT_BYTES = MAX_BACKUP_BYTES - BACKUP_HEADER_BYTES - BACKUP_TAG_BYTES
