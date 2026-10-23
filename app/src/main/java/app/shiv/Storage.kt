@@ -83,6 +83,11 @@ data class PendingEventRecord(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+internal data class ConfirmedPendingEvent(
+    val event: EventRecord,
+    val reminderLeadMinutes: Int
+)
+
 @Dao
 interface ShivDao {
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") fun messages(): Flow<List<ChatMessage>>
@@ -110,6 +115,42 @@ interface ShivDao {
     @Query("SELECT * FROM pending_events ORDER BY startsAt LIMIT :limit OFFSET :offset") suspend fun pendingEventsPage(limit: Int, offset: Int): List<PendingEventRecord>
     @Insert suspend fun addPendingEvent(value: PendingEventRecord)
     @Query("DELETE FROM pending_events WHERE id = :id") suspend fun deletePendingEvent(id: String)
+
+    /**
+     * Atomically consumes a pending confirmation. Concurrent/repeated broadcasts can only claim
+     * the pending row once, and event persistence plus the confirmation audit entry roll back
+     * together if any database operation fails.
+     */
+    @Transaction
+    suspend fun confirmPendingEvent(id: String, now: Long, source: String): ConfirmedPendingEvent? {
+        val candidate = pendingEvent(id) ?: return null
+        if (!isPendingEventValid(candidate, now)) {
+            deletePendingEvent(candidate.id)
+            return null
+        }
+        val event = EventRecord(
+            id = candidate.id,
+            title = candidate.title,
+            startsAt = candidate.startsAt,
+            place = candidate.place,
+            person = candidate.person,
+            source = confirmedEventSource(source),
+            createdAt = candidate.createdAt
+        )
+        saveEvent(event)
+        deletePendingEvent(candidate.id)
+        val lead = reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull()
+            ?: Brain.DEFAULT_LEAD_MINUTES
+        logAction(
+            ActionLogEntry(
+                action = "Saved a listening event after confirmation",
+                tier = ActionTier.ASK_FIRST.name,
+                outcome = event.title
+            )
+        )
+        return ConfirmedPendingEvent(event, lead)
+    }
+
     @Query("DELETE FROM pending_events") suspend fun clearPendingEvents()
     @Query("SELECT * FROM events WHERE source = 'CALENDAR'") suspend fun calendarEvents(): List<EventRecord>
     @Upsert suspend fun saveEvent(value: EventRecord)
