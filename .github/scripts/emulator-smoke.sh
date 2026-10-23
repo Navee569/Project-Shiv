@@ -229,7 +229,8 @@ run_bounded top-activity 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity top
 grep -F "app.shiv/.MainActivity" "$REPORT/top-activity.txt"
 run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 6000
 run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d -v threadtime
-if grep -E "FATAL EXCEPTION|Process: app\\.shiv, PID:|ANR in app\\.shiv" "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
+source ".github/scripts/emulator-crash-detection.sh"
+if has_emulator_crash_marker "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
   echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
   exit 1
 fi
