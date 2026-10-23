@@ -50,6 +50,8 @@ dependencies {
     // On-device inference only. Model files are imported by the user and are never bundled.
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.1")
     testImplementation("junit:junit:4.13.2")
+    // Android's local-unit-test android.jar stubs org.json methods; use the real JSON implementation
+    // so schema and restore-envelope tests exercise actual JSONObject runtime types.
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-
