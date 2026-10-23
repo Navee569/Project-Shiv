@@ -492,3 +492,30 @@ The regular merge-result job's retained diagnostics show app PID 2601 and MainAc
 Workflow commit `07a2e5ff1a5123b87d473c99c39069efe6f0db79` raises emulator cores from 2 to 4 in both jobs. The strict `Status: ok` assertion and failure diagnostics remain unchanged. Verify fresh push and PR runs on the final docs commit; a successful exact-source job alone does not make the PR workflow green if the regular merge-result job fails.
 
 **Decision: M1 BLOCKED / NOT ACCEPTED.** Preserve the failure and keep PR #1 open, draft, and unmerged.
+
+
+## Retest matrix — 2026-10-23 — source SHA `9ca24c1a2375fc5d7418e944f9a6a0d1f5a5269e`
+
+| Gate | Result | Evidence / limitation |
+|---|---|---|
+| Push workflow | PASS | Run 39936964872, push event, main job 120359239132 success. Exact-source PR job is skipped on push events. |
+| Exact-source PR job | PASS | PR run 39936972682, job 120359223934; checked-out SHA equals source SHA `9ca24c1a2375fc5d7418e944f9a6a0d1f5a5269e`. |
+| Regular PR merge-result job | FAIL | Job 120359223524 checked out synthetic merge SHA `0714eb753b06caac376b94d4e9f73a36329ff101`; smoke step exited 255 after strict launch passed. |
+| Strict cold launch — exact source | PASS | Status: ok; LaunchState: COLD; WaitTime 12757 ms. |
+| Strict cold launch — regular merge result | PASS | Status: ok; LaunchState: COLD; WaitTime 10082 ms. This does not override the later smoke failure. |
+| Post-launch smoke / log capture — regular merge result | FAIL | `adb -s emulator-5554 logcat -b all -d -v threadtime -t 6000` exited 255. Failure artifact boot diagnostics recorded emulator-5554 as offline transport_id 2. |
+| Effective emulator core configuration | NOT VERIFIED on prior run | Workflow input and action setup output both say cores 4, but emulator warning says currently using 2. Prior artifact lacks AVD config.ini. Workflow now records `hw.cpu.ncore` on failure. |
+| APK provenance | PASS for candidate SHA | Exact-source APK 136,059,539 bytes; SHA-256 `c5c36c9808478ccad045f1e3d50866c5296dd3e23a368c78374589abacb06ff9`. Push APK hash `c0920d63266555cd6b5c322bfea913a03d230e97278fcf033befbcfed648def1`; different build jobs/source context means hash difference alone is not a defect. |
+| Full unit tests | PASS for exact-source candidate | 72 tests; 0 failures/errors/skips across seven JUnit XML files. |
+| Repeated queue tests | PASS for exact-source candidate | Ten logs and ten matching JUnit XMLs; each: 10 tests, 0 failures/errors/skips, exit 0, task_executed=1, junit_valid=1. |
+| Lint | PASS for exact-source candidate | 0 errors, 26 warnings: GradleDependency 15; ObsoleteSdkInt 7; InlinedApi 1; OldTargetApi 1; DataExtractionRules 1; Recycle 1. |
+| Documentation freshness | FAIL for source SHA above | Tester confirmed the three documents did not record these run IDs/outcomes. Addendum committed after this candidate; final-SHA workflows still required. |
+| Data integrity, backup/restore, production permissions, offline network behavior, physical Galaxy S23, full security assessment | NOT VERIFIED | Mandatory platform/security evidence absent; retain acceptance blockers. |
+
+### Failure diagnosis and remediation commits
+
+Report artifact 12495271137 SHA-256 `857882b62554bcfd863a4c18a3f9f7385b1c87fb7e7f18fbb693a357475a2507` was independently downloaded and verified. It records the ADB device as offline during failure diagnostics. The actual failed command was the full logcat capture, exit 255; the string `timeout=20s` in the old status file did not establish a timeout. Commit `86a9cd59c99e9c75fcbfb428ac61f75319a39c2e` moves mandatory logcat/crash-buffer collection ahead of larger dumpsys calls and makes failure status reporting distinguish exit 255 from timeout. Commit `b0c6ffa275c3d9a950dc445b7e69bb5dd88b8167` adds the effective AVD CPU configuration to failure diagnostics.
+
+The action input is `cores: 4` and action setup reports `Cores: 4`, while emulator startup emitted a warning that the AVD currently uses 2 cores. This discrepancy remains unresolved until the effective AVD config is inspected from fresh-run evidence.
+
+**Decision: M1 BLOCKED / NOT ACCEPTED.** These changes are unverified until fresh push and PR workflows on the final docs commit complete. Keep PR #1 OPEN, DRAFT, UNMERGED.
