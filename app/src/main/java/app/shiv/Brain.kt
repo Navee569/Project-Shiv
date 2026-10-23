@@ -224,10 +224,7 @@ User: $input"""
         fun keys(vararg expected: String) = require(args.keys().asSequence().toSet() == expected.toSet())
         fun string(key: String, limit: Int): String = args.getString(key).trim().also { require(it.isNotEmpty() && it.length <= limit) }
         fun integer(key: String, range: LongRange): Long {
-            val value = args.get(key) as? Number ?: error("$key must be a number")
-            val long = value.toLong()
-            require(value.toDouble() == long.toDouble() && long in range)
-            return long
+            return requireJsonLong(args, key, range)
         }
         val now = System.currentTimeMillis()
         val future = (now + 30_000L)..(now + 365L * 24 * 60 * 60 * 1000L)

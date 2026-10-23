@@ -21,8 +21,10 @@ class LocalKeyStore(private val context: Context) {
             val wrappingKey = getExistingWrappingKey()
                 ?: throw DatabaseKeyRecoveryException("The Android Keystore key for Shiv's existing database is missing. The encrypted database was preserved; restore from a valid encrypted backup if available.")
             return try {
-                require(packed.size > 12) { "Wrapped database key is truncated" }
-                cipher(Cipher.DECRYPT_MODE, wrappingKey, packed.copyOfRange(0, 12)).doFinal(packed.copyOfRange(12, packed.size))
+                require(packed.size == 12 + 32 + 16) { "Wrapped database key has an invalid AES-256/GCM envelope length" }
+                val recovered = cipher(Cipher.DECRYPT_MODE, wrappingKey, packed.copyOfRange(0, 12)).doFinal(packed.copyOfRange(12, packed.size))
+                require(recovered.size == 32) { "Unwrapped database key length is invalid" }
+                recovered
             } catch (failure: Exception) {
                 throw DatabaseKeyRecoveryException("Shiv could not unlock its existing database key. The encrypted database was preserved; restore from a valid encrypted backup if available.", failure)
             }

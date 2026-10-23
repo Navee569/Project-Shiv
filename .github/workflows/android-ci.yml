@@ -300,6 +300,12 @@ jobs:
           test -s "$APK"
           mkdir -p "$REPORT"
           "$AAPT" dump badging "$APK" > "$REPORT/manifest-inspection-final.txt"
+          "$AAPT" dump permissions "$APK" > "$REPORT/network-permissions.txt"
+          if grep -E "android\\.permission\\.(INTERNET|ACCESS_NETWORK_STATE)" "$REPORT/network-permissions.txt"; then
+            echo "Offline-only invariant failed: packaged APK has network permissions" >&2
+            exit 1
+          fi
+          echo "PASS: packaged APK grants no INTERNET or ACCESS_NETWORK_STATE permission" | tee -a "$REPORT/network-permissions.txt"
           python3 - "$APK" "$REPORT/manifest-inspection-final.txt" "$REPORT/apk-evidence.json" <<'PY'
           import hashlib
           import json
@@ -358,6 +364,7 @@ jobs:
             app/build/reports/apk-verification/apk-sha256.txt
             app/build/reports/apk-verification/apk-size.txt
             app/build/reports/apk-verification/manifest-inspection-final.txt
+            app/build/reports/apk-verification/network-permissions.txt
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -553,6 +560,12 @@ jobs:
           test -s "$APK"
           mkdir -p "$REPORT"
           "$AAPT" dump badging "$APK" > "$REPORT/exact-source-manifest.txt"
+          "$AAPT" dump permissions "$APK" > "$REPORT/network-permissions.txt"
+          if grep -E "android\\.permission\\.(INTERNET|ACCESS_NETWORK_STATE)" "$REPORT/network-permissions.txt"; then
+            echo "Offline-only invariant failed: packaged APK has network permissions" >&2
+            exit 1
+          fi
+          echo "PASS: packaged APK grants no INTERNET or ACCESS_NETWORK_STATE permission" | tee -a "$REPORT/network-permissions.txt"
           python3 - "$APK" "$REPORT/exact-source-manifest.txt" "$REPORT/exact-source-evidence.json" <<'PY'
           import hashlib, json, os, pathlib, re, subprocess, sys
           apk = pathlib.Path(sys.argv[1])
