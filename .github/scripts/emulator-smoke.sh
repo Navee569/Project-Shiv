@@ -27,7 +27,11 @@ run_bounded() {
     cat "$output"
   else
     status=$?
-    printf '%s exit=%s timeout=%ss\n' "$label" "$status" "$seconds" | tee "$REPORT/${label}-status.txt" >&2
+    if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+      printf '%s exit=%s timed_out_after=%ss\n' "$label" "$status" "$seconds" | tee "$REPORT/${label}-status.txt" >&2
+    else
+      printf '%s exit=%s (time_limit=%ss; command failed, not classified as timeout)\n' "$label" "$status" "$seconds" | tee "$REPORT/${label}-status.txt" >&2
+    fi
     cat "$output" >&2 || true
     return "$status"
   fi
@@ -223,12 +227,15 @@ grep -Eq '[0-9]+' "$REPORT/process.txt" || {
   echo "Application PID was empty." >&2
   exit 1
 }
+# Capture the crash/ANR evidence before the larger dumpsys snapshots, which
+# can add load to a marginal hosted emulator. Collection remains mandatory:
+# any failed ADB log capture fails the smoke and is preserved in its status file.
+run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 6000
+run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d -v threadtime
 run_bounded activities 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities
 grep -F "app.shiv/.MainActivity" "$REPORT/activities.txt"
 run_bounded top-activity 30 adb -s "$DEVICE_SERIAL" shell dumpsys activity top
 grep -F "app.shiv/.MainActivity" "$REPORT/top-activity.txt"
-run_bounded logcat 20 adb -s "$DEVICE_SERIAL" logcat -b all -d -v threadtime -t 6000
-run_bounded crash-buffer 20 adb -s "$DEVICE_SERIAL" logcat -b crash -d -v threadtime
 source ".github/scripts/emulator-crash-detection.sh"
 if has_emulator_crash_marker "$REPORT/logcat.txt" "$REPORT/crash-buffer.txt"; then
   echo "Fatal app crash or ANR detected in fresh emulator logs." >&2
