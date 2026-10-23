@@ -675,3 +675,37 @@ Fresh push and PR workflows must be evaluated on the final documentation commit,
 ### Acceptance blockers
 
 Keystore key loss/corruption fault injection; Room transaction/rollback integration; backup URI failure and restore rollback; production action-tier/permission denial behavior; offline network capture/no hidden cloud fallback; physical Samsung Galaxy S23; and comprehensive security assessment remain NOT VERIFIED. M1 remains **BLOCKED / NOT ACCEPTED**. PR #1 must remain open, draft, and unmerged.
+
+
+## M1 retest follow-up — 2026-10-23 — cold launch passed, ADB transport failed during log capture
+
+Evidence source SHA: `9ca24c1a2375fc5d7418e944f9a6a0d1f5a5269e`. This is prior-candidate evidence only; the workflow/script and documentation commits that follow require their own fresh push and PR workflows.
+
+### Latest CI results on source SHA `9ca24c1a2375fc5d7418e944f9a6a0d1f5a5269e`
+
+- Push run [39936964872](https://github.com/Navee569/Project-Shiv/actions/runs/39936964872): SUCCESS, event `push`, main job 120359239132 SUCCESS. Exact-source PR job was skipped for the push event. Push APK artifact 12494647410: archive SHA-256 `59f9ddf2562a55b5b6162763d9f53339aac9a1a8ec8ec86156b612b42f79bdae`; APK size 136,059,539 bytes; APK SHA-256 `c0920d63266555cd6b5c322bfea913a03d230e97278fcf033befbcfed648def1`. Artifact evidence records source/checkout SHA equal to this candidate.
+- PR run [39936972682](https://github.com/Navee569/Project-Shiv/actions/runs/39936972682): overall FAILURE. Exact-source job 120359223934 SUCCESS on the actual head SHA. Regular merge-result job 120359223524 FAILURE on synthetic merge SHA `0714eb753b06caac376b94d4e9f73a36329ff101`.
+- Exact-source artifact [12495072068](https://github.com/Navee569/Project-Shiv/actions/runs/39936972682/artifacts/12495072068): archive SHA-256 `fdde00e25d85ee5c8fe22d8bf70583cfb4cbec780be2f3b2db25d0cae6f926d9`; APK 136,059,539 bytes, SHA-256 `c5c36c9808478ccad045f1e3d50866c5296dd3e23a368c78374589abacb06ff9`. Report artifact [12495271137](https://github.com/Navee569/Project-Shiv/actions/runs/39936972682/artifacts/12495271137): ZIP SHA-256 `857882b62554bcfd863a4c18a3f9f7385b1c87fb7e7f18fbb693a357475a2507`. Both archive digests independently matched downloaded ZIP bytes.
+- Exact-source tests independently verified: 72 tests, zero failures/errors/skips; ten queue logs plus ten matching JUnit XML reports, each with 10 tests and zero failures/errors/skips, task_executed=1 and junit_valid=1; lint 26 warnings / 0 errors (GradleDependency 15, ObsoleteSdkInt 7, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, Recycle 1). APK manifest: app.shiv, versionCode 1, versionName 0.1.0, minSdk 26, targetSdk 35, launcher app.shiv.MainActivity, label Shiv, icon present. Exact-source smoke passed with Status: ok, LaunchState: COLD, WaitTime 12757 ms.
+- Regular merge-result strict launch passed with Status: ok, LaunchState: COLD, WaitTime 10082 ms. The job nevertheless failed later; do not label the PR workflow green.
+
+### Root cause evidence for regular-job exit 255
+
+The full regular job log and downloaded report artifact identify the failed command precisely: `adb -s emulator-5554 logcat -b all -d -v threadtime -t 6000`, which returned exit code 255. It was labelled `logcat exit=255 timeout=20s`, but that status label was misleading: the captured boot diagnostics show `emulator-5554 offline transport_id:2`, and the logcat timeout report says `logcat unavailable or timed out`. The ADB transport was offline at failure collection; it was not a launch assertion failure. Immediately preceding commands had passed the strict launch and process/activity checks; top-activity reported `app.shiv/.MainActivity`. The launcher-provider migration warning is not evidence of the shell exit cause. The action then terminated the emulator, so available post-failure data cannot establish why the transport went offline.
+
+### Four-core discrepancy
+
+Both jobs pass `cores: 4` to `reactivecircus/android-emulator-runner@v2`; its setup output reports `Cores: 4`. However, the emulator also emitted: `AVD 'test' will run more smoothly with 4 CPU cores (currently using 2)`. The prior failure artifact did not retain the AVD's actual `config.ini`, so actual configured guest core count cannot yet be proven. The workflow now records `hw.cpu.ncore` and related settings from the AVD config during failure diagnostics.
+
+### Evidence-based script/workflow changes following this run
+
+- Commit `86a9cd59c99e9c75fcbfb428ac61f75319a39c2e`: collect mandatory full and crash-buffer logcat before the larger activity/top-activity dumps, reducing extra diagnostic load before log capture. Logcat remains mandatory; a failed log capture still fails the smoke.
+- That commit also changes `run_bounded` status reporting so exit codes such as 255 are explicitly recorded as command failures, not mislabeled as timeouts. Only timeout exit statuses are labelled as timed out.
+- Commit `b0c6ffa275c3d9a950dc445b7e69bb5dd88b8167`: record the AVD config's effective CPU/RAM properties in failure diagnostics to resolve the four-core discrepancy.
+- These are hypotheses-driven observability/order changes, not proof that ADB transport loss is fixed. Fresh push and PR workflows on the final docs SHA must establish outcomes; preserve failures and do not weaken launch/crash assertions.
+
+### Documentation freshness and acceptance
+
+The independent tester found STATUS.md, TEST_MATRIX.md and DEFECT_LOG.md were stale for the 39936964872 / 39936972682 results. This addendum records those prior-candidate results and remediation. The final docs commit itself still requires fresh workflows and independent re-fetch.
+
+M1 remains **BLOCKED / NOT ACCEPTED**. NOT VERIFIED: Keystore loss/corruption fault injection; Room transaction/rollback integration; backup URI write failure and malformed/partial backup restore rollback; production action-tier and permission-denial behavior; offline-only/network-capture proof; physical Samsung Galaxy S23; comprehensive security assessment. PR #1 must remain OPEN, DRAFT, and UNMERGED.
