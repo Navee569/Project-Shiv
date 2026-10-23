@@ -83,10 +83,9 @@ class PrioritizedInferenceQueueTest {
             while (outcomes.none { it.isCompleted }) yield()
         }
         assertTrue("Waiting queue exceeded its configured capacity", queue.queuedCount <= 32)
-        val completedFailures = outcomes.filter { it.isCompleted }
-            .map { runCatching { it.await() }.exceptionOrNull() }
-        val rejected = completedFailures.count { it is RejectedExecutionException }
-        assertTrue("Expected capacity rejection when 32 requests are queued; failures=$completedFailures", rejected > 0)
+        val completedResults = outcomes.filter { it.isCompleted }.map { it.await() }
+        val rejected = completedResults.count { it.exceptionOrNull() is RejectedExecutionException }
+        assertTrue("Expected capacity rejection when 32 requests are queued; results=$completedResults", rejected > 0)
         queue.close()
         releaseActive.complete(Unit)
         withTimeout(3_000) { outcomes.awaitAll() }
