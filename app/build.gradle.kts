@@ -36,9 +36,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
     implementation("net.zetetic:sqlcipher-android:4.6.1")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
@@ -49,6 +49,6 @@ dependencies {
     implementation("com.google.mlkit:image-labeling:17.0.9")
     // On-device inference only. Model files are imported by the user and are never bundled.
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-

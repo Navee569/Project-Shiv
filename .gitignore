@@ -7,3 +7,10 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Local models, packaged builds, and signing keys
+*.litertlm
+*.apk
+*.aab
+*.jks
+*.keystore

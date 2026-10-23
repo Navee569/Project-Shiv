@@ -257,7 +257,7 @@ User: $input"""
             systemInstruction = Contents.of("You are Shiv, a private on-device personal manager. Be honest and do not invent or claim actions."),
             samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.65),
             maxOutputToken = maxTokens
-        )).use { conversation -> conversation.sendMessageAsync(prompt).collect { output.append(it.text) } }
+        )).use { conversation -> conversation.sendMessageAsync(prompt).collect { output.append(it.toString()) } }
         return output.toString()
     }
 
@@ -323,7 +323,7 @@ User: $input"""
             message.contains("thank", true) -> "You’re welcome, ${salutation}I’ve got you. (Try not to make a habit of being right all the time.)"
             message.contains("hello", true) || message.equals("hi", true) || message.contains("hey", true) -> "Hey${salutation}what are we getting done today? I brought the imaginary clipboard."
             fact != null -> "Got it. I’ll remember: ${fact.text}. Your personal manager is taking notes—metaphorically, and encrypted."
-            else -> "$salutationGot it. I’m on your side. Want me to turn that into a reminder or a note?"
+            else -> "${salutation}Got it. I’m on your side. Want me to turn that into a reminder or a note?"
         }
         return BrainReply(withRecall(conversational, message, profile, memories), memory = fact)
     }
@@ -340,7 +340,7 @@ User: $input"""
         // strict local JSON validation; malformed output is retried once and then stays quiet.
         if (parsed.event != null || parsed.reminderLeadMinutes != null || parsed.reschedule != null ||
             parsed.draft != null || parsed.sms != null || parsed.deleteEverything || parsed.forgetPhrase != null) return parsed
-        val decision = generateDecision(input, contextSnapshot) ?: return parsed.copy(text = "")
+        val decision = generateDecision(input, contextSnapshot, allowNotifications = false) ?: return parsed.copy(text = "")
         return when (decision.tool) {
             "stay_quiet" -> parsed.copy(text = "")
             null, "ask_user" -> parsed.copy(text = decision.say)

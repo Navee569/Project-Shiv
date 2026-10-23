@@ -3,7 +3,6 @@ package app.shiv
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -24,9 +23,95 @@ class ProactiveWorker(context: Context, params: WorkerParameters) : CoroutineWor
         val dao = ShivDatabase.get(context).dao()
         val settings = dao.settingsOnce() ?: ShivSettings().also { dao.saveSettings(it) }
         if (!settings.proactiveEnabled || settings.maxDailyInterruptions <= 0) return Result.success()
+
         val now = Calendar.getInstance()
         val minute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val quiet = if (settings.quietStartMinute == settings.quietEndMinute) true
-        else if (settings.quietStartMinute < settings.quietEndMinute) minute in settings.quietStartMinute until settings.quietEndMinute
-        else minute >= settings.quietStartMinute || minute < settings.quietEndMinute
-        if (quiet || !NotifmwëM­¢G§²ÚîÆ­yÒFW‡B‚%Fò¶VWÆ&×2æBÆ—7FVæ–ær&VÆ–&ÆS¢6WGF–æw2(i"&GFW'’(i"&6¶w&÷VæBW6vRÆ–Ö—G2(i"æWfW"6ÆVW–ær2(i"FB6†—bâ6×7VærÖ’7F–ÆÂW6R2–â÷vW"×6f–ærÖöFRâ"¢ÒÐ¢Ð¢—FVÒ°¢&ö7F—fU6WGF–æw46&B†76—7FçE6WGF–æw2ÂfÓ£§6fU6WGF–æw2¢Ð¢—FVÒ°¢6&B„ÖöF–f–W"æf–ÆÄÖ…v–GF‚‚’’²6öÇVÖâ„ÖöF–f–W"çFF–ærƒBæG’ÂfW'F–6Ä'&ævVÖVçBÒ'&ævVÖVçBç76VD'’ƒ‚æG’’°¢FW‡B‚$Væ7'—FVB&6·Wb&W7F÷&R"Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’çF—FÆTÖVF—VÒ¢FW‡B‚$77‡&6RVæ7'—G2–÷W"6†G2Â&öf–ÆRÂÖVÖ÷&–W2ÂWfVçG2Â'VÆW2ÂG&gG2Â7F–öâ†—7F÷'’ÂæBF–W"6WGF–æw2âF†R&6·W—2–æFWVæFVçBöb–÷W"†öæ^(	—2¶W—7F÷&R¶W’â"¢&÷r††÷&—¦öçFÄ'&ævVÖVçBÒ'&ævVÖVçBç76VD'’ƒ‚æG’’°¢'WGFöâ†öä6Æ–6²Ò²&6·W7&VFRæÆVæ6‚‚%6†—bÔVæ7'—FVBÔ&6·Wç6†—f&6·W"’Ò’²FW‡B‚$7&VFR&6·W+re$TR"’Ð¢÷WFÆ–æVD'WGFöâ†öä6Æ–6²Ò²&6·W÷VâæÆVæ6‚†'&”öb‚"¢ò¢"’’Ò’²FW‡B‚%&W7F÷&R+r4µôd•%5B"’Ð¢Ð¢&6·W7FGW3òæÆWB²FW‡B†—BÂ7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’æ&öG•6ÖÆÂ’Ð¢ÒÐ¢Ð¢—FVÒ²FW‡B‚%&V6VçB7F–öâ†—7F÷'’"Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’çF—FÆTÆ&vR’Ð¢—FV×2†7F–öäÆörÂ¶W’Ò²—Bæ–BÒ’²VçG'’Óà¢6&B„ÖöF–f–W"æf–ÆÄÖ…v–GF‚‚’’²6öÇVÖâ„ÖöF–f–W"çFF–ærƒ"æG’’°¢&÷r‡fW'F–6ÄÆ–væÖVçBÒÆ–væÖVçBä6VçFW%fW'F–6ÆÇ’’²FW‡B†VçG'’æ7F–öâÂÖöF–f–W"çvV–v‡Bƒb’ÂföçEvV–v‡BÒföçEvV–v‡BäÖVF—VÒ“²F–W$6†—†VçG'’çF–W"’Ð¢FW‡B†VçG'’æ÷WF6öÖRÂ7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’æ&öG•6ÖÆÂ¢FW‡B†æG&ö–BçFW‡Bæf÷&ÖBäFFTf÷&ÖBæf÷&ÖB‚$ÔÔÒBÂƒ¦ÖÒ"ÂVçG'’æ7&VFVDB’çFõ7G&–ær‚’Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’æÆ&VÅ6ÖÆÂ¢ÒÐ¢Ð¢—FVÒ°¢÷WFÆ–æVD'WGFöâ†öä6Æ–6²Ò²fÒæ6´FVÆWFTWfW'—F†–ær‚’ÒÂÖöF–f–W"ÒÖöF–f–W"æf–ÆÄÖ…v–GF‚‚’’²FW‡B‚$W&6RÆÂ6†—bFF+r4µôd•%5B"’Ð¢Ð¢Ð¢&6·WF–ÆötÖöFSòæÆWB²ÖöFRÓà¢ÆW'DF–Æör€¢öäF—6Ö—75&WVW7BÒ²&6·WF–ÆötÖöFRÒçVÆÃ²&6·W77v÷&BÒ"#²&6·WW&’ÒçVÆÂÒÀ¢F—FÆRÒ²FW‡B†–b†ÖöFRÓÒ&W‡÷'B"’%&÷FV7B–÷W"&6·W"VÇ6R%&W7F÷&RVæ7'—FVB&6·W"’ÒÀ¢FW‡BÒ°¢6öÇVÖâ‡fW'F–6Ä'&ævVÖVçBÒ'&ævVÖVçBç76VD'’ƒæG’’°¢FW‡B†–b†ÖöFRÓÒ&W‡÷'B"’$6†ö÷6R77‡&6Rv—F‚BÆV7B"6†&7FW'2â6†—bFöW2æ÷B6fR÷"&V6÷fW"—Bâ"VÇ6R%&W7F÷&–ær&WÆ6W2F†R7W'&VçBÆö6Â6†—bFFâF†—26ææ÷B&RVæFöæRâVçFW"F†R&6·W77‡&6RFò6öæf—&Òâ"¢÷WFÆ–æVEFW‡Df–VÆB‡fÇVRÒ&6·W77v÷&BÂöåfÇVT6†ævRÒ²&6·W77v÷&BÒ—BÒÂÆ&VÂÒ²FW‡B‚$&6·W77‡&6R"’ÒÂ6–ævÆTÆ–æRÒG'VRÂf—7VÅG&ç6f÷&ÖF–öâÒ77v÷&Ef—7VÅG&ç6f÷&ÖF–öâ‚’¢Ð¢ÒÀ¢6öæf—&Ô'WGFöâÒ°¢'WGFöâ†Væ&ÆVBÒ&6·W77v÷&BæÆVæwF‚ãÒ†–b†ÖöFRÓÒ&W‡÷'B"’"VÇ6R’Âöä6Æ–6²Ò°¢fÂW&’Ò&6·WW&¢fÂ6V7&WBÒ&6·W77v÷&BçFô6†$'&’‚¢&6·WF–ÆötÖöFRÒçVÆÃ²&6·W77v÷&BÒ"#²&6·WW&’ÒçVÆÀ¢–b‡W&’ÒçVÆÂ’–b†ÖöFRÓÒ&W‡÷'B"’fÒæW‡÷'D&6·W‡W&’Â6V7&WB’VÇ6RfÒç&W7F÷&T&6·W‡W&’Â6V7&WB¢Ò’²FW‡B†–b†ÖöFRÓÒ&W‡÷'B"’%6fRVæ7'—FVB&6·W"VÇ6R%&WÆ6RFFæB&W7F÷&R"’Ð¢ÒÀ¢F—6Ö—74'WGFöâÒ²FW‡D'WGFöâ†öä6Æ–6²Ò²&6·WF–ÆötÖöFRÒçVÆÃ²&6·W77v÷&BÒ"#²&6·WW&’ÒçVÆÂÒ’²FW‡B‚$6æ6VÂ"’ÒÐ¢¢Ð§Ð ¤6ö×÷6&ÆP§&—fFRgVâF–W$6†—‡F–W#¢7G&–ær’°¢76—7D6†—†öä6Æ–6²Ò·ÒÂÆ&VÂÒ²FW‡B‡F–W"’Ò§Ð ¤6ö×÷6&ÆP§&—fFRgVâF–W$W‡ÆæF–öâ‡F–W#¢7G&–ærÂFW67&—F–öã¢7G&–ær’°¢&÷r‡fW'F–6ÄÆ–væÖVçBÒÆ–væÖVçBä6VçFW%fW'F–6ÆÇ’’²F–W$6†—‡F–W"“²76W"„ÖöF–f–W"çv–GF‚ƒ‚æG’“²FW‡B†FW67&—F–öâÂÖöF–f–W"çvV–v‡Bƒb’Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’æ&öG•6ÖÆÂ’Ð§Ð ¤6ö×÷6&ÆP§&—fFRgVâF–W%6WGF–æu&÷r‡F—FÆS¢7G&–ærÂÖ–æ–×VÓ¢7F–öåF–W"Â6VÆV7FVC¢7F–öåF–W"Âöå6VÆV7C¢„7F–öåF–W"’ÓâVæ—B’°¢f"W‡æFVB'’&VÖVÖ&W"²×WF&ÆU7FFTöb†fÇ6R’Ð¢&÷r„ÖöF–f–W"æf–ÆÄÖ…v–GF‚‚’ÂfW'F–6ÄÆ–væÖVçBÒÆ–væÖVçBä6VçFW%fW'F–6ÆÇ’’°¢FW‡B‡F—FÆRÂÖöF–f–W"çvV–v‡Bƒb’Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’æ&öG”ÖVF—VÒ¢&÷‚°¢FW‡D'WGFöâ†öä6Æ–6²Ò²W‡æFVBÒG'VRÒ’²FW‡B‡6VÆV7FVBææÖR’Ð¢G&÷F÷väÖVçR†W‡æFVBÒW‡æFVBÂöäF—6Ö—75&WVW7BÒ²W‡æFVBÒfÇ6RÒ’°¢7F–öåF–W"æVçG&–W2æf–ÇFW"²—Bæ÷&F–æÂãÒÖ–æ–×VÒæ÷&F–æÂÒæf÷$V6‚²F–W"Óà¢G&÷F÷väÖVçT—FVÒ‡FW‡BÒ²FW‡B‡F–W"ææÖR’ÒÂöä6Æ–6²Ò²öå6VÆV7B‡F–W"“²W‡æFVBÒfÇ6RÒ¢Ð¢Ð¢Ð¢Ð§Ð ¤6ö×÷6&ÆP§&—fFRgVâ&ö7F—fU6WGF–æw46&B‡fÇVS¢6†—e6WGF–æw2Âöå6fS¢…6†—e6WGF–æw2’ÓâVæ—B’°¢f"Væ&ÆVB'’&VÖVÖ&W"‡fÇVRç&ö7F—fTVæ&ÆVB’²×WF&ÆU7FFTöb‡fÇVRç&ö7F—fTVæ&ÆVB’Ð¢f"V–WE7F'B'’&VÖVÖ&W"‡fÇVRçV–WE7F'DÖ–çWFR’²×WF&ÆU7FFTöb†f÷&ÖDÖ–çWFR‡fÇVRçV–WE7F'DÖ–çWFR’’Ð¢f"V–WDVæB'’&VÖVÖ&W"‡fÇVRçV–WDVæDÖ–çWFR’²×WF&ÆU7FFTöb†f÷&ÖDÖ–çWFR‡fÇVRçV–WDVæDÖ–çWFR’’Ð¢f"Ö…–æw2'’&VÖVÖ&W"‡fÇVRæÖ„F–Ç”–çFW''WF–öç2’²×WF&ÆU7FFTöb‡fÇVRæÖ„F–Ç”–çFW''WF–öç2çFõ7G&–ær‚’’Ð¢f"W'&÷"'’&VÖVÖ&W"²×WF&ÆU7FFTöcÅ7G&–æsóâ†çVÆÂ’Ð¢6&B„ÖöF–f–W"æf–ÆÄÖ…v–GF‚‚’’°¢6öÇVÖâ„ÖöF–f–W"çFF–ærƒBæG’ÂfW'F–6Ä'&ævVÖVçBÒ'&ævVÖVçBç76VD'’ƒ‚æG’’°¢FW‡B‚%&ö7F—fRÖævW""Â7G–ÆRÒÖFW&–ÅF†VÖRçG—öw&‡’çF—FÆTÖVF—VÒ¢FW‡B‚$&÷WBWfW'’RÖ–çWFW2Â6†—b6â6†V6²WfVçG26öÖ–ærWv—F†–â“Ö–çWFW2âF†RÆö6ÂÖöFVÂ6†ö÷6W2v†WF†W"FòçVFvR÷"7F’V–WC²—Bv–ÆÂæWfW"6VæBâÆW'B–bæòÖöFVÂ—2–ç7FÆÆVBâ"¢&÷r‡fW'F–6ÄÆ–væÖVçBÒÆ–væÖVçBä6VçFW%fW'F–6ÆÇ’’°¢FW‡B‚$ÆÆ÷r&ö7F—fR6†V6·2"ÂÖöF–f–W"çvV–v‡Bƒb’¢7v—F6‚†6†V6¶VBÒVæ&ÆVBÂöä6†V6¶VD6†ævRÒ²Væ&ÆVBÒ—BÒ¢Ð¢&÷r††÷&—¦öçFÄ'&ævVÖVçBÒ'&ævVÖVçBç76VD'’ƒ‚æG’’°¢÷WFÆ–æVEFW‡Df–VÆB‡V–WE7F'BÂ²V–WE7F'BÒ—BÒÂÆ&VÂÒ²FW‡B‚%V–WBg&öÒ„„ƒ¤ÔÒ’"’ÒÂÖöF–f–W"ÒÖöF–f–W"çvV–v‡Bƒb’Â6–ævÆTÆ–æRÒG'VR¢÷WFÆ–æVEFW‡Df–VÆB‡V–WDVæBÂ²V–WDVæBÒ—BÒÂÆ&VÂÒ²FW‡B‚%V–WBVçF–Â„„ƒ¤ÔÒ’"’ÒÂÖöF–f–W"ÒÖöF–f–W"çvV–v‡Bƒb’Â6–ævÆTÆ–æRÒG'VR¢Ð¢÷WFÆ–æVEFW‡Df–VÆB†Ö…–æw2Â²Ö…–æw2Ò—BÒÂÆ&VÂÒ²FW‡B‚$Ö†–×VÒ&ö7F—fRÆW'G2W"F’ƒ(	3#’"’ÒÂ6–ævÆTÆ–æRÒG'VR¢W'&÷#òæÆWB²FW‡B†—BÂ6öÆ÷"ÒÖFW&–ÅF†VÖRæ6öÆ÷%66†VÖRæW'&÷"’Ð¢'WGFöâ†öä6Æ–6²Ò°¢fÂ7F'BÒ'6TÖ–çWFR‡V–WE7F'B“²fÂVæBÒ'6TÖ–çWFR‡V–WDVæB“²fÂ6÷VçBÒÖ…–æw2çFô–çD÷$çVÆÂ‚¢–b‡7F'BÓÒçVÆÂÇÂVæBÓÒçVÆÂÇÂ6÷VçBÓÒçVÆÂÇÂ6÷VçB–ââã#’W'&÷"Ò%W6R#BÖ†÷W"F–ÖW27V6‚2##£æBF–Ç’Æ–Ö—Bg&öÒFò#â ¢VÇ6R²W'&÷"ÒçVÆÃ²öå6fR‡fÇVRæ6÷’‡&ö7F—fTVæ&ÆVBÒVæ&ÆVBÂV–WE7F'DÖ–çWFRÒ7F'BÂV–WDVæDÖ–çWFRÒVæBÂÖ„F–Ç”–çFW''WF–öç2Ò6÷VçB’’Ð¢Ò’²FW‡B‚%6fR&ö7F—fR6WGF–æw2+re$TR"’Ð¢Ð¢Ð§Ð §&—fFRgVâf÷&ÖDÖ–çWFR‡fÇVS¢–çB’Ò"S&C¢S&B"æf÷&ÖB‡fÇVRòcÂfÇVRRc§&—fFRgVâ'6TÖ–çWFR‡fÇVS¢7G&–ær“¢–çCò°¢fÂÖF6‚Ò&VvW‚‚%â…³Óõ³Ó•×Ã%³Ó5Ò“¢…³ÓUÕ³Ó•Ò’B"’æÖF6„VçF—&R‡fÇVRçG&–Ò‚’’ó¢&WGW&âçVÆÀ¢&WGW&âÖF6‚æw&÷WfÇVW5³ÒçFô–çB‚’¢c²ÖF6‚æw&÷WfÇVW5³%ÒçFô–çB‚§Ð §&—fFRgVâ†5W&Ö—76–öâ†6öçFW‡C¢6öçFW‡BÂW&Ö—76–öã¢7G&–ær’Ò6öçFW‡D6ö×Bæ6†V6µ6VÆeW&Ö—76–öâ†6öçFW‡BÂW&Ö—76–öâ’ÓÒ6¶vTÖævW"åU$Ô•54”ôåôu$åDT@ §&—fFRgVâ7F'DÆ—7FVæ–ær†6öçFW‡C¢6öçFW‡B’°¢'Vä6F6†–ær²6öçFW‡D6ö×Bç7F'Df÷&Vw&÷VæE6W'f–6R†6öçFW‡BÂ–çFVçB†6öçFW‡BÂÆ—7FVæ–æu6W'f–6S£¦6Æ72æ¦f’’Ð§Ð §&—fFRgVâ6÷W&6TÆ&VÂ‡6÷W&6S¢7G&–ær’Òv†Vâ‡6÷W&6R’°¢$4ÄTäD""Óâ$g&öÒ†öæR6ÆVæF" ¢$äõD”d”4D”ôâ"Óâ$FWFV7FVB–âæ÷F–f–6F–öâ ¢$Ä•5DTä”är"Óâ$FWFV7FVBv†–ÆRÆ—7FVæ–ær ¢VÇ6RÓâ$FFVB–â6†B §Ð 
+        val quiet = isQuietMinute(minute, settings.quietStartMinute, settings.quietEndMinute)
+
+        if (quiet || !NotificationManagerCompat.from(context).areNotificationsEnabled()) return Result.success()
+
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        if (dao.countActionsSince("Proactive notification", startOfDay) >= settings.maxDailyInterruptions) return Result.success()
+
+        val horizon = now.timeInMillis + TimeUnit.HOURS.toMillis(48)
+        val events = dao.upcomingEvents(now.timeInMillis)
+            .filter { it.startsAt <= horizon }
+            .take(8)
+        if (events.isEmpty() || events.all { dao.wasProactiveSent(it.id) }) return Result.success()
+
+        val contextSnapshot = buildString {
+            appendLine("Current time: ${now.timeInMillis}")
+            appendLine("Upcoming events in the next 48 hours:")
+            events.filterNot { dao.wasProactiveSent(it.id) }.forEach { event ->
+                appendLine("- id=${event.id}; ${event.title}; startsAt=${event.startsAt}; person=${event.person.orEmpty()}; place=${event.place.orEmpty()}")
+            }
+            appendLine("The owner has enabled proactive notifications. Decide whether one timely, useful notification is justified.")
+        }
+        val decision = BrainProvider.get(context).decideProactive(contextSnapshot) ?: return Result.success()
+        if (decision.tool != "send_notification") return Result.success()
+
+        val title = decision.notificationTitle?.trim()?.take(80)?.takeIf(String::isNotEmpty) ?: return Result.success()
+        val body = decision.notificationBody?.trim()?.take(240)?.takeIf(String::isNotEmpty) ?: return Result.success()
+        val event = events.firstOrNull { !dao.wasProactiveSent(it.id) } ?: return Result.success()
+
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Shiv proactive reminders", NotificationManager.IMPORTANCE_DEFAULT)
+            )
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setAutoCancel(true)
+            .build()
+        val tier = proactiveNotificationTier(dao.actionTier("SEND_NOTIFICATION")) ?: return Result.success()
+
+        if (runCatching { manager.notify(event.id.hashCode(), notification) }.isFailure) return Result.success()
+        dao.logAction(ActionLogEntry(action = "Proactive notification", tier = tier.name, outcome = event.id))
+        return Result.success()
+    }
+
+    companion object {
+        private const val PERIODIC_WORK = "shiv_proactive_periodic"
+        private const val CHECK_WORK = "shiv_proactive_check"
+        private const val CHANNEL_ID = "shiv_proactive"
+
+        fun schedule(context: Context) {
+            val request = PeriodicWorkRequestBuilder<ProactiveWorker>(15, TimeUnit.MINUTES).build()
+            WorkManager.getInstance(context.applicationContext)
+                .enqueueUniquePeriodicWork(PERIODIC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
+        }
+
+        fun checkSoon(context: Context) {
+            val request = OneTimeWorkRequestBuilder<ProactiveWorker>().build()
+            WorkManager.getInstance(context.applicationContext)
+                .enqueueUniqueWork(CHECK_WORK, ExistingWorkPolicy.KEEP, request)
+        }
+    }
+}
+
+internal fun isQuietMinute(minute: Int, startMinute: Int, endMinute: Int): Boolean {
+    val safeMinute = minute.coerceIn(0, 1439)
+    val start = startMinute.coerceIn(0, 1439)
+    val end = endMinute.coerceIn(0, 1439)
+    return when {
+        start == end -> true
+        start < end -> safeMinute in start until end
+        else -> safeMinute >= start || safeMinute < end
+    }
+}
+
+internal fun proactiveNotificationTier(configuredTier: String?): ActionTier? {
+    val configured = configuredTier
+        ?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() }
+        ?: ActionTier.ACT_THEN_TELL
+    val effective = if (configured.ordinal < ActionTier.ACT_THEN_TELL.ordinal) ActionTier.ACT_THEN_TELL else configured
+    return effective.takeUnless { it == ActionTier.ASK_FIRST }
+}

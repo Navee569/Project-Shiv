@@ -1,12 +1,15 @@
 package app.shiv
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +26,7 @@ object PendingEventConfirmation {
         val dao = ShivDatabase.get(context.applicationContext).dao()
         dao.addPendingEvent(PendingEventRecord(id = event.id, title = event.title, startsAt = event.startsAt, place = event.place, person = event.person))
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Event confirmation", NotificationManager.IMPORTANCE_HIGH))
         val confirm = Intent(context, PendingEventReceiver::class.java).apply {
