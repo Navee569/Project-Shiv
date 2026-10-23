@@ -5,6 +5,8 @@ import java.io.InputStream
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.io.IOException
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -25,6 +27,49 @@ internal fun requireBackupFields(present: Set<String>) {
         "This backup is incomplete; missing required fields: ${missing.sorted().joinToString(", ")}."
     }
 }
+internal fun validateBackupEnvelope(json: JSONObject) {
+    requireBackupFields(json.keys().asSequence().toSet())
+    require(json.opt("format") is Number && json.getInt("format") == 1) {
+        "This backup format is not supported."
+    }
+    require(json.opt("createdAt") is Number && json.getLong("createdAt") >= 0L) {
+        "This backup has an invalid creation timestamp."
+    }
+    val profile = json.get("profile")
+    require(profile == JSONObject.NULL || profile is JSONObject) {
+        "This backup has an invalid profile object."
+    }
+    val arrayFields = REQUIRED_BACKUP_FIELDS - setOf("format", "createdAt", "profile", "settings")
+    arrayFields.forEach { key ->
+        require(json.opt(key) is JSONArray) {
+            "This backup is incomplete; required array '$key' is missing or invalid."
+        }
+    }
+    val settings = json.opt("settings")
+    require(settings is JSONObject) { "This backup has an invalid settings object." }
+    requireSettingsSchema(settings as JSONObject)
+}
+
+internal fun requireSettingsSchema(settings: JSONObject) {
+    val fields = mapOf(
+        "id" to Number::class.java,
+        "proactiveEnabled" to Boolean::class.java,
+        "quietStartMinute" to Number::class.java,
+        "quietEndMinute" to Number::class.java,
+        "maxDailyInterruptions" to Number::class.java
+    )
+    fields.forEach { (key, type) ->
+        val value = settings.opt(key)
+        require(value != null && type.isInstance(value)) {
+            "This backup has a missing or invalid settings field '$key'."
+        }
+    }
+    require(settings.getInt("id") > 0) { "This backup has an invalid settings id." }
+    require(settings.getInt("quietStartMinute") in 0..1439) { "This backup has an invalid quiet start minute." }
+    require(settings.getInt("quietEndMinute") in 0..1439) { "This backup has an invalid quiet end minute." }
+    require(settings.getInt("maxDailyInterruptions") in 0..20) { "This backup has an invalid daily interruption limit." }
+}
+
 internal const val BACKUP_HEADER_BYTES = 8 + 16 + 12
 internal const val BACKUP_TAG_BYTES = 16
 internal const val MAX_BACKUP_PLAINTEXT_BYTES = MAX_BACKUP_BYTES - BACKUP_HEADER_BYTES - BACKUP_TAG_BYTES

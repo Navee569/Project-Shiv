@@ -483,7 +483,7 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: bash .github/scripts/emulator-smoke.sh
+          script: ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
       - name: Verify exact-source APK provenance
         if: always() && steps.exact_build.outcome == 'success'
         shell: bash

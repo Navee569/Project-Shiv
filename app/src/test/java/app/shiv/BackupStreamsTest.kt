@@ -61,6 +61,31 @@ class BackupStreamsTest {
         org.junit.Assert.assertTrue(failure.message!!.contains("memories"))
     }
 
+    @Test fun rejectsMissingAndWrongTypeSettingsFields() {
+        val missing = org.json.JSONObject("""{"id":1,"proactiveEnabled":true,"quietStartMinute":1320,"quietEndMinute":480}""")
+        assertThrows(IllegalArgumentException::class.java) { requireSettingsSchema(missing) }
+        val wrongType = org.json.JSONObject("""{"id":1,"proactiveEnabled":"true","quietStartMinute":1320,"quietEndMinute":480,"maxDailyInterruptions":3}""")
+        assertThrows(IllegalArgumentException::class.java) { requireSettingsSchema(wrongType) }
+    }
+
+    @Test fun rejectsOutOfRangeSettingsValues() {
+        val settings = org.json.JSONObject("""{"id":1,"proactiveEnabled":true,"quietStartMinute":1440,"quietEndMinute":480,"maxDailyInterruptions":3}""")
+        assertThrows(IllegalArgumentException::class.java) { requireSettingsSchema(settings) }
+    }
+
+    @Test fun validatesRealBackupEnvelopeAndRejectsMissingArrays() {
+        val complete = org.json.JSONObject().put("format", 1).put("createdAt", 1L)
+            .put("profile", org.json.JSONObject.NULL)
+            .put("messages", org.json.JSONArray()).put("memories", org.json.JSONArray())
+            .put("events", org.json.JSONArray()).put("pendingEvents", org.json.JSONArray())
+            .put("actions", org.json.JSONArray()).put("rules", org.json.JSONArray())
+            .put("drafts", org.json.JSONArray()).put("actionTiers", org.json.JSONArray())
+            .put("settings", org.json.JSONObject("""{"id":1,"proactiveEnabled":true,"quietStartMinute":1320,"quietEndMinute":480,"maxDailyInterruptions":3}"""))
+        validateBackupEnvelope(complete)
+        complete.remove("memories")
+        assertThrows(IllegalArgumentException::class.java) { validateBackupEnvelope(complete) }
+    }
+
     @Test fun acceptsKnownRequiredBackupFieldsAlongsideFutureOptionalFields() {
         requireBackupFields(REQUIRED_BACKUP_FIELDS + "futureOptionalMetadata")
     }

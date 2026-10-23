@@ -73,8 +73,7 @@ class EncryptedBackup(context: Context) {
             requireNotNull(input) { "Could not open the selected backup file." }.use { readBoundedBytes(it, MAX_BACKUP_BYTES) }
         }
         val json = JSONObject(String(decryptBackupPayload(packed, passphrase), Charsets.UTF_8))
-        requireBackupFields(json.keys().asSequence().toSet())
-        require(json.optInt("format") == 1) { "This backup format is not supported." }
+        validateBackupEnvelope(json)
         val profileValue = json.get("profile")
         val profile = if (profileValue == JSONObject.NULL) UserProfile() else readProfile(json.getJSONObject("profile"))
         val messages = readArray(json, "messages", ::readMessage)
