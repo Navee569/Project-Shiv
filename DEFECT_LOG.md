@@ -1,5 +1,18 @@
 # Defect and Blocker Log
 
+## Connected S23 follow-up — 2026-10-24 Asia/Calcutta
+
+Physical-device availability changed during this session. A connected SM-S911B reports Android 16 / API 36 and SM8550. Tested checkout: `73c7242cb5cfc184f5701372ef19753ddc35789a`, whose app/test/CI source is identical to the verified cbad026 correction. Local JDK17 assembly succeeded (65 tasks up-to-date). The installed main and test APK SHA-256 values were measured on the phone and match the local build; hashes and raw-result interpretation are recorded in [the S23 verification record](verification/2026-10-24-s23-verification.json). The hardware serial is redacted.
+
+- App was initially absent. Installation succeeded. The first launch reported Status: ok / COLD, WaitTime 727 ms, with MainActivity resumed and a live PID.
+- The six exact named BackupRestoreTest cases executed through AndroidJUnitRunner on the S23: six completed status-code-0 records, OK (6 tests), zero failures/errors/skips, 60.384 seconds. Terminal INSTRUMENTATION_CODE=-1 is Android RESULT_OK, not a failure. These are physical raw instrumentation results, not synthesized hosted JUnit XML.
+- A force-stop/relaunch also reported Status: ok / COLD, WaitTime 668 ms; the app remained alive. App-PID-filtered crash buffer was empty. Nonfatal ashmem/graphics-loader error lines (including missing libpenguin.so) are retained for review; no error-free-log claim is made.
+- No app data was cleared. Only the newly installed disposable test package was removed; the main app remains installed. UI hierarchy capture was not attempted after foreground changed, so no visual UI or storage-error-screen assertion is inferred.
+- This verifies startup/restart and the six isolated in-memory Room backup/restore cases on the target device. It does not establish full S23 owner workflows, model performance, offline network behavior, SQLCipher/Keystore fault recovery, production authorization or comprehensive security acceptance. M1 remains BLOCKED / NOT ACCEPTED; independent QA is still required.
+
+The prior documentation checkout's push run 40012655193 and PR run 40012660957 both reached terminal SUCCESS. This addendum describes observations already made at 73c7242 and does not predict its own future workflow results. Historical statements that the S23 was unavailable remain historical, superseded by this section.
+
+
 ## QA remediation retest — 2026-10-24 Asia/Calcutta
 
 Tested correction source: `cbad02629898b623a3c758c44c3c1d7ff3151139`; parent `4a2876d4f40175a14003cbc9d0ba131efe26ff87`. This dated addendum supersedes stale current-run claims below while preserving historical evidence. It reports already observed correction runs, not future checks of this documentation commit.
