@@ -192,6 +192,7 @@ cpu_report="$REPORT/effective-cpu-evidence.txt"
     found_config=1
     echo "--- $canonical_config"
     cat "$canonical_config"
+    cp "$canonical_config" "$REPORT/canonical-avd-config.ini"
   done
   echo "avd_config_found=$found_config"
   echo "Emulator/QEMU process command lines:"
@@ -209,21 +210,7 @@ cat "$cpu_report"
 run_bounded cpu-online-mask 10 adb -s "$DEVICE_SERIAL" shell cat /sys/devices/system/cpu/online
 run_bounded cpu-online-count 10 adb -s "$DEVICE_SERIAL" shell getconf _NPROCESSORS_ONLN
 run_bounded cpu-processors 10 adb -s "$DEVICE_SERIAL" shell cat /proc/cpuinfo
-python3 - "$REPORT" <<'PY'
-import pathlib, re, sys
-report = pathlib.Path(sys.argv[1])
-evidence = (report / "effective-cpu-evidence.txt").read_text()
-configs = re.findall(r"^--- (.+)$", evidence, re.M)
-assert len(configs) == 1, f"Expected one canonical AVD config, got {configs}"
-assert re.search(r"^requested_cores=4$", evidence, re.M)
-assert re.search(r"^hw.cpu.ncore=4\s*$", evidence, re.M)
-assert (report / "cpu-online-mask.txt").read_text().strip() == "0-3"
-assert (report / "cpu-online-count.txt").read_text().strip() == "4"
-processors = re.findall(r"^processor\s*:\s*(\d+)\s*$", (report / "cpu-processors.txt").read_text(), re.M)
-assert processors == ["0", "1", "2", "3"], processors
-with (report / "effective-cpu-evidence.txt").open("a") as out:
-    out.write("\nCPU_ASSERTIONS=PASS requested=4 configured=4 mask=0-3 online=4 processors=0,1,2,3\n")
-PY
+python3 .github/scripts/validate-emulator-cpu.py "$REPORT"
 
 capture_launch_diagnostics() {
   local phase="$1"

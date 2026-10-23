@@ -26,6 +26,11 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Test CPU evidence and emulator check orchestration
+        shell: bash
+        run: |
+          python3 .github/scripts/test-emulator-cpu.py
+          bash .github/scripts/test-emulator-checks.sh
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -184,13 +189,7 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: |
-            set +e
-            ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
-            smoke_status=$?
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace --console=plain
-            restore_status=$?
-            test "$smoke_status" -eq 0 && test "$restore_status" -eq 0
+          script: bash .github/scripts/run-emulator-checks.sh
       - name: Collect emulator boot/smoke diagnostics on failure
         if: always() && steps.emulator_smoke.outcome != 'success'
         timeout-minutes: 2
@@ -401,6 +400,11 @@ jobs:
           test "$SOURCE_SHA" = "$TARGET_SHA"
           mkdir -p app/build/reports/source-provenance
           printf 'source_sha=%s\nchecked_out_sha=%s\ntarget_sha=%s\nsynthetic_merge_sha=%s\n' "$SOURCE_SHA" "$CHECKED_OUT_SHA" "$TARGET_SHA" "$SYNTHETIC_MERGE_SHA" > app/build/reports/source-provenance/exact-source.txt
+      - name: Test CPU evidence and emulator check orchestration
+        shell: bash
+        run: |
+          python3 .github/scripts/test-emulator-cpu.py
+          bash .github/scripts/test-emulator-checks.sh
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -513,13 +517,7 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: |
-            set +e
-            ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
-            smoke_status=$?
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace --console=plain
-            restore_status=$?
-            test "$smoke_status" -eq 0 && test "$restore_status" -eq 0
+          script: bash .github/scripts/run-emulator-checks.sh
       - name: Retain exact-source emulator boot diagnostics
         if: always()
         shell: bash
