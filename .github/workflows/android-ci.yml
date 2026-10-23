@@ -176,7 +176,7 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
-          script: bash .github/scripts/emulator-smoke.sh
+          script: ANDROID_EMULATOR_CORES=4 bash .github/scripts/emulator-smoke.sh
       - name: Collect emulator boot/smoke diagnostics on failure
         if: always() && steps.emulator_smoke.outcome != 'success'
         timeout-minutes: 2

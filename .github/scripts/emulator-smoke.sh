@@ -183,12 +183,15 @@ cpu_report="$REPORT/effective-cpu-evidence.txt"
   echo "AVD config files:"
   avd_root="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
   found_config=0
+  declare -A seen_configs=()
   for avd_config in "$avd_root/test.avd/config.ini" "$HOME/.android/avd/test.avd/config.ini"; do
-    if [ -f "$avd_config" ]; then
-      found_config=1
-      echo "--- $avd_config"
-      cat "$avd_config"
-    fi
+    [ -f "$avd_config" ] || continue
+    canonical_config="$(readlink -f "$avd_config" 2>/dev/null || printf '%s' "$avd_config")"
+    [ -z "${seen_configs[$canonical_config]+x}" ] || continue
+    seen_configs["$canonical_config"]=1
+    found_config=1
+    echo "--- $canonical_config"
+    cat "$canonical_config"
   done
   echo "avd_config_found=$found_config"
   echo "Emulator/QEMU process command lines:"
