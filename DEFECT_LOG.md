@@ -136,3 +136,13 @@ Historical failed-run entries above are retained unchanged; closure here applies
 ### Current M0 decision
 
 **NOT ACCEPTED pending** successful push and PR workflows on the new documentation commit SHA and independent QA retest. Do not merge or close PR #1; it must remain open, draft, and unmerged.
+
+
+## M1 blockers from independent retest — 2026-10-23
+
+| ID | Severity | Area | Finding | Evidence | Status / next action |
+|---|---|---|---|---|---|
+| M1-COMP-DAO-001 | Blocker | Kotlin visibility / Room KSP | Public `ShivDao.confirmPendingEvent()` exposed internal `ConfirmedPendingEvent`; compilation failed in source and generated DAO. | Push run 39896496608 and PR run 39896500019 on SHA `9c29f21738e10ff2b6589a3636832a12fe91022d`. | Source fix committed as `67a9085eb2af7ae210fe9d4cce6889749f92ba49` by making the result type public. Await exact-SHA compile, tests, lint and emulator evidence; do not close until verified. |
+| M1-QUEUE-UNVERIFIED-001 | High | Inference queue tests | Queue tests, including priority/FIFO and close/capacity races, were not executed because compilation failed. | Independent M1 retest report for SHA `9c29f21738c2c0ddd0ae747bd408da6890d9a284`. | Run queue-only test first, then full suite on a successful exact SHA; review JUnit XML and assertion outcomes. |
+| M1-DATA-UNVERIFIED-001 | High | Backup, Keystore, Room, action tiers | Data-integrity and Android integration paths remain unverified; source inspection is not behavioral proof. | Independent M1 retest report dated 2026-10-23. | Add/run relevant failure-injection and Android integration tests; document NOT RUN/BLOCKED areas honestly. |
+| M1-DOC-STALE-001 | Medium | QA documentation | Previous documents reflected older M0 history and did not record current M1 blocker. | Independent M1 retest report dated 2026-10-23. | This addendum records blocker and fix commit. Refresh exact tested SHA, workflow results, test counts, lint counts, APK checksum and emulator evidence after successful runs. |
