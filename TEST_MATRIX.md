@@ -389,3 +389,13 @@ The tester confirmed the previous shell syntax and emulator smoke blockers are f
 | Physical Samsung Galaxy S23 | NOT RUN | NOT RUN | Outside this emulator CI evidence |
 
 The previous unmatched-quote defect and skipped-smoke finding are closed for source SHA `790c72555aa8b71b7b28f296eef5e9030788c238`. The documentation commit's own CI remains pending until its new workflows finish. M0 remains **NOT ACCEPTED** pending fresh exact-SHA workflows and independent retest.
+
+
+| M1-COMP-DAO-001 | Public Room DAO return type visibility | Kotlin/Room KSP build | FIX COMMITTED; exact-SHA verification pending | `ConfirmedPendingEvent` made public in commit `67a9085eb2af7ae210fe9d4cce6889749f92ba49`; do not mark PASS until compile/build succeeds on final SHA |
+| M1-QUEUE-01 | Prioritized inference queue concurrency and ordering | JVM unit tests | NOT VERIFIED on current fix SHA | Queue tests were not run on `9c29f21738c2c0ddd0ae747bd408da6890d9a284` because compile failed; run queue-only tests first, then full suite on a later exact SHA |
+| M1-ROOM-01 | Atomic pending-event confirmation / duplicate broadcasts / rollback | Room/instrumentation | NOT RUN | Compile blocker prevented runtime tests; test valid, expired, missing, repeated/concurrent confirmation and transaction rollback |
+| M1-BACKUP-01 | Encrypted backup/restore negative cases and rollback | JVM + Android integration | NOT RUN | Wrong passphrase, truncation, malformed input, size cap, URI write failure and database rollback still require executed evidence |
+| M1-KEY-01 | Android Keystore loss/corruption and startup data preservation | Android integration | NOT RUN | JVM state tests do not prove real Android Keystore behavior |
+| M1-ACTION-01 | Production action-tier/notification/permission paths | JVM + Android integration | NOT RUN | Helper tests alone do not prove production entry points |
+| M1-APK-01 | APK provenance / manifest / checksum | Build artifact inspection | NOT RUN on fix SHA | Must tie APK metadata and SHA-256 to exact source SHA and successful workflow |
+| M1-EMU-01 | Strict emulator cold-launch / crash / ANR smoke | Emulator CI | NOT RUN on failed SHA; pending on fix SHA | A skipped or blocked emulator task is not PASS |
