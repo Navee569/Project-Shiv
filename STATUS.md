@@ -1,5 +1,41 @@
 # Project Shiv — Developer Milestone Status Report
 
+## QA remediation retest — 2026-10-24 Asia/Calcutta
+
+Tested correction source: `cbad02629898b623a3c758c44c3c1d7ff3151139`; parent `4a2876d4f40175a14003cbc9d0ba131efe26ff87`. This dated addendum supersedes stale current-run claims below while preserving historical evidence. It reports already observed correction runs, not future checks of this documentation commit.
+
+**CI correction developer retest: PASS. QA-EMU-CONFIG-001 remains OPEN pending independent retest. M1 remains BLOCKED / NOT ACCEPTED.** PR #1 is open, draft and unmerged.
+
+| Executed job | Run / job | JVM XML | Repeated queue XML | Android restore XML | Strict cold-launch wait |
+|---|---|---|---|---|---|
+| Push source | 40010362807 / 120608862005 | 7 suites, 80 cases, PASS | 10 fresh runs x 10 cases, PASS | All 6 named cases, PASS | 3988 ms, COLD / Status: ok |
+| PR regular synthetic merge | 40010369767 / 120608886086 | 7 suites, 80 cases, PASS | 10 fresh runs x 10 cases, PASS | All 6 named cases, PASS | 3273 ms, COLD / Status: ok |
+| PR exact source | 40010369767 / 120608886155 | 7 suites, 80 cases, PASS | 10 fresh runs x 10 cases, PASS | All 6 named cases, PASS | 3922 ms, COLD / Status: ok |
+
+Both workflows are terminal SUCCESS. Every listed XML group has 0 failures, 0 errors and 0 skips; declared counts were compared with actual testcase elements. Exact source/checkout/target equal cbad02629898b623a3c758c44c3c1d7ff3151139. Synthetic PR merge ff814a2b05b6b10fc8d13f90d87b0b7bfd34d475 is recorded separately.
+
+All three executed jobs directly prove one canonical AVD config, requested/configured cores 4, guest mask 0-3, online count 4 and processor IDs 0,1,2,3. CPU_ASSERTIONS=PASS, smoke_exit=0 and restore_exit=0 are retained. Install, clear-data, strict launch, PID/activity, mandatory logcat/crash collection and crash/ANR assertions passed. Logcat and crash-buffer command exits are 0. These are API 35 emulator results, not physical S23 results.
+
+The six production-path Android cases cover malformed records across all collections/settings, SQLite failure at the final settings insert with exact pre-restore comparison of all ten tables, historical profile:null restore, corrupt/truncated/wrong-password input, destination open failures and destination write failure with partial-output deletion/passphrase clearing. In-memory Room rollback evidence does not establish SQLCipher/Keystore key-loss safety.
+
+Hosted lint: 28 warnings, 0 errors in each report (GradleDependency 17, ObsoleteSdkInt 7, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, Recycle 1). The historical local 27-warning result remains historical. Loaded JSONObject/JSONArray origins are retained in JVM test output and identify json-20240303.jar. Queue summaries independently record exit_code=0, task_executed=1 and junit_valid=1 for all ten repetitions.
+
+All five available correction archives were downloaded; every ZIP SHA-256 matches GitHub's digest and each APK hash matches its own provenance JSON. Full IDs, digests, APK hashes, checkout provenance, test counts and launch evidence are in [the durable verification record](verification/2026-10-24-qa-remediation.json). No prior hashes were reused.
+
+### Corrections and preserved intermediate failures
+
+- e17bfb0458265c6d7112e7fd16891cc8f239dca5 fixes QA-EMU-CONFIG-001: exact trimmed INI keys/values accept legal whitespace and reject missing/wrong/similarly named/duplicate keys; independent guest CPU checks remain mandatory. Seven Python regression tests (with positive/negative subcases) passed. One wrapper script preserves separate smoke/restore exits and runs both; four success/failure combinations passed.
+- e17bfb0 push 40005971076 and PR 40005977290 remain FAILURE: CPU and strict smoke passed, but JUnit initialization failed because one expression-bodied test returned Boolean instead of void. XML contains one initialization-error case; none of the six restore behaviors executed.
+- 4a2876d4f40175a14003cbc9d0ba131efe26ff87 explicitly returns Unit from coroutine test entry points. Its push 40007957043 and PR 40007965244 remain FAILURE: XML records only two cases (one pass, destination-write test failed), not six completed cases. The test APK provider process could not load kotlin.jvm.internal.Intrinsics; four cases have no recorded outcomes. An earlier developer progress inference of five passes was corrected from the XML.
+- cbad026 replaces that test-only provider with a framework-only Java class under the same name/authority. Read-only descriptor failure, partial-output deletion and verification remain intact. All six cases now execute and pass. No production Android behavior or acceptance gate was weakened.
+- Baseline c01caea push 40002116758 and PR 40002121898 remain failed before installation because the old regex rejected hw.cpu.ncore = 4. Baseline exact-source archive 12523142047 was downloaded, digest-verified and replayed: old regex fails, corrected parser accepts the same independent guest evidence.
+- Earlier billing-admission failures, 35bfc7bb unit/boot failures, and ADB-offline logcat exit 255 in run 39936972682 / job 120359223524 remain preserved. No historical run was deleted, rerun or reclassified as PASS.
+
+Local JDK17/Gradle8.9 validation at e17bfb0 executed --version, projects, assembleDebug, assembleDebugAndroidTest, testDebugUnitTest and lintDebug; clean build PASS, 80 JVM cases PASS, 27 local warnings/0 errors. Follow-up test APK rebuilds passed, bytecode verifies void test methods and absence of Kotlin dependencies from the standalone provider. Existing shell regressions, CPU regressions and orchestration failure cases pass. Final cbad026 exact-source hosted verification above is authoritative for this correction.
+
+Remaining mandatory gates: physical Galaxy S23, production encryption/Keystore loss/corruption and safe recovery, production authorization/permission negative tests, offline network capture/no hidden fallback, deterministic ADB-offline fault/recovery and comprehensive security assessment. The APK's transitive INTERNET/ACCESS_NETWORK_STATE permissions and absence of network-capture proof remain documented. Green CI is not independent QA or M1 acceptance.
+
+
 ## Current remediation checkpoint — 2026-10-23
 
 **M1: NOT ACCEPTED / BLOCKED.** This checkpoint supersedes historical completion claims below. Product source: `914f5eaad5aceafa8f4c68840259d0386bd1af2e`, parent `6880cd1d79444f9bacf1b6566fcc2356a77779b8`. PR #1 remains open, draft, unmerged. This report describes that product revision; it makes no claim about future checks of this documentation commit.

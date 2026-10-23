@@ -1,0 +1,463 @@
+{
+  "date": "2026-10-24 Asia/Calcutta",
+  "tested_source": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+  "parent": "4a2876d4f40175a14003cbc9d0ba131efe26ff87",
+  "synthetic_pr_merge": "ff814a2b05b6b10fc8d13f90d87b0b7bfd34d475",
+  "push_run": 40010362807,
+  "pr_run": 40010369767,
+  "both_workflows": "success",
+  "qa_defect_status": "OPEN pending independent retest",
+  "m1_status": "BLOCKED / NOT ACCEPTED",
+  "archives": [
+    {
+      "artifact_id": 12525414514,
+      "name": "shiv-debug-apk-pull_request-40010369767-attempt-1",
+      "zip_sha256": "b4eac9db94ebc58bf6fedc585d8bbc791f9dc60326e0d908e7f16fe736528a09",
+      "zip_digest_matches": true,
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "bb0df7942c3fb6b30750552ee14e9142a984157ddb9e3065ac91a9567435ba1f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ],
+      "lint": [],
+      "main": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "queue": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "android": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "checks": {},
+      "json_origin_present": false,
+      "provenance": {
+        "reports/apk-verification/apk-evidence.json": {
+          "source_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "checked_out_sha": "ff814a2b05b6b10fc8d13f90d87b0b7bfd34d475",
+          "apk_path": "app/build/outputs/apk/debug/app-debug.apk",
+          "apk_sha256": "bb0df7942c3fb6b30750552ee14e9142a984157ddb9e3065ac91a9567435ba1f",
+          "apk_size_bytes": 136075923,
+          "application_id": "app.shiv",
+          "version_code": 1,
+          "version_name": "0.1.0",
+          "min_sdk": 26,
+          "launcher_activity": "app.shiv.MainActivity",
+          "application_label": "Shiv",
+          "has_application_icon": true
+        }
+      },
+      "cpu_assertions_pass": false
+    },
+    {
+      "artifact_id": 12525569559,
+      "name": "shiv-exact-source-pr-40010369767-attempt-1",
+      "zip_sha256": "087cd89d81c06d25031d7eebdd53348f2d42d4956194f65e1668aa72b612487b",
+      "zip_digest_matches": true,
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "bcc179abe1ebd43d390d816e0ba9a7ec135a37b2604c7dd5686a8a1d65ff60c7",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ],
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "main": {
+        "suites": 7,
+        "cases": 80,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "queue": {
+        "suites": 10,
+        "cases": 100,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "android": {
+        "suites": 1,
+        "cases": 6,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "checks": {
+        "reports/emulator-smoke/combined-check-status.txt": "smoke_exit=0\nrestore_exit=0\n",
+        "reports/emulator-smoke/crash-buffer-status.txt": "crash-buffer exit=0\n",
+        "reports/emulator-smoke/launch.txt": "Starting: Intent { cmp=app.shiv/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: app.shiv/.MainActivity\nTotalTime: 3903\nWaitTime: 3922\nComplete\n",
+        "reports/emulator-smoke/logcat-status.txt": "logcat exit=0\n",
+        "reports/emulator-smoke/smoke-summary.txt": "PASS: install, clear-data, strict cold-launch, PID, activity, crash and ANR assertions completed.\n",
+        "reports/source-provenance/exact-source.txt": "source_sha=cbad02629898b623a3c758c44c3c1d7ff3151139\nchecked_out_sha=cbad02629898b623a3c758c44c3c1d7ff3151139\ntarget_sha=cbad02629898b623a3c758c44c3c1d7ff3151139\nsynthetic_merge_sha=ff814a2b05b6b10fc8d13f90d87b0b7bfd34d475\n"
+      },
+      "json_origin_present": true,
+      "provenance": {
+        "reports/apk-verification/exact-source-evidence.json": {
+          "source_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "checked_out_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "apk_sha256": "bcc179abe1ebd43d390d816e0ba9a7ec135a37b2604c7dd5686a8a1d65ff60c7",
+          "apk_size_bytes": 136075923
+        }
+      },
+      "cpu_assertions_pass": true
+    },
+    {
+      "artifact_id": 12526102918,
+      "name": "shiv-android-verification-reports",
+      "zip_sha256": "ef1763a4776cb0a11ff0211889a5a085f3b6a818f37cf150097380c076f0ab36",
+      "zip_digest_matches": true,
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "b64366fbde19b8231607b2a441382c8d2b68139030d774260b8d26a8958ca23f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ],
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "main": {
+        "suites": 7,
+        "cases": 80,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "queue": {
+        "suites": 10,
+        "cases": 100,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "android": {
+        "suites": 1,
+        "cases": 6,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "checks": {
+        "reports/emulator-smoke/combined-check-status.txt": "smoke_exit=0\nrestore_exit=0\n",
+        "reports/emulator-smoke/crash-buffer-status.txt": "crash-buffer exit=0\n",
+        "reports/emulator-smoke/launch.txt": "Starting: Intent { cmp=app.shiv/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: app.shiv/.MainActivity\nTotalTime: 3931\nWaitTime: 3988\nComplete\n",
+        "reports/emulator-smoke/logcat-status.txt": "logcat exit=0\n",
+        "reports/emulator-smoke/smoke-summary.txt": "PASS: install, clear-data, strict cold-launch, PID, activity, crash and ANR assertions completed.\n"
+      },
+      "json_origin_present": true,
+      "provenance": {
+        "reports/apk-verification/apk-evidence.json": {
+          "source_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "checked_out_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "apk_path": "app/build/outputs/apk/debug/app-debug.apk",
+          "apk_sha256": "b64366fbde19b8231607b2a441382c8d2b68139030d774260b8d26a8958ca23f",
+          "apk_size_bytes": 136075923,
+          "application_id": "app.shiv",
+          "version_code": 1,
+          "version_name": "0.1.0",
+          "min_sdk": 26,
+          "launcher_activity": "app.shiv.MainActivity",
+          "application_label": "Shiv",
+          "has_application_icon": true
+        }
+      },
+      "cpu_assertions_pass": true
+    },
+    {
+      "artifact_id": 12526282428,
+      "name": "shiv-android-verification-reports",
+      "zip_sha256": "94ed9e043df15379c9da5cc22f8adc5c9d761ab929a5d3451e3cc6988e47841d",
+      "zip_digest_matches": true,
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "bb0df7942c3fb6b30750552ee14e9142a984157ddb9e3065ac91a9567435ba1f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ],
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "main": {
+        "suites": 7,
+        "cases": 80,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "queue": {
+        "suites": 10,
+        "cases": 100,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "android": {
+        "suites": 1,
+        "cases": 6,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "checks": {
+        "reports/emulator-smoke/combined-check-status.txt": "smoke_exit=0\nrestore_exit=0\n",
+        "reports/emulator-smoke/crash-buffer-status.txt": "crash-buffer exit=0\n",
+        "reports/emulator-smoke/launch.txt": "Starting: Intent { cmp=app.shiv/.MainActivity }\nStatus: ok\nLaunchState: COLD\nActivity: app.shiv/.MainActivity\nTotalTime: 3256\nWaitTime: 3273\nComplete\n",
+        "reports/emulator-smoke/logcat-status.txt": "logcat exit=0\n",
+        "reports/emulator-smoke/smoke-summary.txt": "PASS: install, clear-data, strict cold-launch, PID, activity, crash and ANR assertions completed.\n"
+      },
+      "json_origin_present": true,
+      "provenance": {
+        "reports/apk-verification/apk-evidence.json": {
+          "source_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "checked_out_sha": "ff814a2b05b6b10fc8d13f90d87b0b7bfd34d475",
+          "apk_path": "app/build/outputs/apk/debug/app-debug.apk",
+          "apk_sha256": "bb0df7942c3fb6b30750552ee14e9142a984157ddb9e3065ac91a9567435ba1f",
+          "apk_size_bytes": 136075923,
+          "application_id": "app.shiv",
+          "version_code": 1,
+          "version_name": "0.1.0",
+          "min_sdk": 26,
+          "launcher_activity": "app.shiv.MainActivity",
+          "application_label": "Shiv",
+          "has_application_icon": true
+        }
+      },
+      "cpu_assertions_pass": true
+    },
+    {
+      "artifact_id": 12527016009,
+      "name": "shiv-debug-apk-push-40010362807-attempt-1",
+      "zip_sha256": "7060eb829172e68152bc03faf1aeab5b936b64ca4ab192c05bf618b518438a99",
+      "zip_digest_matches": true,
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "b64366fbde19b8231607b2a441382c8d2b68139030d774260b8d26a8958ca23f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ],
+      "lint": [],
+      "main": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "queue": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "android": {
+        "suites": 0,
+        "cases": 0,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0
+      },
+      "checks": {},
+      "json_origin_present": false,
+      "provenance": {
+        "reports/apk-verification/apk-evidence.json": {
+          "source_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "checked_out_sha": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+          "apk_path": "app/build/outputs/apk/debug/app-debug.apk",
+          "apk_sha256": "b64366fbde19b8231607b2a441382c8d2b68139030d774260b8d26a8958ca23f",
+          "apk_size_bytes": 136075923,
+          "application_id": "app.shiv",
+          "version_code": 1,
+          "version_name": "0.1.0",
+          "min_sdk": 26,
+          "launcher_activity": "app.shiv.MainActivity",
+          "application_label": "Shiv",
+          "has_application_icon": true
+        }
+      },
+      "cpu_assertions_pass": false
+    }
+  ],
+  "verified_reports": [
+    {
+      "artifact": 12525569559,
+      "zip_digest_matches": true,
+      "jvm_cases": 80,
+      "queue_repeats": 10,
+      "cases_per_repeat": 10,
+      "android_cases": 6,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "cpu_independently_verified": true,
+      "cold_launch_wait_ms": 3922,
+      "smoke_exit": 0,
+      "restore_exit": 0,
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "bcc179abe1ebd43d390d816e0ba9a7ec135a37b2604c7dd5686a8a1d65ff60c7",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ]
+    },
+    {
+      "artifact": 12526102918,
+      "zip_digest_matches": true,
+      "jvm_cases": 80,
+      "queue_repeats": 10,
+      "cases_per_repeat": 10,
+      "android_cases": 6,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "cpu_independently_verified": true,
+      "cold_launch_wait_ms": 3988,
+      "smoke_exit": 0,
+      "restore_exit": 0,
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "b64366fbde19b8231607b2a441382c8d2b68139030d774260b8d26a8958ca23f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ]
+    },
+    {
+      "artifact": 12526282428,
+      "zip_digest_matches": true,
+      "jvm_cases": 80,
+      "queue_repeats": 10,
+      "cases_per_repeat": 10,
+      "android_cases": 6,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "cpu_independently_verified": true,
+      "cold_launch_wait_ms": 3273,
+      "smoke_exit": 0,
+      "restore_exit": 0,
+      "lint": [
+        {
+          "path": "reports/lint-results-debug.xml",
+          "categories": {
+            "InlinedApi": 1,
+            "OldTargetApi": 1,
+            "GradleDependency": 17,
+            "DataExtractionRules": 1,
+            "Recycle": 1,
+            "ObsoleteSdkInt": 7
+          },
+          "severities": {
+            "Warning": 28
+          }
+        }
+      ],
+      "apks": [
+        {
+          "path": "outputs/apk/debug/app-debug.apk",
+          "sha256": "bb0df7942c3fb6b30750552ee14e9142a984157ddb9e3065ac91a9567435ba1f",
+          "bytes": 136075923,
+          "provenance_matches": true
+        }
+      ]
+    }
+  ]
+}
