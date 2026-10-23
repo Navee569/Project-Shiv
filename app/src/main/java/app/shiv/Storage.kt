@@ -83,7 +83,7 @@ data class PendingEventRecord(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-internal data class ConfirmedPendingEvent(
+data class ConfirmedPendingEvent(
     val event: EventRecord,
     val reminderLeadMinutes: Int
 )
