@@ -54,16 +54,20 @@ class EncryptedBackup internal constructor(context: Context, private val databas
                     throw failure
                 }
                 // Do not touch the user-selected destination until the complete capped backup exists.
+                var destinationOpened = false
                 try {
                     val output = app.contentResolver.openOutputStream(uri, "wt")
                     requireNotNull(output) { "Could not create the selected backup file." }.use { destination ->
+                        destinationOpened = true
                         temporary.inputStream().use { it.copyTo(destination, 8192) }
                         destination.flush()
                     }
                 } catch (failure: Exception) {
                     // SAF does not guarantee atomic replacement. Remove a partial new export when
                     // the provider permits deletion, and retain any cleanup error for diagnosis.
-                    try {
+                    // An open failure must never delete an unrelated existing destination.
+                    // Cleanup is only appropriate after this export actually acquired a stream.
+                    if (destinationOpened) try {
                         if (uri.scheme == "file") {
                             val file = File(requireNotNull(uri.path))
                             if (file.exists() && !file.delete()) throw IOException("Could not remove partial backup.")

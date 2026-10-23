@@ -1,5 +1,10 @@
 # Project Shiv Test Matrix
 
+## 2026-10-24 — Post-e27cdbd destination-open safety remediation
+
+Source parent: `e27cdbdac23b751122e880e82f6a2f2b96f3ac98`. Independent retest confirmed push 40028308218 SUCCESS and PR 40028314421 SUCCESS (exact-source 120669970971 and synthetic-merge 120669971229); those runs apply to the parent, not this remediation commit. Current change prevents failed destination **open** from triggering deletion of a preexisting file/directory/document. Cleanup after a successfully opened stream may still be provider-dependent and cannot guarantee atomic overwrites. Android BackupRestoreTest now asserts existing directory preservation after open failure. New commit CI and S23 test evidence must be verified separately. Keystore loss/corruption, production action-tier denial, network capture, owner S23 workflows and security assessment remain BLOCKED. Historical ADB-offline logcat exit 255 (run 39936972682/job 120359223524) remains a failure. M1 NOT ACCEPTED / BLOCKED; PR #1 remains open/draft/unmerged.
+
+
 ## Connected S23 follow-up — 2026-10-24 Asia/Calcutta
 
 Physical-device availability changed during this session. A connected SM-S911B reports Android 16 / API 36 and SM8550. Tested checkout: `73c7242cb5cfc184f5701372ef19753ddc35789a`, whose app/test/CI source is identical to the verified cbad026 correction. Local JDK17 assembly succeeded (65 tasks up-to-date). The installed main and test APK SHA-256 values were measured on the phone and match the local build; hashes and raw-result interpretation are recorded in [the S23 verification record](verification/2026-10-24-s23-verification.json). The hardware serial is redacted.

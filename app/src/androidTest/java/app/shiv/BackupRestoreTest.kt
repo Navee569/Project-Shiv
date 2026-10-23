@@ -143,6 +143,7 @@ class BackupRestoreTest {
         try { backup.export(Uri.fromFile(directory), secret) } catch (e: Exception) { failure = e }
         assertNotNull(failure)
         assertTrue(secret.all { it == '\u0000' })
+        assertTrue("failed destination open must not delete the existing directory", directory.exists())
         assertEquals(before, context.cacheDir.listFiles()!!.filter { it.name.startsWith("shiv-backup-") }.toSet())
         directory.delete()
     }
