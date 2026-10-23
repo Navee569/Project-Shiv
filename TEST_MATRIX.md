@@ -469,3 +469,26 @@ Workflow run [39923689666](https://github.com/Navee569/Project-Shiv/actions/runs
 | M1-ACCEPT | M1 acceptance | BLOCKED / NOT ACCEPTED | Required platform/data/security gates remain unverified; PR #1 must remain open, draft, unmerged. |
 
 The report archive was recorded as artifact 12489255574; exact-source APK artifact 12488143989. Artifact digests are listed in STATUS.md and must be independently recomputed from downloaded bytes before marking archive integrity PASS.
+
+
+## Independent retest matrix — 2026-10-23 — candidate SHA `9ef8f73be7a522c62cd7623da299d4151ce2e7e3`
+
+| Gate | Push run 39932801082 | PR run 39932808366 | Evidence / interpretation |
+|---|---|---|---|
+| Build / APK manifest | PASS | PASS in both jobs | PR exact-source job 120344972366; regular merge-result job 120344972695 also built and inspected APK |
+| Exact-source SHA assertion | Not applicable; push event | PASS | Exact-source job asserts source and checkout SHA both equal `9ef8f73be7a522c62cd7623da299d4151ce2e7e3` |
+| Queue tests, 10 repetitions | PASS | PASS in exact-source and regular jobs | Exact-source artifact 12493092228 retains ten logs and ten per-run JUnit XMLs; each run has 10 tests and zero failures/errors/skips |
+| Full unit suite | PASS, 72/72 | PASS, 72/72 in both jobs | Zero failures, errors, or skipped tests |
+| Lint | PASS | PASS in both jobs | 0 errors, 26 warnings: GradleDependency 15, ObsoleteSdkInt 7, InlinedApi 1, OldTargetApi 1, DataExtractionRules 1, Recycle 1 |
+| Hosted emulator strict cold launch | PASS | Exact-source PASS; regular merge-result FAIL | Exact-source: Status: ok, LaunchState COLD, WaitTime 8441 ms. Merge result: Status: timeout, LaunchState UNKNOWN, WaitTime 13738 ms. Strict assertion correctly failed. |
+| APK provenance / manifest | PASS | Exact-source PASS | Exact-source APK 136,059,539 bytes, SHA-256 `9e0916efe83941af90eeb3a3dd8fac561d026904b2999690789bb2ef3d6a01c8`; app.shiv, version 0.1.0, minSdk 26, targetSdk 35, MainActivity launcher, label/icon present |
+| Documentation freshness for candidate SHA | Historical evidence only | Historical evidence only | This addendum is followed by workflow/docs commits; fresh workflows for the final documentation commit are mandatory |
+| Keystore / Room rollback / backup URI failures / action-tier end-to-end / offline network capture / physical Galaxy S23 / full security assessment | NOT VERIFIED | NOT VERIFIED | Keep as explicit acceptance blockers |
+
+### Emulator failure diagnosis and workflow change
+
+The regular merge-result job's retained diagnostics show app PID 2601 and MainActivity RESUMED, but `reportedDrawn=false` and `firstWindowDrawn=false`; the crash buffer is empty. Logcat indicates skipped frames and heavy emulator/system activity; host memory showed about 3.0 GiB available with 2.2 GiB swap in use. Emulator output warned that four CPU cores would run the AVD more smoothly. Exact-source strict launch passed on the same source candidate. Root cause is not conclusively proven; resource contention/startup timing is plausible.
+
+Workflow commit `07a2e5ff1a5123b87d473c99c39069efe6f0db79` raises emulator cores from 2 to 4 in both jobs. The strict `Status: ok` assertion and failure diagnostics remain unchanged. Verify fresh push and PR runs on the final docs commit; a successful exact-source job alone does not make the PR workflow green if the regular merge-result job fails.
+
+**Decision: M1 BLOCKED / NOT ACCEPTED.** Preserve the failure and keep PR #1 open, draft, and unmerged.
