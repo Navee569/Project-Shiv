@@ -57,6 +57,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     private val reminders: ReminderSchedulingPort = AndroidReminderSchedulingPort(app)
     private val calendarSync: CalendarSyncPort = AndroidCalendarSyncPort(app, dao, permissions, diagnostics)
     private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction), diagnostics = diagnostics)
+    private val pendingEventConfirmer = PendingEventConfirmer(dao, actionExecutor, reminders, { executionFailure(it, "listening event") })
     private val pendingActionCoordinator = PendingActionCoordinator<PendingShivAction>()
     private val pendingEventGate = PendingEventClaimGate()
     private val brainRuntime = BrainProvider.get(app.applicationContext)
@@ -468,28 +469,12 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         val claim = pendingEventGate.tryAcquire(candidate.id) ?: return
         val job = viewModelScope.launch {
             try {
-                if (dao.pendingEvents(0).first().none { it.id == candidate.id && it == candidate }) return@launch
-                if (candidate.startsAt <= System.currentTimeMillis()) {
-                    dao.deletePendingEvent(candidate.id)
-                    dao.logAction(ActionLogEntry(action = "Expired a listening event confirmation", tier = ActionTier.ASK_FIRST.name, outcome = "Event time passed"))
-                    return@launch
-                }
-                val report = actionExecutor.execute(actionRequest(
+                pendingEventConfirmer.confirm(candidate, actionRequest(
                     "CREATE_EVENT",
                     mapOf("id" to candidate.id, "title" to candidate.title, "startsAt" to candidate.startsAt.toString()),
                     ActionTier.FREE,
                     confirmed = true
-                )) {
-                    val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
-                    dao.saveEvent(event)
-                    dao.deletePendingEvent(candidate.id)
-                    reminders.schedule(event, reminderLeadMinutes.value)
-                    ActionDispatchResult("Listening event saved", "DELETE_EVENT:${event.id}")
-                }
-                if (report.status != ActionExecutionStatus.SUCCEEDED) {
-                    dao.deletePendingEvent(candidate.id)
-                    dao.addMessage(ChatMessage(text = executionFailure(report, "listening event"), fromUser = false))
-                }
+                ), reminderLeadMinutes.value)
             } finally {
                 claim.close()
             }
