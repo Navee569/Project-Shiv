@@ -23,15 +23,11 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
 import org.json.JSONObject
-import java.util.concurrent.PriorityBlockingQueue
-import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import app.shiv.domain.memory.MemoryRelevance
 import app.shiv.domain.actions.ActionTier
+import app.shiv.domain.inference.InferenceQueue
+import app.shiv.domain.inference.PrioritizedInferenceQueue
 
 data class BrainReply(
     val text: String,
@@ -84,7 +80,7 @@ class Brain(private val appContext: Context? = null) : BrainPort, ProactiveBrain
     @Volatile var lastRoutingMillis: Long? = null
         private set
     val runtimeStatus = kotlinx.coroutines.flow.MutableStateFlow(BrainRuntimeStatus())
-    private val inferenceQueue = PrioritizedInferenceQueue { publishRuntimeStatus() }
+    private val inferenceQueue: InferenceQueue = PrioritizedInferenceQueue(onChanged = { publishRuntimeStatus() })
 
     private fun publishRuntimeStatus() {
         runtimeStatus.value = BrainRuntimeStatus(
@@ -517,63 +513,3 @@ object BrainProvider {
     }
 }
 
-/** Single-consumer inference queue: urgent user requests outrank ordinary chat, which outranks
- * background proactive checks. Expired work is answered safely instead of blocking indefinitely. */
-private class PrioritizedInferenceQueue(private val onChanged: () -> Unit) {
-    private data class Task(
-        val priority: Int,
-        val sequence: Long,
-        val createdAt: Long,
-        val staleAfterMillis: Long,
-        val execute: suspend () -> Unit
-    )
-
-    private val sequence = AtomicLong()
-    private val tasks = PriorityBlockingQueue<Task>(11, compareByDescending<Task> { it.priority }.thenBy { it.sequence })
-    private val wake = Channel<Unit>(Channel.CONFLATED)
-    @Volatile var isRunning: Boolean = false
-        private set
-    val queuedCount: Int get() = tasks.size
-
-    init {
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            for (ignored in wake) {
-                while (true) {
-                    val task = tasks.poll() ?: break
-                    isRunning = true
-                    onChanged()
-                    try { task.execute() } finally {
-                        isRunning = false
-                        onChanged()
-                    }
-                }
-            }
-        }
-    }
-
-    suspend fun <T> submit(
-        priority: Int,
-        staleAfterMillis: Long,
-        staleValue: () -> T,
-        block: suspend () -> T
-    ): T {
-        val result = CompletableDeferred<T>()
-        val createdAt = System.currentTimeMillis()
-        val task = Task(priority, sequence.getAndIncrement(), createdAt, staleAfterMillis) {
-            if (result.isCancelled) return@Task
-            if (System.currentTimeMillis() - createdAt > staleAfterMillis) {
-                result.complete(staleValue())
-            } else {
-                try { result.complete(block()) }
-                catch (failure: Throwable) {
-                    result.completeExceptionally(failure)
-                    if (failure is kotlinx.coroutines.CancellationException) throw failure
-                }
-            }
-        }
-        tasks.add(task)
-        onChanged()
-        wake.trySend(Unit)
-        return result.await()
-    }
-}

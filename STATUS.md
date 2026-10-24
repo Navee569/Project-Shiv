@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|
 | M0 baseline build | BUILT AND TESTED (CI) | Tester confirmed M0 pass; final CI run 40045079241 passed assembleDebug, testDebugUnitTest and lintDebug | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | None. | None. |
 | M0 worker delivery fixes | BUILT AND TESTED (CI) | Tester confirmed M0 pass; runs 40044537471 and 40045079241 passed build, 16 unit tests and lint | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | Uncertain dispatch retains a reservation; documented in DEFECT_LOG.md and accepted for M0. | None; tester closed M0-001 through M0-004. |
-| M1 architecture foundation | PARTIAL | Full local `testDebugUnitTest` passed: 21 tests, including all domain-record repository round-trips and 13 worker regressions | Not yet CI-verified | Proactive persistence is behind `ProactiveRepository`. ViewModel persistence and speech/TTS capability ports are now defined. Broader layer separation, action execution, a public inference queue contract, integration, permission and diagnostics contracts remain. | M1 incomplete; no M1 acceptance claim. |
+| M1 architecture foundation | PARTIAL | Local focused tests pass for domain records, 13 worker regressions, authorization policy, and inference queue priority/staleness/cancellation; exact-commit CI pending | Not yet CI-verified | Proactive persistence is behind `ProactiveRepository`. ViewModel persistence, speech/TTS ports, authorization policy, and an inference queue contract are defined. Queue is unbounded; shutdown/recovery and running-inference cancellation remain. Broader layer separation, action execution, integration, permission and diagnostics contracts remain. | M1 incomplete; no M1 acceptance claim. |
 
 ## M0 root cause
 
