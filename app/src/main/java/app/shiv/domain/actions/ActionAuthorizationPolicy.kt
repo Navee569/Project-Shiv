@@ -21,24 +21,32 @@ data class ActionAuthorizationDecision(
     val request: ActionAuthorizationRequest,
     val effectiveTier: ActionTier,
     val outcome: ActionAuthorizationOutcome
-)
+) {
+    /** Runs a side effect only for a final ALLOW decision. */
+    inline fun dispatchIfAllowed(dispatch: () -> Unit): Boolean {
+        if (outcome != ActionAuthorizationOutcome.ALLOW) return false
+        dispatch()
+        return true
+    }
+}
 
 /** Pure rules for resolving configured action tiers and authorization decisions. */
 object ActionAuthorizationPolicy {
     private data class ActionContract(
         val acceptedArgumentKeys: Set<Set<String>>,
-        val validValues: (Map<String, String>) -> Boolean
+        val validValues: (Map<String, String>) -> Boolean,
+        val futureTimestampKeys: Set<String> = emptySet()
     )
 
     private val actionContracts = mapOf(
-        "CREATE_EVENT" to contract(setOf("id", "title", "startsAt")) { args ->
+        "CREATE_EVENT" to contract(setOf("id", "title", "startsAt"), futureTimestampKeys = setOf("startsAt")) { args ->
             args.hasText("id") && args.hasText("title") && args.hasPositiveLong("startsAt")
         },
-        "UPDATE_EVENT" to contract(setOf("eventId", "title", "startsAt")) { args ->
+        "UPDATE_EVENT" to contract(setOf("eventId", "title", "startsAt"), futureTimestampKeys = setOf("startsAt")) { args ->
             args.hasText("eventId") && args.hasText("title") && args.hasPositiveLong("startsAt")
         },
         "SET_REMINDER" to contract(setOf("minutes")) { args ->
-            args["minutes"]?.toIntOrNull()?.let { it in 1..1440 } == true
+            args["minutes"]?.toIntOrNull()?.let { it in 0..1440 } == true
         },
         "SAVE_MEMORY" to contract(setOf("id", "text")) { args ->
             args.hasText("id") && args.hasText("text")
@@ -52,7 +60,10 @@ object ActionAuthorizationPolicy {
         },
         "STAY_QUIET" to contract(emptySet()) { true },
         "SAVE_PROFILE" to contract(setOf("name", "notes")) { true },
-        "RESCHEDULE" to contract(setOf("eventId", "startsAt", "newStartsAt")) { args ->
+        "RESCHEDULE" to contract(
+            setOf("eventId", "startsAt", "newStartsAt"),
+            futureTimestampKeys = setOf("startsAt", "newStartsAt")
+        ) { args ->
             args.hasText("eventId") && args.hasPositiveLong("startsAt") && args.hasPositiveLong("newStartsAt")
         },
         "DRAFT_REPLY" to contract(setOf("person", "body")) { args ->
@@ -68,19 +79,25 @@ object ActionAuthorizationPolicy {
         )
     )
 
-    private fun contract(keys: Set<String>, validValues: (Map<String, String>) -> Boolean) =
-        ActionContract(setOf(keys), validValues)
+    private fun contract(
+        keys: Set<String>,
+        futureTimestampKeys: Set<String> = emptySet(),
+        validValues: (Map<String, String>) -> Boolean
+    ) = ActionContract(setOf(keys), validValues, futureTimestampKeys)
 
     private fun Map<String, String>.hasText(key: String): Boolean = this[key]?.isNotBlank() == true
 
     private fun Map<String, String>.hasPositiveLong(key: String): Boolean =
         this[key]?.toLongOrNull()?.let { it > 0L } == true
 
-    private fun validate(request: ActionAuthorizationRequest): Boolean {
+    private fun validate(request: ActionAuthorizationRequest, nowMillis: Long): Boolean {
         val contract = actionContracts[request.actionType] ?: return false
         return request.arguments.keys in contract.acceptedArgumentKeys &&
             request.arguments.keys.none(String::isBlank) &&
-            contract.validValues(request.arguments)
+            contract.validValues(request.arguments) &&
+            contract.futureTimestampKeys.all { key ->
+                request.arguments[key]?.toLongOrNull()?.let { it > nowMillis } == true
+            }
     }
 
     /** A stored tier may make an action safer, but can never lower its required minimum. */
@@ -95,10 +112,14 @@ object ActionAuthorizationPolicy {
     fun backgroundTier(configuredTier: String?, minimum: ActionTier): ActionTier? =
         effectiveTier(configuredTier, minimum).takeUnless { it == ActionTier.ASK_FIRST }
 
-    fun authorize(request: ActionAuthorizationRequest): ActionAuthorizationDecision {
+    /** `nowMillis` is supplied at each authorization, including after confirmation. */
+    fun authorize(
+        request: ActionAuthorizationRequest,
+        nowMillis: Long = System.currentTimeMillis()
+    ): ActionAuthorizationDecision {
         val tier = effectiveTier(request.configuredTier, request.minimumTier)
         val outcome = when {
-            !validate(request) -> ActionAuthorizationOutcome.DENY_INVALID_REQUEST
+            !validate(request, nowMillis) -> ActionAuthorizationOutcome.DENY_INVALID_REQUEST
             request.permissionState == ActionPermissionState.DENIED ->
                 ActionAuthorizationOutcome.DENY_PERMISSION
             tier == ActionTier.ASK_FIRST && !request.confirmed ->
