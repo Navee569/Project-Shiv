@@ -9,11 +9,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -33,6 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import app.shiv.domain.model.UserProfile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -57,6 +60,36 @@ class ShivNavigationTest {
         composeRule.onNodeWithText("likes quiet mornings").assertExists()
         composeRule.onNodeWithText("Chat").performClick()
         composeRule.onNodeWithText("unsent message").assertExists()
+    }
+
+    @Test
+    fun lateProfileLoadPreservesEditsAndFillsOnlyUntouchedField() {
+        val loaded = mutableStateOf<UserProfile?>(null)
+        composeRule.setContent {
+            MaterialTheme {
+                val state = rememberShivShellState()
+                LaunchedEffect(loaded.value) { state.hydrateProfile(loaded.value) }
+                ShivShell(state) { _, drafts ->
+                    Column {
+                        OutlinedTextField(drafts.profileNameDraft.value, drafts::editProfileName, label = { Text("Profile name") })
+                        OutlinedTextField(drafts.profileNotesDraft.value, drafts::editProfileNotes, label = { Text("Profile notes") })
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Profile name").performTextInput("New name")
+        composeRule.runOnIdle { loaded.value = UserProfile(name = "Old name", notes = "Saved notes") }
+        composeRule.onNodeWithText("New name").assertExists()
+        composeRule.onNodeWithText("Saved notes").assertExists()
+        composeRule.onNodeWithText("Old name").assertDoesNotExist()
+    }
+
+    @Test
+    fun tierBadgeIsDescriptiveAndHasNoClickAction() {
+        composeRule.setContent { MaterialTheme { TierChip("ASK_FIRST") } }
+        composeRule.onNodeWithTag("tier-badge-ASK_FIRST").assertHasNoClickAction()
+        composeRule.onNodeWithText("ASK_FIRST").assertExists()
     }
 
     @Test

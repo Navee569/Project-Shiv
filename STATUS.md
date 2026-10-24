@@ -4,8 +4,8 @@
 |---|---|---|---|---|---|
 | M0 baseline build | BUILT AND TESTED (CI) | Tester confirmed M0 pass; final CI run 40045079241 passed assembleDebug, testDebugUnitTest and lintDebug | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | None. | None. |
 | M0 worker delivery fixes | BUILT AND TESTED (CI) | Tester confirmed M0 pass; runs 40044537471 and 40045079241 passed build, 16 unit tests and lint | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | Uncertain dispatch retains a reservation; documented in DEFECT_LOG.md and accepted for M0. | None; tester closed M0-001 through M0-004. |
-| M1 architecture foundation | COMPLETE — independently accepted | Tester confirmed PASS on exact commit; CI run 40063996960 passed `assembleDebug`, `testDebugUnitTest`, and `lintDebug` | 2bfeb8cb999278221eede2c7c54085bf2c1b74f1 | M3 persistence verification and M4 queue requirements remain separate; release acceptance is not claimed. The accepted M0 reservation limitation is unchanged. | None; M1-001 through M1-005 are closed. |
-| M2 Compose shell | BUILT AND TESTED (CI) — independently accepted | Tester PASS; exact-commit CI run 40097224474 passed build, unit tests, lint and APK upload | adfa2b269426a267d1181a41e69f708b2223011b | Tasks remain explicitly unavailable; model removal and later runtime capabilities belong to M4. | None; M2-001 and M2-002 closed. |
+| M1 architecture foundation | PARTIAL — broader retest FAIL | Earlier PASS superseded by tester review of e6c1286; fixes awaiting exact-commit CI and independent retest | e6c128618c06e049dd99ba5149665b7fa5557862 | M3 persistence verification and M4 queue requirements remain separate. The accepted M0 reservation limitation is unchanged. | M1-006 through M1-008 under retest; M1-001 through M1-005 closed. |
+| M2 Compose shell | PARTIAL — broader retest FAIL | Earlier PASS superseded by tester review of e6c1286; fixes awaiting exact-commit CI and independent retest | e6c128618c06e049dd99ba5149665b7fa5557862 | Tasks remain explicitly unavailable; model removal and later runtime capabilities belong to M4. | M2-003 and M2-004 under retest; M2-001 and M2-002 closed. |
 
 ## M0 root cause
 

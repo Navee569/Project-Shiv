@@ -53,8 +53,19 @@ internal class ShivShellState(
     val chatDraft: MutableState<String>,
     val profileNameDraft: MutableState<String>,
     val profileNotesDraft: MutableState<String>,
-    val profileDraftInitialized: MutableState<Boolean>
-)
+    val profileDraftInitialized: MutableState<Boolean>,
+    val profileNameEdited: MutableState<Boolean>,
+    val profileNotesEdited: MutableState<Boolean>
+) {
+    fun editProfileName(value: String) { profileNameEdited.value = true; profileNameDraft.value = value }
+    fun editProfileNotes(value: String) { profileNotesEdited.value = true; profileNotesDraft.value = value }
+    fun hydrateProfile(value: UserProfile?) {
+        if (value == null || profileDraftInitialized.value) return
+        if (!profileNameEdited.value) profileNameDraft.value = value.name
+        if (!profileNotesEdited.value) profileNotesDraft.value = value.notes
+        profileDraftInitialized.value = true
+    }
+}
 
 @Composable
 internal fun rememberShivShellState(): ShivShellState {
@@ -63,8 +74,10 @@ internal fun rememberShivShellState(): ShivShellState {
     val profileNameDraft = rememberSaveable { mutableStateOf("") }
     val profileNotesDraft = rememberSaveable { mutableStateOf("") }
     val profileDraftInitialized = rememberSaveable { mutableStateOf(false) }
-    return remember(destination, chatDraft, profileNameDraft, profileNotesDraft, profileDraftInitialized) {
-        ShivShellState(destination, chatDraft, profileNameDraft, profileNotesDraft, profileDraftInitialized)
+    val profileNameEdited = rememberSaveable { mutableStateOf(false) }
+    val profileNotesEdited = rememberSaveable { mutableStateOf(false) }
+    return remember(destination, chatDraft, profileNameDraft, profileNotesDraft, profileDraftInitialized, profileNameEdited, profileNotesEdited) {
+        ShivShellState(destination, chatDraft, profileNameDraft, profileNotesDraft, profileDraftInitialized, profileNameEdited, profileNotesEdited)
     }
 }
 
@@ -81,11 +94,7 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
     var lastSpokenId by remember { mutableStateOf<String?>(null) }
     DisposableEffect(speaker) { onDispose { speaker.close() } }
     LaunchedEffect(profile?.updatedAt) {
-        if (profile != null && !shellState.profileDraftInitialized.value) {
-            shellState.profileNameDraft.value = profile?.name.orEmpty()
-            shellState.profileNotesDraft.value = profile?.notes.orEmpty()
-            shellState.profileDraftInitialized.value = true
-        }
+        shellState.hydrateProfile(profile)
     }
     LaunchedEffect(messages.lastOrNull()?.id, speakReplies.value) {
         val latest = messages.lastOrNull()
@@ -104,9 +113,9 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
             ShivDestination.MEMORY -> MemoryTab(
                 vm,
                 drafts.profileNameDraft.value,
-                { drafts.profileNameDraft.value = it },
+                drafts::editProfileName,
                 drafts.profileNotesDraft.value,
-                { drafts.profileNotesDraft.value = it },
+                drafts::editProfileNotes,
                 Modifier.fillMaxSize()
             )
             ShivDestination.SETTINGS -> SettingsTab(vm, speakReplies.value, { value ->
@@ -747,8 +756,14 @@ private fun PermissionExplanation(title: String, explanation: String, granted: B
 }
 
 @Composable
-private fun TierChip(tier: String) {
-    AssistChip(onClick = {}, label = { Text(tier) })
+internal fun TierChip(tier: String) {
+    Surface(
+        modifier = Modifier.testTag("tier-badge-$tier"),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Text(tier, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+    }
 }
 
 @Composable

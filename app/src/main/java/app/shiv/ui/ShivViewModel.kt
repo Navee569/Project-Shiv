@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import app.shiv.data.repository.RoomShivViewRepository
 import app.shiv.domain.repository.ShivViewRepository
 import app.shiv.domain.actions.ActionAuthorizationRequest
@@ -33,7 +34,8 @@ import app.shiv.domain.actions.ActionAuditRepository
 import app.shiv.domain.actions.ActionDispatchResult
 import app.shiv.domain.actions.ActionExecutionStatus
 import app.shiv.domain.actions.AuthorizedActionExecutor
-import app.shiv.domain.actions.ActionConfirmationGate
+import app.shiv.domain.actions.PendingActionCoordinator
+import app.shiv.domain.actions.PendingEventClaimGate
 
 sealed class PendingShivAction(val title: String, val explanation: String) {
     class SaveProfile(val name: String, val notes: String) : PendingShivAction("Update your local profile?", "Confirm to replace the profile details stored on this phone.")
@@ -49,13 +51,14 @@ sealed class PendingShivAction(val title: String, val explanation: String) {
 }
 
 class ShivViewModel(app: Application) : AndroidViewModel(app) {
-    private val dao: ShivViewRepository = RoomShivViewRepository(app)
+    private val dao: ShivViewRepository = AsyncShivViewRepository { RoomShivViewRepository(app) }
     private val diagnostics: DiagnosticsPort = AndroidDiagnosticsPort()
     private val permissions: ActionPermissionPort = AndroidActionPermissionPort(app)
     private val reminders: ReminderSchedulingPort = AndroidReminderSchedulingPort(app)
     private val calendarSync: CalendarSyncPort = AndroidCalendarSyncPort(app, dao, permissions, diagnostics)
     private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction), diagnostics = diagnostics)
-    private val confirmationGate = ActionConfirmationGate()
+    private val pendingActionCoordinator = PendingActionCoordinator<PendingShivAction>()
+    private val pendingEventGate = PendingEventClaimGate()
     private val brainRuntime = BrainProvider.get(app.applicationContext)
     private val brain: BrainPort = brainRuntime
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -69,7 +72,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     val actionTiers = dao.actionTiers().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val settings = dao.settings().stateIn(viewModelScope, SharingStarted.Eagerly, ShivSettings())
     val reminderLeadMinutes = MutableStateFlow(Brain.DEFAULT_LEAD_MINUTES)
-    val pendingAction = MutableStateFlow<PendingShivAction?>(null)
+    val pendingAction = pendingActionCoordinator.pendingAction
     val lastCalendarSync = MutableStateFlow<String?>(null)
     val modelStatus = MutableStateFlow("Checking local model storage…")
     val modelFiles = MutableStateFlow(false to false)
@@ -462,48 +465,61 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun confirmPendingEvent(candidate: PendingEventRecord) {
-        viewModelScope.launch {
-            if (candidate.startsAt <= System.currentTimeMillis()) {
-                dao.deletePendingEvent(candidate.id)
-                dao.logAction(ActionLogEntry(action = "Expired a listening event confirmation", tier = ActionTier.ASK_FIRST.name, outcome = "Event time passed"))
-                return@launch
-            }
-            val report = actionExecutor.execute(actionRequest(
-                "CREATE_EVENT",
-                mapOf("id" to candidate.id, "title" to candidate.title, "startsAt" to candidate.startsAt.toString()),
-                ActionTier.FREE,
-                confirmed = true
-            )) {
-                val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
-                dao.saveEvent(event)
-                dao.deletePendingEvent(candidate.id)
-                reminders.schedule(event, reminderLeadMinutes.value)
-                ActionDispatchResult("Listening event saved", "DELETE_EVENT:${event.id}")
-            }
-            if (report.status != ActionExecutionStatus.SUCCEEDED) {
-                dao.deletePendingEvent(candidate.id)
-                dao.addMessage(ChatMessage(text = executionFailure(report, "listening event"), fromUser = false))
+        val claim = pendingEventGate.tryAcquire(candidate.id) ?: return
+        val job = viewModelScope.launch {
+            try {
+                if (dao.pendingEvents(0).first().none { it.id == candidate.id && it == candidate }) return@launch
+                if (candidate.startsAt <= System.currentTimeMillis()) {
+                    dao.deletePendingEvent(candidate.id)
+                    dao.logAction(ActionLogEntry(action = "Expired a listening event confirmation", tier = ActionTier.ASK_FIRST.name, outcome = "Event time passed"))
+                    return@launch
+                }
+                val report = actionExecutor.execute(actionRequest(
+                    "CREATE_EVENT",
+                    mapOf("id" to candidate.id, "title" to candidate.title, "startsAt" to candidate.startsAt.toString()),
+                    ActionTier.FREE,
+                    confirmed = true
+                )) {
+                    val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
+                    dao.saveEvent(event)
+                    dao.deletePendingEvent(candidate.id)
+                    reminders.schedule(event, reminderLeadMinutes.value)
+                    ActionDispatchResult("Listening event saved", "DELETE_EVENT:${event.id}")
+                }
+                if (report.status != ActionExecutionStatus.SUCCEEDED) {
+                    dao.deletePendingEvent(candidate.id)
+                    dao.addMessage(ChatMessage(text = executionFailure(report, "listening event"), fromUser = false))
+                }
+            } finally {
+                claim.close()
             }
         }
+        job.invokeOnCompletion { claim.close() }
     }
 
     fun ignorePendingEvent(candidate: PendingEventRecord) {
-        viewModelScope.launch {
-            dao.deletePendingEvent(candidate.id)
-            dao.logAction(ActionLogEntry(action = "Ignored a listening event candidate", tier = ActionTier.ASK_FIRST.name, outcome = "Not saved"))
+        val claim = pendingEventGate.tryAcquire(candidate.id) ?: return
+        val job = viewModelScope.launch {
+            try {
+                if (dao.pendingEvents(0).first().none { it.id == candidate.id }) return@launch
+                dao.deletePendingEvent(candidate.id)
+                dao.logAction(ActionLogEntry(action = "Ignored a listening event candidate", tier = ActionTier.ASK_FIRST.name, outcome = "Not saved"))
+            } finally {
+                claim.close()
+            }
         }
+        job.invokeOnCompletion { claim.close() }
     }
 
     fun cancelPending() {
-        val action = pendingAction.value ?: return
-        pendingAction.value = null
+        val action = pendingActionCoordinator.cancel() ?: return
         viewModelScope.launch { dao.logAction(ActionLogEntry(action = action.title, tier = ActionTier.ASK_FIRST.name, outcome = "Cancelled by user")) }
     }
 
     /** Final authorization, audit, and side effect all run after the owner confirms. */
     fun confirmPending(onSmsDraft: (SmsDraft) -> Unit = {}) {
-        val action = pendingAction.value ?: return
-        val claim = confirmationGate.tryAcquire() ?: return
+        val claim = pendingActionCoordinator.tryClaim() ?: return
+        val action = claim.action
         val job = viewModelScope.launch {
             try {
                 val (type, args, tier) = pendingActionRequest(action)
@@ -544,7 +560,6 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 )
                 }
-                if (report.dispatched) pendingAction.compareAndSet(action, null)
                 if (report.status != ActionExecutionStatus.SUCCEEDED) {
                     dao.addMessage(ChatMessage(text = executionFailure(report, action.title.lowercase()), fromUser = false, tier = report.authorization.effectiveTier.name))
                 }

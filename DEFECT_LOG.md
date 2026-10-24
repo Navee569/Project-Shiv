@@ -14,6 +14,11 @@
 | M1-005 | S2 | CLOSED — tester PASS | Restore old manifest component FQCNs and compatibility subclasses for persisted worker/receiver/service/activity identities; schedule proactive work using the legacy worker name. | LegacyComponentCompatibilityTest manifest registration and both worker constructors/superclasses |
 | M2-001 | S2 | CLOSED — tester PASS | Hoist unsent chat and profile drafts into the saveable shell state above conditional destinations; initialize profile drafts from persisted profile only once. | ShivNavigationTest actual shell navigation, unsent chat draft, profile draft and saved-state restoration |
 | M2-002 | S2 | CLOSED — tester PASS | Observe permission status on lifecycle resume in Settings and Permission explanations; combine app notification enablement on all supported APIs with the Android 13+ runtime permission. | ShivNavigationTest resume refresh and API 28/API 33 notification capability boundaries |
+| M1-006 | S2 | FIXED — awaiting retest | Claim each pending event ID synchronously before coroutine launch; Save and Ignore share the claim, and stale candidates are checked against current storage. | ConfirmationRaceTest.doubleEventSaveCannotDispatchWhileFirstAuditIsSuspended |
+| M1-007 | S2 | FIXED — awaiting retest | Atomically claim and remove a pending action before audit suspension; Cancel can log only an unclaimed action. | ConfirmationRaceTest.cancelAfterConfirmClaimCannotRecordCancelOrStopCapturedDispatch; cancelBeforeClaimPreventsConfirmation |
+| M1-008 | S2 | FIXED — awaiting retest | Defer encrypted repository construction and operations to Dispatchers.IO, keeping SQLCipher/Keystore initialization out of ViewModel construction. | AsyncShivViewRepositoryTest.slowDatabaseCreationDoesNotBlockViewModelConstructionOrCallerThread |
+| M2-003 | S2 | FIXED — awaiting retest | Track profile name and notes edits separately in saveable state; delayed profile hydration fills only untouched fields. | ShivNavigationTest.lateProfileLoadPreservesEditsAndFillsOnlyUntouchedField |
+| M2-004 | S3 | FIXED — awaiting retest | Render tier badges as descriptive, non-interactive surfaces. | ShivNavigationTest.tierBadgeIsDescriptiveAndHasNoClickAction |
 
 M0 verification: 13 worker-level JVM tests use actual CoroutineWorker.doWork, real in-memory Room queries/transactions and fake Brain/notification ports. The narrow suite and final assembleDebug, testDebugUnitTest (16 tests total) and lintDebug passed locally. These tests use synthetic data and do not change production SQLCipher initialization. No device testing was performed; notification delivery uses a fake port.
 
@@ -36,6 +41,10 @@ M1 independent retest: PASS on commit 2bfeb8cb999278221eede2c7c54085bf2c1b74f1. 
 | 2bfeb8cb999278221eede2c7c54085bf2c1b74f1 | [40063996960](https://github.com/Navee569/Project-Shiv/actions/runs/40063996960) | PASS: assembleDebug, testDebugUnitTest, lintDebug |
 
 M2 independent retest: PASS on commit adfa2b269426a267d1181a41e69f708b2223011b. Tester closed M2-001 and M2-002 and verified draft retention, saved-state restoration, resume permission refresh, notification API boundaries and explicit Tasks unavailability. No additional material defects were found. Tester reports CI evidence saved as M2_CI_adfa2b2.json; that file was not present in the developer checkout during this documentation update.
+
+Broader M0–M2 retest on e6c128618c06e049dd99ba5149665b7fa5557862 superseded earlier M1/M2 acceptance: M0 PASS, M1 FAIL, M2 FAIL. Exact-commit CI run 40098685781 passed build, tests, lint and APK upload. M1-006 through M1-008 and M2-003 through M2-004 are fixed in the current delivery pending its own CI and independent retest. No phone behavior is claimed.
+
+Developer local verification for the fix delivery: `assembleDebug`, `testDebugUnitTest` (68 tests, zero failures/errors/skips), and `lintDebug` passed. Exact-commit CI and tester review are pending.
 
 | Tested commit | CI run | Result |
 |---|---|---|
