@@ -2,8 +2,8 @@
 
 | Feature | Status | Verification | Last verified commit | Limitations | Open defects |
 |---|---|---|---|---|---|
-| M0 baseline build | BUILT AND TESTED (CI) | Tester independently verified runs 40042340290 and 40042679808 | 514ce1c | Worker delivery findings tracked separately below. | None for build/launcher. |
-| M0 worker delivery fixes | BUILT AND TESTED (CI) | Local checks pass; GitHub Actions run 40044537471 passed assembleDebug, testDebugUnitTest and lintDebug (16 tests total, 13 worker regressions) | b6b533fec67217da7846bce5863ad9ddcee520fc | Uncertain delivery retains a reservation; see DEFECT_LOG.md. | M0-001 through M0-004 fixed; awaiting independent retest. |
+| M0 baseline build | BUILT AND TESTED (CI) | Tester confirmed M0 pass; final CI run 40045079241 passed assembleDebug, testDebugUnitTest and lintDebug | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | None. | None. |
+| M0 worker delivery fixes | BUILT AND TESTED (CI) | Tester confirmed M0 pass; runs 40044537471 and 40045079241 passed build, 16 unit tests and lint | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | Uncertain dispatch retains a reservation; documented in DEFECT_LOG.md and accepted for M0. | None; tester closed M0-001 through M0-004. |
 
 ## M0 root cause
 
