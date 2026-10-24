@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class EncryptedPersistenceInstrumentationTest {
-    private val context: Context = InstrumentationRegistry.getInstrumentation().context
+    private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
     fun productionKeystoreAndSqlcipherOpenPathEncryptsAndReopensQueue() = runBlocking<Unit> {
