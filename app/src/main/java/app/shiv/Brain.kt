@@ -30,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import app.shiv.domain.memory.MemoryRelevance
 
 enum class ActionTier { FREE, ACT_THEN_TELL, ASK_FIRST }
 
@@ -505,9 +506,7 @@ User: $input"""
         .find(text.trim())?.groupValues?.get(1)?.trim()?.takeIf { it.length >= 3 }
 
     fun isRelevant(input: String, fact: String): Boolean {
-        val stop = setOf("that", "this", "with", "from", "when", "what", "have", "your", "about", "would", "could", "please", "remind", "meeting", "today", "tomorrow")
-        val words = input.lowercase().split(Regex("[^\\p{L}0-9]+" )).filter { it.length > 3 && it !in stop }
-        return words.any { it in fact.lowercase() }
+        return MemoryRelevance.matches(input, fact)
     }
 }
 

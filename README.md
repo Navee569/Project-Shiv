@@ -2,7 +2,7 @@
 
 Shiv is a private, offline-first Android assistant project for one Galaxy S23. The source includes encrypted local storage, chat, basic event extraction, event reminders, voice input/output, visible listening mode, calendar/notification access, photo labels, editable action tiers, password-encrypted backup/restore, and an optional on-device language model.
 
-**This is source code, not a finished APK or a verified release. It has not been built or run.** The new LiteRT-LM integration, the Room migration, backup/restore, and S23 behavior all need Android Studio/device verification before you rely on them. The model tool agent, proactive manager loop, quiet hours/interruption limits, and several broad permissions are not complete; details are in “Known limits.” This is not yet the full human-like manager described in the project brief.
+**M0 baseline and proactive-worker fixes passed GitHub Actions CI** on commits recorded in `STATUS.md`. The project is not a finished APK or verified release; the current M1 architecture foundation is partial and awaits CI. The LiteRT-LM integration, Room migration, backup/restore, and S23 behavior need further verification. The model tool agent, proactive manager loop, and several broad permissions are not complete; see “Known limits.” No device testing has been performed.
 
 ## Setup for a beginner
 

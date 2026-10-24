@@ -20,6 +20,7 @@ import androidx.work.WorkerParameters
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import app.shiv.domain.scheduling.ProactiveSchedulePolicy
 
 internal interface ProactiveNotifications {
     fun allowed(): Boolean
@@ -161,8 +162,13 @@ private class AndroidProactiveNotifications(private val context: Context) : Proa
 private fun eligibleSettings(settings: ShivSettings, now: Long): Boolean {
     val calendar = Calendar.getInstance().apply { timeInMillis = now }
     val minute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-    return settings.proactiveEnabled && settings.maxDailyInterruptions > 0 &&
-        !isQuietMinute(minute, settings.quietStartMinute, settings.quietEndMinute)
+    return ProactiveSchedulePolicy.isEligible(
+        settings.proactiveEnabled,
+        settings.maxDailyInterruptions,
+        minute,
+        settings.quietStartMinute,
+        settings.quietEndMinute
+    )
 }
 
 private fun eligibleEvent(snapshot: EventRecord, current: EventRecord?, now: Long): Boolean =
@@ -175,17 +181,6 @@ private fun startOfDay(now: Long): Long = Calendar.getInstance().apply {
     set(Calendar.SECOND, 0)
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
-
-internal fun isQuietMinute(minute: Int, startMinute: Int, endMinute: Int): Boolean {
-    val safeMinute = minute.coerceIn(0, 1439)
-    val start = startMinute.coerceIn(0, 1439)
-    val end = endMinute.coerceIn(0, 1439)
-    return when {
-        start == end -> true
-        start < end -> safeMinute in start until end
-        else -> safeMinute >= start || safeMinute < end
-    }
-}
 
 internal fun proactiveNotificationTier(configuredTier: String?): ActionTier? {
     val configured = configuredTier
