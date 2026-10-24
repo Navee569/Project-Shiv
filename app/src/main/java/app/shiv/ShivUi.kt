@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.shiv.domain.speech.SpeechRecognitionSession
+import app.shiv.domain.speech.SpeechSynthesis
 
 private enum class ShivTab(val label: String) { CHAT("Chat"), EVENTS("Events"), MEMORY("Memory"), SETTINGS("Settings") }
 
@@ -45,7 +47,7 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
     val messages by vm.messages.collectAsStateWithLifecycle()
     val pending by vm.pendingAction.collectAsStateWithLifecycle()
     val speakReplies = remember { mutableStateOf(context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).getBoolean("speak_replies", true)) }
-    val speaker = remember { OfflineSpeechOutput(context) }
+    val speaker: SpeechSynthesis = remember { OfflineSpeechOutput(context) }
     var lastSpokenId by remember { mutableStateOf<String?>(null) }
     DisposableEffect(speaker) { onDispose { speaker.close() } }
     LaunchedEffect(messages.lastOrNull()?.id, speakReplies.value) {
@@ -113,7 +115,7 @@ private fun ChatTab(vm: ShivViewModel, messages: List<ChatMessage>, modifier: Mo
     var showCamera by remember { mutableStateOf(false) }
     var micNotice by remember { mutableStateOf<String?>(null) }
     var photoNotice by remember { mutableStateOf<String?>(null) }
-    var speechInput by remember { mutableStateOf<SpeechInput?>(null) }
+    var speechInput by remember { mutableStateOf<SpeechRecognitionSession?>(null) }
 
     fun startMic() {
         val session = SpeechInput(context, onText = { transcript ->

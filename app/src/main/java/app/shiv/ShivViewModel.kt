@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import app.shiv.data.repository.RoomShivViewRepository
+import app.shiv.domain.repository.ShivViewRepository
 
 sealed class PendingShivAction(val title: String, val explanation: String) {
     class SaveProfile(val name: String, val notes: String) : PendingShivAction("Update your local profile?", "Confirm to replace the profile details stored on this phone.")
@@ -24,7 +26,7 @@ sealed class PendingShivAction(val title: String, val explanation: String) {
 }
 
 class ShivViewModel(app: Application) : AndroidViewModel(app) {
-    private val dao = ShivRepository(app).dao
+    private val dao: ShivViewRepository = RoomShivViewRepository(app)
     private val brain = BrainProvider.get(app.applicationContext)
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = dao.events(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

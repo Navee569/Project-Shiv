@@ -6,9 +6,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import app.shiv.domain.repository.ShivViewRepository
 
 object CalendarSyncer {
-    fun sync(context: Context, dao: ShivDao): Int {
+    fun sync(context: Context, dao: ShivViewRepository): Int {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) return 0
         val now = System.currentTimeMillis()
         val end = now + 90L * 24 * 60 * 60 * 1000

@@ -3,9 +3,10 @@ package app.shiv
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import java.util.Locale
+import app.shiv.domain.speech.SpeechSynthesis
 
 /** Speaks only with an installed offline TTS voice. */
-class OfflineSpeechOutput(context: Context) : TextToSpeech.OnInitListener {
+class OfflineSpeechOutput(context: Context) : TextToSpeech.OnInitListener, SpeechSynthesis {
     private var engine: TextToSpeech? = TextToSpeech(context.applicationContext, this)
     private var localVoiceReady = false
 
@@ -17,9 +18,9 @@ class OfflineSpeechOutput(context: Context) : TextToSpeech.OnInitListener {
         localVoiceReady = true
     }
 
-    fun speak(text: String) {
+    override fun speak(text: String) {
         if (localVoiceReady && text.isNotBlank()) engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "shiv-reply-${System.currentTimeMillis()}")
     }
 
-    fun close() { engine?.stop(); engine?.shutdown(); engine = null; localVoiceReady = false }
+    override fun close() { engine?.stop(); engine?.shutdown(); engine = null; localVoiceReady = false }
 }

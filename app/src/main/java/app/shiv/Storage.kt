@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
+import app.shiv.domain.repository.ShivViewRepository
 import java.util.UUID
 
 @Entity(tableName = "chat_messages")
@@ -84,54 +85,54 @@ data class PendingEventRecord(
 )
 
 @Dao
-interface ShivDao {
-    @Query("SELECT * FROM chat_messages ORDER BY createdAt") fun messages(): Flow<List<ChatMessage>>
-    @Upsert suspend fun addMessage(value: ChatMessage)
+interface ShivDao : ShivViewRepository {
+    @Query("SELECT * FROM chat_messages ORDER BY createdAt") override fun messages(): Flow<List<ChatMessage>>
+    @Upsert override suspend fun addMessage(value: ChatMessage)
     @Query("SELECT * FROM chat_messages ORDER BY createdAt") suspend fun allMessages(): List<ChatMessage>
-    @Upsert suspend fun saveProfile(value: UserProfile)
-    @Query("SELECT * FROM user_profile WHERE id = 1") fun profile(): Flow<UserProfile?>
-    @Query("SELECT * FROM user_profile WHERE id = 1") suspend fun profileOnce(): UserProfile?
-    @Query("SELECT * FROM memories ORDER BY createdAt DESC") fun memories(): Flow<List<MemoryFact>>
+    @Upsert override suspend fun saveProfile(value: UserProfile)
+    @Query("SELECT * FROM user_profile WHERE id = 1") override fun profile(): Flow<UserProfile?>
+    @Query("SELECT * FROM user_profile WHERE id = 1") override suspend fun profileOnce(): UserProfile?
+    @Query("SELECT * FROM memories ORDER BY createdAt DESC") override fun memories(): Flow<List<MemoryFact>>
     @Query("SELECT * FROM memories ORDER BY createdAt") suspend fun allMemories(): List<MemoryFact>
     @Query("SELECT * FROM memories ORDER BY createdAt DESC LIMIT 100") suspend fun latestMemories(): List<MemoryFact>
-    @Upsert suspend fun saveMemory(value: MemoryFact)
-    @Query("DELETE FROM memories WHERE id = :id") suspend fun deleteMemory(id: String)
-    @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
-    @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
+    @Upsert override suspend fun saveMemory(value: MemoryFact)
+    @Query("DELETE FROM memories WHERE id = :id") override suspend fun deleteMemory(id: String)
+    @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") override fun events(from: Long): Flow<List<EventRecord>>
+    @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") override suspend fun upcomingEvents(from: Long): List<EventRecord>
     @Query("SELECT * FROM events WHERE id = :id") suspend fun eventById(id: String): EventRecord?
     @Query("SELECT * FROM events WHERE startsAt > :from AND startsAt <= :until AND NOT EXISTS (SELECT 1 FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND outcome = events.id) ORDER BY startsAt, id LIMIT 8")
     suspend fun proactiveEvents(from: Long, until: Long): List<EventRecord>
     @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
-    @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
+    @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") override fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
     @Query("SELECT * FROM pending_events WHERE id = :id") suspend fun pendingEvent(id: String): PendingEventRecord?
     @Query("SELECT * FROM pending_events ORDER BY startsAt") suspend fun allPendingEvents(): List<PendingEventRecord>
     @Insert suspend fun addPendingEvent(value: PendingEventRecord)
-    @Query("DELETE FROM pending_events WHERE id = :id") suspend fun deletePendingEvent(id: String)
-    @Query("DELETE FROM pending_events") suspend fun clearPendingEvents()
-    @Query("SELECT * FROM events WHERE source = 'CALENDAR'") suspend fun calendarEvents(): List<EventRecord>
-    @Upsert suspend fun saveEvent(value: EventRecord)
-    @Query("DELETE FROM events WHERE id = :id") suspend fun deleteEvent(id: String)
-    @Query("DELETE FROM events WHERE source = 'CALENDAR'") suspend fun clearCalendarEvents()
+    @Query("DELETE FROM pending_events WHERE id = :id") override suspend fun deletePendingEvent(id: String)
+    @Query("DELETE FROM pending_events") override suspend fun clearPendingEvents()
+    @Query("SELECT * FROM events WHERE source = 'CALENDAR'") override suspend fun calendarEvents(): List<EventRecord>
+    @Upsert override suspend fun saveEvent(value: EventRecord)
+    @Query("DELETE FROM events WHERE id = :id") override suspend fun deleteEvent(id: String)
+    @Query("DELETE FROM events WHERE source = 'CALENDAR'") override suspend fun clearCalendarEvents()
     @Query("SELECT * FROM action_log WHERE id = :id") suspend fun actionById(id: String): ActionLogEntry?
     @Query("DELETE FROM action_log WHERE id = :id") suspend fun deleteAction(id: String)
     @Query("SELECT COUNT(*) FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND createdAt >= :since") suspend fun countProactiveSince(since: Long): Int
-    @Upsert suspend fun logAction(value: ActionLogEntry)
+    @Upsert override suspend fun logAction(value: ActionLogEntry)
     @Query("SELECT * FROM action_log ORDER BY createdAt") suspend fun allActions(): List<ActionLogEntry>
     @Query("SELECT * FROM reminder_rules ORDER BY ruleKey") suspend fun allRules(): List<ReminderRule>
-    @Query("SELECT * FROM action_log ORDER BY createdAt DESC LIMIT 200") fun actionLog(): Flow<List<ActionLogEntry>>
-    @Query("SELECT * FROM reminder_rules WHERE ruleKey = :key") suspend fun reminderRule(key: String): ReminderRule?
-    @Upsert suspend fun saveRule(value: ReminderRule)
-    @Query("SELECT * FROM reply_drafts ORDER BY createdAt DESC") fun drafts(): Flow<List<ReplyDraft>>
+    @Query("SELECT * FROM action_log ORDER BY createdAt DESC LIMIT 200") override fun actionLog(): Flow<List<ActionLogEntry>>
+    @Query("SELECT * FROM reminder_rules WHERE ruleKey = :key") override suspend fun reminderRule(key: String): ReminderRule?
+    @Upsert override suspend fun saveRule(value: ReminderRule)
+    @Query("SELECT * FROM reply_drafts ORDER BY createdAt DESC") override fun drafts(): Flow<List<ReplyDraft>>
     @Query("SELECT * FROM reply_drafts ORDER BY createdAt") suspend fun allDrafts(): List<ReplyDraft>
-    @Upsert suspend fun saveDraft(value: ReplyDraft)
-    @Query("SELECT * FROM action_tiers ORDER BY actionKey") fun actionTiers(): Flow<List<ActionTierSetting>>
+    @Upsert override suspend fun saveDraft(value: ReplyDraft)
+    @Query("SELECT * FROM action_tiers ORDER BY actionKey") override fun actionTiers(): Flow<List<ActionTierSetting>>
     @Query("SELECT * FROM action_tiers ORDER BY actionKey") suspend fun allActionTiers(): List<ActionTierSetting>
     @Query("SELECT tier FROM action_tiers WHERE actionKey = :key") suspend fun actionTier(key: String): String?
-    @Upsert suspend fun saveActionTier(value: ActionTierSetting)
-    @Query("SELECT * FROM shiv_settings WHERE id = 1") fun settings(): Flow<ShivSettings?>
-    @Query("SELECT * FROM shiv_settings WHERE id = 1") suspend fun settingsOnce(): ShivSettings?
-    @Upsert suspend fun saveSettings(value: ShivSettings)
-    @Query("DELETE FROM shiv_settings") suspend fun clearSettings()
+    @Upsert override suspend fun saveActionTier(value: ActionTierSetting)
+    @Query("SELECT * FROM shiv_settings WHERE id = 1") override fun settings(): Flow<ShivSettings?>
+    @Query("SELECT * FROM shiv_settings WHERE id = 1") override suspend fun settingsOnce(): ShivSettings?
+    @Upsert override suspend fun saveSettings(value: ShivSettings)
+    @Query("DELETE FROM shiv_settings") override suspend fun clearSettings()
     @Query("SELECT COUNT(*) FROM action_log WHERE action = :action AND createdAt >= :since") suspend fun countActionsSince(action: String, since: Long): Int
     @Query("SELECT EXISTS(SELECT 1 FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND outcome = :eventId)") suspend fun wasProactiveSent(eventId: String): Boolean
     @Upsert suspend fun saveMessages(values: List<ChatMessage>)
@@ -142,14 +143,14 @@ interface ShivDao {
     @Upsert suspend fun saveRules(values: List<ReminderRule>)
     @Upsert suspend fun saveDrafts(values: List<ReplyDraft>)
     @Upsert suspend fun saveActionTiers(values: List<ActionTierSetting>)
-    @Query("DELETE FROM chat_messages") suspend fun clearMessages()
-    @Query("DELETE FROM user_profile") suspend fun clearProfile()
-    @Query("DELETE FROM memories") suspend fun clearMemories()
-    @Query("DELETE FROM events") suspend fun clearEvents()
-    @Query("DELETE FROM action_log") suspend fun clearLog()
-    @Query("DELETE FROM reminder_rules") suspend fun clearRules()
-    @Query("DELETE FROM reply_drafts") suspend fun clearDrafts()
-    @Query("DELETE FROM action_tiers") suspend fun clearActionTiers()
+    @Query("DELETE FROM chat_messages") override suspend fun clearMessages()
+    @Query("DELETE FROM user_profile") override suspend fun clearProfile()
+    @Query("DELETE FROM memories") override suspend fun clearMemories()
+    @Query("DELETE FROM events") override suspend fun clearEvents()
+    @Query("DELETE FROM action_log") override suspend fun clearLog()
+    @Query("DELETE FROM reminder_rules") override suspend fun clearRules()
+    @Query("DELETE FROM reply_drafts") override suspend fun clearDrafts()
+    @Query("DELETE FROM action_tiers") override suspend fun clearActionTiers()
 }
 
 @Database(
@@ -194,8 +195,4 @@ abstract class ShivDatabase : RoomDatabase() {
             }
         }
     }
-}
-
-class ShivRepository(context: Context) {
-    val dao: ShivDao = ShivDatabase.get(context.applicationContext).dao()
 }
