@@ -36,7 +36,7 @@ class RoomShivViewRepositoryTest {
     fun setUp() {
         val context: Context = RuntimeEnvironment.getApplication()
         database = Room.inMemoryDatabaseBuilder(context, ShivDatabase::class.java).build()
-        repository = RoomShivViewRepository(database.dao())
+        repository = RoomShivViewRepository(database)
     }
 
     @After
@@ -112,6 +112,20 @@ class RoomShivViewRepositoryTest {
         repository.clearCalendarEvents()
         assertEquals(listOf(chat), repository.upcomingEvents(0L))
         assertEquals(emptyList<EventRecord>(), repository.calendarEvents())
+    }
+
+    @Test
+    fun calendarReplacementReplacesOnlyCalendarRows() = runBlocking {
+        val previousCalendar = EventRecord(id = "calendar-old", title = "Old calendar", startsAt = 100L, source = "CALENDAR")
+        val personalEvent = EventRecord(id = "personal", title = "Personal", startsAt = 200L, source = "CHAT")
+        val importedCalendar = EventRecord(id = "calendar-new", title = "New calendar", startsAt = 300L, source = "CALENDAR")
+        repository.saveEvent(previousCalendar)
+        repository.saveEvent(personalEvent)
+
+        repository.replaceCalendarEvents(listOf(importedCalendar))
+
+        assertEquals(listOf(importedCalendar), repository.calendarEvents())
+        assertEquals(listOf(personalEvent, importedCalendar), repository.upcomingEvents(0))
     }
 
     @Test

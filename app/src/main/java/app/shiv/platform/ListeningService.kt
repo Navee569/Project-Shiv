@@ -27,7 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /** User-started, visible, on-device transcription. Transcripts are transient and never stored. */
-class ListeningService : Service() {
+open class ListeningService : Service() {
     private var transcriber: Brain.OnDeviceTranscriber? = null
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -90,7 +90,7 @@ class ListeningService : Service() {
     private fun listeningNotification(): Notification {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Shiv listening mode", NotificationManager.IMPORTANCE_LOW))
-        val stop = PendingIntent.getService(this, 3, Intent(this, ListeningService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val stop = PendingIntent.getService(this, 3, Intent(this, app.shiv.ListeningService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Shiv is listening on this phone")

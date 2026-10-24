@@ -35,7 +35,7 @@ object PendingEventConfirmation {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Event confirmation", NotificationManager.IMPORTANCE_HIGH))
-        val confirm = Intent(context, PendingEventReceiver::class.java).apply {
+        val confirm = Intent(context, app.shiv.PendingEventReceiver::class.java).apply {
             action = ACTION_SAVE
             putExtra("eventId", event.id)
         }
@@ -54,7 +54,7 @@ object PendingEventConfirmation {
     internal fun isSaveAction(action: String?) = action == ACTION_SAVE
 }
 
-class PendingEventReceiver : BroadcastReceiver() {
+open class PendingEventReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!PendingEventConfirmation.isSaveAction(intent.action)) return
         val eventId = intent.getStringExtra("eventId") ?: return

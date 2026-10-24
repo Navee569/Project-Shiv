@@ -30,7 +30,7 @@ object AlarmScheduler {
     }
 
     private fun pendingIntent(context: Context, event: EventRecord): PendingIntent {
-        val intent = Intent(context, ReminderReceiver::class.java)
+        val intent = Intent(context, app.shiv.ReminderReceiver::class.java)
             .putExtra(EXTRA_EVENT_ID, event.id)
             .putExtra(EXTRA_TITLE, event.title)
             .putExtra(EXTRA_START, event.startsAt)

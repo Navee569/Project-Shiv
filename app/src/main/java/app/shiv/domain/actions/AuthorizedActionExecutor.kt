@@ -82,6 +82,24 @@ class AuthorizedActionExecutor(
             return ActionExecutionReport(decision, ActionExecutionStatus.AUDIT_UNAVAILABLE)
         }
 
+        // Audit persistence can suspend long enough for a time-sensitive proposal to expire.
+        // Re-evaluate against the clock immediately before dispatch, not the earlier decision.
+        val finalDecision = ActionAuthorizationPolicy.authorize(request, clock.nowMillis())
+        if (finalDecision.outcome != ActionAuthorizationOutcome.ALLOW) {
+            val finalStatus = when (finalDecision.outcome) {
+                ActionAuthorizationOutcome.DENY_INVALID_REQUEST -> ActionExecutionStatus.DENIED_INVALID_REQUEST
+                ActionAuthorizationOutcome.DENY_PERMISSION -> ActionExecutionStatus.DENIED_PERMISSION
+                ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> ActionExecutionStatus.AWAITING_CONFIRMATION
+                ActionAuthorizationOutcome.ALLOW -> error("Handled above")
+            }
+            val denied = startedEntry.copy(outcome = finalStatus.name, result = "Rejected at dispatch-time authorization")
+            val recorded = record(denied)
+            return ActionExecutionReport(
+                finalDecision,
+                if (recorded) finalStatus else ActionExecutionStatus.AUDIT_UNAVAILABLE
+            )
+        }
+
         val dispatchResult = try {
             dispatch()
         } catch (cancelled: CancellationException) {
@@ -94,7 +112,7 @@ class AuthorizedActionExecutor(
             )
             val recorded = record(failed)
             return ActionExecutionReport(
-                decision,
+                finalDecision,
                 if (recorded) ActionExecutionStatus.FAILED else ActionExecutionStatus.AUDIT_UNAVAILABLE,
                 failed.result,
                 dispatchAttempted = true
@@ -108,7 +126,7 @@ class AuthorizedActionExecutor(
         )
         val recorded = record(completed)
         return ActionExecutionReport(
-            decision,
+            finalDecision,
             if (recorded) ActionExecutionStatus.SUCCEEDED else ActionExecutionStatus.AUDIT_UNAVAILABLE,
             dispatchResult.result,
             dispatched = true,

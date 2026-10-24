@@ -4,6 +4,8 @@ import app.shiv.domain.model.ActionLogEntry
 import app.shiv.domain.integration.DiagnosticCode
 import app.shiv.domain.integration.DiagnosticEvent
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -70,6 +72,39 @@ class AuthorizedActionExecutorTest {
         assertEquals(ActionExecutionStatus.DENIED_INVALID_REQUEST, confirmed.status)
         assertFalse(confirmed.dispatched)
         assertFalse(dispatched)
+    }
+
+    @Test
+    fun eventThatExpiresWhileStartedAuditWriteIsSuspendedIsRejected() = runBlocking {
+        var now = 1_000L
+        val writeEntered = CompletableDeferred<Unit>()
+        val allowWrite = CompletableDeferred<Unit>()
+        val entries = mutableListOf<ActionLogEntry>()
+        val audit = ActionAuditRepository { entry ->
+            if (entry.outcome == ActionExecutionStatus.STARTED.name) {
+                writeEntered.complete(Unit)
+                allowWrite.await()
+            }
+            entries += entry
+        }
+        val executor = AuthorizedActionExecutor(auditRepository = audit, clock = ActionClock { now })
+        var dispatched = false
+
+        val pending = async {
+            executor.execute(createEventRequest(configuredTier = ActionTier.ASK_FIRST.name).copy(confirmed = true)) {
+                dispatched = true
+                ActionDispatchResult("unexpected")
+            }
+        }
+        writeEntered.await()
+        now = 2_000L
+        allowWrite.complete(Unit)
+        val report = pending.await()
+
+        assertEquals(ActionExecutionStatus.DENIED_INVALID_REQUEST, report.status)
+        assertFalse(report.dispatched)
+        assertFalse(dispatched)
+        assertEquals(ActionExecutionStatus.DENIED_INVALID_REQUEST.name, entries.last().outcome)
     }
 
     @Test

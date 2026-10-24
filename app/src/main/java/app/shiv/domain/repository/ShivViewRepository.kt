@@ -2,9 +2,10 @@ package app.shiv.domain.repository
 
 import app.shiv.domain.model.*
 import kotlinx.coroutines.flow.Flow
+import app.shiv.domain.integration.CalendarImportRepository
 
 /** Persistence capabilities required by the app's presentation layer. */
-interface ShivViewRepository {
+interface ShivViewRepository : CalendarImportRepository {
     fun messages(): Flow<List<ChatMessage>>
     suspend fun addMessage(value: ChatMessage)
     suspend fun saveProfile(value: UserProfile)
@@ -20,10 +21,10 @@ interface ShivViewRepository {
     fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
     suspend fun savePendingEvent(value: PendingEventRecord)
     suspend fun deletePendingEvent(id: String)
-    suspend fun calendarEvents(): List<EventRecord>
+    override suspend fun calendarEvents(): List<EventRecord>
     suspend fun clearCalendarEvents()
     suspend fun logAction(value: ActionLogEntry)
-    suspend fun reminderRule(key: String): ReminderRule?
+    override suspend fun reminderRule(key: String): ReminderRule?
     suspend fun saveRule(value: ReminderRule)
     fun actionLog(): Flow<List<ActionLogEntry>>
     fun drafts(): Flow<List<ReplyDraft>>

@@ -7,6 +7,7 @@ import app.shiv.domain.brain.BrainReply
 import app.shiv.domain.brain.SmsDraft
 import app.shiv.domain.integration.ActionPermissionPort
 import app.shiv.domain.integration.CalendarSyncPort
+import app.shiv.domain.integration.CalendarSyncFailure
 import app.shiv.domain.integration.DiagnosticCode
 import app.shiv.domain.integration.DiagnosticArea
 import app.shiv.domain.integration.DiagnosticEvent
@@ -32,6 +33,7 @@ import app.shiv.domain.actions.ActionAuditRepository
 import app.shiv.domain.actions.ActionDispatchResult
 import app.shiv.domain.actions.ActionExecutionStatus
 import app.shiv.domain.actions.AuthorizedActionExecutor
+import app.shiv.domain.actions.ActionConfirmationGate
 
 sealed class PendingShivAction(val title: String, val explanation: String) {
     class SaveProfile(val name: String, val notes: String) : PendingShivAction("Update your local profile?", "Confirm to replace the profile details stored on this phone.")
@@ -53,6 +55,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     private val reminders: ReminderSchedulingPort = AndroidReminderSchedulingPort(app)
     private val calendarSync: CalendarSyncPort = AndroidCalendarSyncPort(app, dao, permissions, diagnostics)
     private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction), diagnostics = diagnostics)
+    private val confirmationGate = ActionConfirmationGate()
     private val brainRuntime = BrainProvider.get(app.applicationContext)
     private val brain: BrainPort = brainRuntime
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -478,9 +481,11 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     /** Final authorization, audit, and side effect all run after the owner confirms. */
     fun confirmPending(onSmsDraft: (SmsDraft) -> Unit = {}) {
         val action = pendingAction.value ?: return
-        viewModelScope.launch {
-            val (type, args, tier) = pendingActionRequest(action)
-            val report = actionExecutor.execute(actionRequest(type, args, tier, confirmed = true)) {
+        val claim = confirmationGate.tryAcquire() ?: return
+        val job = viewModelScope.launch {
+            try {
+                val (type, args, tier) = pendingActionRequest(action)
+                val report = actionExecutor.execute(actionRequest(type, args, tier, confirmed = true)) {
                 when (action) {
                     is PendingShivAction.SaveProfile -> dao.saveProfile(UserProfile(name = action.name.trim(), notes = action.notes.trim()))
                     is PendingShivAction.SaveEvent -> saveEvent(action.event)
@@ -516,12 +521,16 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                         else -> null
                     }
                 )
-            }
-            if (report.dispatched) pendingAction.value = null
-            if (report.status != ActionExecutionStatus.SUCCEEDED) {
-                dao.addMessage(ChatMessage(text = executionFailure(report, action.title.lowercase()), fromUser = false, tier = report.authorization.effectiveTier.name))
+                }
+                if (report.dispatched) pendingAction.compareAndSet(action, null)
+                if (report.status != ActionExecutionStatus.SUCCEEDED) {
+                    dao.addMessage(ChatMessage(text = executionFailure(report, action.title.lowercase()), fromUser = false, tier = report.authorization.effectiveTier.name))
+                }
+            } finally {
+                claim.close()
             }
         }
+        job.invokeOnCompletion { claim.close() }
     }
 
     private fun pendingActionRequest(action: PendingShivAction): Triple<String, Map<String, String>, ActionTier> = when (action) {
@@ -542,7 +551,11 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             val result = calendarSync.synchronize()
             lastCalendarSync.value = when {
                 result.permissionDenied -> "Calendar permission is off. Grant access before syncing."
-                result.failed -> "Calendar sync failed. Your saved events were left unchanged."
+                result.failureReason == CalendarSyncFailure.PROVIDER_UNAVAILABLE -> "The calendar provider did not return data. Existing events and reminders were left unchanged."
+                result.failureReason == CalendarSyncFailure.EVENT_PERSISTENCE -> "Calendar events could not be saved. Existing events and reminders were left unchanged."
+                result.failureReason == CalendarSyncFailure.REMINDER_SCHEDULING -> "Calendar events were updated, but reminder scheduling failed; some reminders may need repair."
+                result.failureReason == CalendarSyncFailure.AUDIT_WRITE -> "Calendar events and reminders were updated, but the sync action could not be recorded."
+                result.failed -> "Calendar sync failed before any changes were made."
                 else -> "Synced ${result.importedCount} upcoming calendar events on this phone."
             }
             ProactiveWorker.checkSoon(context.applicationContext)

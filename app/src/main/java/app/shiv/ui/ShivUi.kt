@@ -341,7 +341,7 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
                 listeningNotice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Button(onClick = {
                     if (listening) {
-                        context.stopService(Intent(context, ListeningService::class.java)); listening = false
+                        context.stopService(Intent(context, app.shiv.ListeningService::class.java)); listening = false
                         context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).edit().putBoolean("listening", false).apply()
                     } else if (Build.VERSION.SDK_INT >= 33 && !hasPermission(context, Manifest.permission.POST_NOTIFICATIONS)) listeningNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     else if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
@@ -479,7 +479,7 @@ private fun TierSettingRow(title: String, minimum: ActionTier, selected: ActionT
 private fun hasPermission(context: Context, permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
 private fun startListening(context: Context) {
-    runCatching { ContextCompat.startForegroundService(context, Intent(context, ListeningService::class.java)) }
+    runCatching { ContextCompat.startForegroundService(context, Intent(context, app.shiv.ListeningService::class.java)) }
 }
 
 private fun sourceLabel(source: String) = when (source) {

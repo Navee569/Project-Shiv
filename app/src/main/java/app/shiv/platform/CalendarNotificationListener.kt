@@ -14,7 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /** Optional user-enabled listener. Notification text is inspected in memory and never stored. */
-class CalendarNotificationListener : NotificationListenerService() {
+open class CalendarNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val brain = Brain()
 

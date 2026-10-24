@@ -17,7 +17,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.util.Locale
 
-class ReminderVoiceService : Service(), TextToSpeech.OnInitListener {
+open class ReminderVoiceService : Service(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var eventTitle: String = "Your event is coming up"
     private var startAt: Long = 0L
@@ -60,7 +60,7 @@ class ReminderVoiceService : Service(), TextToSpeech.OnInitListener {
         val channel = ReminderReceiver.CHANNEL_ID
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(android.app.NotificationChannel(channel, "Shiv reminders", android.app.NotificationManager.IMPORTANCE_HIGH))
-        val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(this, 1, Intent(this, app.shiv.MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("Shiv is speaking").setContentText(text).setContentIntent(open).setOngoing(true).build()
     }
 

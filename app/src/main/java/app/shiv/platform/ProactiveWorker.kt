@@ -47,7 +47,7 @@ internal data class ProactiveDependencies(
 )
 
 /** Periodically asks the on-device Brain whether an imminent event deserves a nudge. */
-class ProactiveWorker internal constructor(
+open class ProactiveWorker internal constructor(
     context: Context,
     params: WorkerParameters,
     private val injected: ProactiveDependencies?
@@ -142,13 +142,13 @@ class ProactiveWorker internal constructor(
         internal const val SENT_ACTION = "Proactive notification"
 
         fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<ProactiveWorker>(15, TimeUnit.MINUTES).build()
+            val request = PeriodicWorkRequestBuilder<app.shiv.ProactiveWorker>(15, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context.applicationContext)
                 .enqueueUniquePeriodicWork(PERIODIC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
         }
 
         fun checkSoon(context: Context) {
-            val request = OneTimeWorkRequestBuilder<ProactiveWorker>().build()
+            val request = OneTimeWorkRequestBuilder<app.shiv.ProactiveWorker>().build()
             WorkManager.getInstance(context.applicationContext)
                 .enqueueUniqueWork(CHECK_WORK, ExistingWorkPolicy.KEEP, request)
         }

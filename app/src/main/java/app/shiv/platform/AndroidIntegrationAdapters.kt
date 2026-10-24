@@ -59,9 +59,15 @@ class AndroidCalendarSyncPort(
             return CalendarSyncResult(permissionDenied = true)
         }
         return try {
-            CalendarSyncResult(importedCount = withContext(Dispatchers.IO) {
-                CalendarSyncer.sync(appContext, repository)
-            })
+            val result = withContext(Dispatchers.IO) {
+                CalendarSyncer.sync(
+                    AndroidCalendarEventSource(appContext),
+                    repository,
+                    AndroidReminderSchedulingPort(appContext)
+                )
+            }
+            if (result.failed) recordDiagnosticSafely(DiagnosticCode.CALENDAR_SYNC_FAILED)
+            result
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {

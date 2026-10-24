@@ -6,12 +6,15 @@ import android.content.Context
 import app.shiv.data.mapping.RoomRecordMappers
 import app.shiv.domain.model.*
 import app.shiv.domain.repository.ShivViewRepository
+import app.shiv.domain.integration.CalendarImportRepository
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /** Maps pure domain records at the Room boundary. */
-class RoomShivViewRepository internal constructor(private val dao: ShivDao) : ShivViewRepository {
-    constructor(context: Context) : this(ShivDatabase.get(context.applicationContext).dao())
+class RoomShivViewRepository internal constructor(private val database: ShivDatabase) : ShivViewRepository {
+    private val dao = database.dao()
+    constructor(context: Context) : this(ShivDatabase.get(context.applicationContext))
 
     override fun messages(): Flow<List<ChatMessage>> = dao.messages().map { rows -> rows.map(RoomRecordMappers::toDomain) }
     override suspend fun addMessage(value: ChatMessage) = dao.addMessage(RoomRecordMappers.toRoom(value))
@@ -30,6 +33,15 @@ class RoomShivViewRepository internal constructor(private val dao: ShivDao) : Sh
     override suspend fun deletePendingEvent(id: String) = dao.deletePendingEvent(id)
     override suspend fun calendarEvents(): List<EventRecord> = dao.calendarEvents().map(RoomRecordMappers::toDomain)
     override suspend fun clearCalendarEvents() = dao.clearCalendarEvents()
+    override suspend fun replaceCalendarEvents(events: List<EventRecord>) {
+        database.withTransaction {
+            dao.clearCalendarEvents()
+            events.forEach { dao.saveEvent(RoomRecordMappers.toRoom(it)) }
+        }
+    }
+    override suspend fun recordCalendarImport(eventCount: Int) = dao.logAction(
+        RoomRecordMappers.toRoom(ActionLogEntry(action = "Synced phone calendar", tier = "FREE", outcome = "$eventCount events saved locally"))
+    )
     override suspend fun logAction(value: ActionLogEntry) = dao.logAction(RoomRecordMappers.toRoom(value))
     override suspend fun reminderRule(key: String): ReminderRule? = dao.reminderRule(key)?.let(RoomRecordMappers::toDomain)
     override suspend fun saveRule(value: ReminderRule) = dao.saveRule(RoomRecordMappers.toRoom(value))

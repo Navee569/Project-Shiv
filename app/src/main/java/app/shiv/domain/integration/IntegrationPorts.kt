@@ -2,6 +2,7 @@ package app.shiv.domain.integration
 
 import app.shiv.domain.actions.ActionPermissionState
 import app.shiv.domain.model.EventRecord
+import app.shiv.domain.model.ReminderRule
 
 /** Platform permission state supplied to deterministic action authorization. */
 fun interface ActionPermissionPort {
@@ -17,8 +18,21 @@ interface ReminderSchedulingPort {
 data class CalendarSyncResult(
     val importedCount: Int = 0,
     val permissionDenied: Boolean = false,
-    val failed: Boolean = false
+    val failed: Boolean = false,
+    val eventsUpdated: Boolean = false,
+    val remindersUpdated: Boolean = false,
+    val failureReason: CalendarSyncFailure? = null
 )
+
+enum class CalendarSyncFailure { PROVIDER_UNAVAILABLE, EVENT_PERSISTENCE, REMINDER_SCHEDULING, AUDIT_WRITE }
+
+/** Atomic calendar-owned event replacement and its local reminder preference/audit record. */
+interface CalendarImportRepository {
+    suspend fun calendarEvents(): List<EventRecord>
+    suspend fun replaceCalendarEvents(events: List<EventRecord>)
+    suspend fun reminderRule(key: String): ReminderRule?
+    suspend fun recordCalendarImport(eventCount: Int)
+}
 
 /** Reads and imports events from the device calendar when the owner grants access. */
 fun interface CalendarSyncPort {

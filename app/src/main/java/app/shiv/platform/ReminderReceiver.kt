@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class ReminderReceiver : BroadcastReceiver() {
+open class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra(AlarmScheduler.EXTRA_TITLE) ?: "Your upcoming event"
         val start = intent.getLongExtra(AlarmScheduler.EXTRA_START, 0L)
@@ -33,7 +33,7 @@ class ReminderReceiver : BroadcastReceiver() {
         }
         val spoken = context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).getBoolean("speak_reminders", true)
         if (spoken) {
-            ContextCompat.startForegroundService(context, Intent(context, ReminderVoiceService::class.java).putExtra(AlarmScheduler.EXTRA_TITLE, title).putExtra(AlarmScheduler.EXTRA_START, start))
+            ContextCompat.startForegroundService(context, Intent(context, app.shiv.ReminderVoiceService::class.java).putExtra(AlarmScheduler.EXTRA_TITLE, title).putExtra(AlarmScheduler.EXTRA_START, start))
         } else {
             showNotification(context, title, start)
         }
@@ -44,7 +44,7 @@ class ReminderReceiver : BroadcastReceiver() {
         fun showNotification(context: Context, title: String, start: Long) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Shiv reminders", NotificationManager.IMPORTANCE_HIGH))
-            val open = PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val open = PendingIntent.getActivity(context, 1, Intent(context, app.shiv.MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val whenText = if (start > 0) android.text.format.DateFormat.format("EEE, h:mm a", start) else "soon"
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
