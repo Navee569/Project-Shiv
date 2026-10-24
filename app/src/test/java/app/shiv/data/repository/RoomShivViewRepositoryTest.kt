@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,5 +80,73 @@ class RoomShivViewRepositoryTest {
         repository.deletePendingEvent(pending.id)
         assertEquals(emptyList<MemoryFact>(), repository.memories().first())
         assertEquals(emptyList<PendingEventRecord>(), repository.pendingEvents(0).first())
+    }
+
+    @Test
+    fun eventQueriesAndDeletionPreserveSourceAndTimeBoundaries() = runBlocking {
+        val oldCalendar = EventRecord(id = "old-calendar", title = "Old", startsAt = 9L, source = "CALENDAR")
+        val calendar = EventRecord(id = "calendar", title = "Calendar", startsAt = 10L, source = "CALENDAR")
+        val chat = EventRecord(id = "chat", title = "Chat", startsAt = 20L, source = "CHAT")
+        repository.saveEvent(oldCalendar)
+        repository.saveEvent(calendar)
+        repository.saveEvent(chat)
+
+        assertEquals(listOf(calendar, chat), repository.upcomingEvents(10L))
+        assertEquals(listOf(calendar, oldCalendar), repository.calendarEvents().sortedBy { it.id })
+
+        repository.deleteEvent(calendar.id)
+        assertEquals(listOf(oldCalendar, chat), repository.events(0L).first())
+        repository.clearCalendarEvents()
+        assertEquals(listOf(chat), repository.upcomingEvents(0L))
+        assertEquals(emptyList<EventRecord>(), repository.calendarEvents())
+    }
+
+    @Test
+    fun oneShotLookupsAndClearOperationsCoverEveryRepositoryRecord() = runBlocking {
+        val message = ChatMessage(id = "message", text = "Hello", fromUser = true)
+        val profile = UserProfile(name = "Owner", notes = "Local")
+        val memory = MemoryFact(id = "memory", text = "Likes tea")
+        val event = EventRecord(id = "event", title = "Call", startsAt = 100L)
+        val pending = PendingEventRecord(id = "pending", title = "Maybe", startsAt = 200L)
+        val action = ActionLogEntry(id = "action", action = "Saved", tier = "FREE", outcome = "Local")
+        val rule = ReminderRule("lead", "15")
+        val draft = ReplyDraft(id = "draft", person = "Raj", body = "Hello")
+        val tier = ActionTierSetting("CREATE_EVENT", "ASK_FIRST")
+        val settings = ShivSettings(proactiveEnabled = false)
+        repository.addMessage(message)
+        repository.saveProfile(profile)
+        repository.saveMemory(memory)
+        repository.saveEvent(event)
+        repository.savePendingEvent(pending)
+        repository.logAction(action)
+        repository.saveRule(rule)
+        repository.saveDraft(draft)
+        repository.saveActionTier(tier)
+        repository.saveSettings(settings)
+
+        assertEquals(profile, repository.profileOnce())
+        assertEquals(settings, repository.settingsOnce())
+
+        repository.clearMessages()
+        repository.clearProfile()
+        repository.clearMemories()
+        repository.clearEvents()
+        repository.clearPendingEvents()
+        repository.clearLog()
+        repository.clearRules()
+        repository.clearDrafts()
+        repository.clearActionTiers()
+        repository.clearSettings()
+
+        assertEquals(emptyList<ChatMessage>(), repository.messages().first())
+        assertNull(repository.profileOnce())
+        assertEquals(emptyList<MemoryFact>(), repository.memories().first())
+        assertEquals(emptyList<EventRecord>(), repository.upcomingEvents(0L))
+        assertEquals(emptyList<PendingEventRecord>(), repository.pendingEvents(0L).first())
+        assertEquals(emptyList<ActionLogEntry>(), repository.actionLog().first())
+        assertNull(repository.reminderRule("lead"))
+        assertEquals(emptyList<ReplyDraft>(), repository.drafts().first())
+        assertEquals(emptyList<ActionTierSetting>(), repository.actionTiers().first())
+        assertNull(repository.settingsOnce())
     }
 }
