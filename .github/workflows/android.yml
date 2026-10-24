@@ -23,6 +23,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, test, and lint
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -w /dev/kvm
       - name: Verify SQLCipher and Keystore persistence on Android
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
@@ -32,22 +38,15 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            set +e
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon
-            test_status=$?
-            if [ "$test_status" -ne 0 ]; then
-              mkdir -p app/build/ci-diagnostics
-              adb logcat -d -b all -v threadtime > app/build/ci-diagnostics/android-test-logcat.txt || true
-            fi
-            exit "$test_status"
+          disable-linux-hw-accel: false
+          script: bash .github/scripts/verify-android-persistence.sh
       - name: Upload Android test failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: android-instrumentation-diagnostics
           path: |
-            app/build/ci-diagnostics/android-test-logcat.txt
+            app/build/ci-diagnostics/
             app/build/reports/androidTests/connected/debug/
           if-no-files-found: warn
           retention-days: 7
