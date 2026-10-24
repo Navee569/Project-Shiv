@@ -1,5 +1,6 @@
 package app.shiv
 
+import app.shiv.data.mapping.*
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import kotlinx.coroutines.CoroutineScope

@@ -1,15 +1,6 @@
 package app.shiv.domain.repository
 
-import app.shiv.ActionLogEntry
-import app.shiv.ActionTierSetting
-import app.shiv.ChatMessage
-import app.shiv.EventRecord
-import app.shiv.MemoryFact
-import app.shiv.PendingEventRecord
-import app.shiv.ReminderRule
-import app.shiv.ReplyDraft
-import app.shiv.ShivSettings
-import app.shiv.UserProfile
+import app.shiv.domain.model.*
 import kotlinx.coroutines.flow.Flow
 
 /** Persistence capabilities required by the app's presentation layer. */
@@ -27,6 +18,7 @@ interface ShivViewRepository {
     suspend fun saveEvent(value: EventRecord)
     suspend fun deleteEvent(id: String)
     fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
+    suspend fun savePendingEvent(value: PendingEventRecord)
     suspend fun deletePendingEvent(id: String)
     suspend fun calendarEvents(): List<EventRecord>
     suspend fun clearCalendarEvents()

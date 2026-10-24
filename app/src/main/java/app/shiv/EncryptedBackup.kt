@@ -3,6 +3,7 @@ package app.shiv
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import app.shiv.data.mapping.RoomRecordMappers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -64,25 +65,25 @@ class EncryptedBackup(context: Context) {
         database.withTransaction {
             dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearPendingEvents()
             dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers(); dao.clearSettings()
-            dao.saveProfile(profile)
-            dao.saveMessages(messages); dao.saveMemories(memories); dao.saveEvents(events); dao.savePendingEvents(pendingEvents)
-            dao.saveActions(actions); dao.saveRules(rules); dao.saveDrafts(drafts); dao.saveActionTiers(tiers); dao.saveSettings(settings)
+            dao.saveProfile(RoomRecordMappers.toRoom(profile))
+            dao.saveMessages(messages.map(RoomRecordMappers::toRoom)); dao.saveMemories(memories.map(RoomRecordMappers::toRoom)); dao.saveEvents(events.map(RoomRecordMappers::toRoom)); dao.savePendingEvents(pendingEvents.map(RoomRecordMappers::toRoom))
+            dao.saveActions(actions.map(RoomRecordMappers::toRoom)); dao.saveRules(rules.map(RoomRecordMappers::toRoom)); dao.saveDrafts(drafts.map(RoomRecordMappers::toRoom)); dao.saveActionTiers(tiers.map(RoomRecordMappers::toRoom)); dao.saveSettings(RoomRecordMappers.toRoom(settings))
         }
     }
 
     private suspend fun makeSnapshot() = JSONObject()
         .put("format", 1)
         .put("createdAt", System.currentTimeMillis())
-        .put("profile", dao.profileOnce()?.let(::profileJson) ?: JSONObject.NULL)
-        .put("messages", jsonArrayTyped(dao.allMessages(), ::messageJson))
-        .put("memories", jsonArrayTyped(dao.allMemories(), ::memoryJson))
-        .put("events", jsonArrayTyped(dao.allEvents(), ::eventJson))
-        .put("pendingEvents", jsonArrayTyped(dao.allPendingEvents(), ::pendingEventJson))
-        .put("actions", jsonArrayTyped(dao.allActions(), ::actionJson))
-        .put("rules", jsonArrayTyped(dao.allRules(), ::ruleJson))
-        .put("drafts", jsonArrayTyped(dao.allDrafts(), ::draftJson))
-        .put("actionTiers", jsonArrayTyped(dao.allActionTiers(), ::tierJson))
-        .put("settings", settingsJson(dao.settingsOnce() ?: ShivSettings()))
+        .put("profile", dao.profileOnce()?.let(RoomRecordMappers::toDomain)?.let(::profileJson) ?: JSONObject.NULL)
+        .put("messages", jsonArrayTyped(dao.allMessages().map(RoomRecordMappers::toDomain), ::messageJson))
+        .put("memories", jsonArrayTyped(dao.allMemories().map(RoomRecordMappers::toDomain), ::memoryJson))
+        .put("events", jsonArrayTyped(dao.allEvents().map(RoomRecordMappers::toDomain), ::eventJson))
+        .put("pendingEvents", jsonArrayTyped(dao.allPendingEvents().map(RoomRecordMappers::toDomain), ::pendingEventJson))
+        .put("actions", jsonArrayTyped(dao.allActions().map(RoomRecordMappers::toDomain), ::actionJson))
+        .put("rules", jsonArrayTyped(dao.allRules().map(RoomRecordMappers::toDomain), ::ruleJson))
+        .put("drafts", jsonArrayTyped(dao.allDrafts().map(RoomRecordMappers::toDomain), ::draftJson))
+        .put("actionTiers", jsonArrayTyped(dao.allActionTiers().map(RoomRecordMappers::toDomain), ::tierJson))
+        .put("settings", settingsJson(dao.settingsOnce()?.let(RoomRecordMappers::toDomain) ?: ShivSettings()))
 
     private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
         val spec = PBEKeySpec(password, salt, 310_000, 256)
