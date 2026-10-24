@@ -1,15 +1,16 @@
 # Defect log
 
-| ID | Severity | Status | Fix | Worker regression |
+| ID | Severity | Status | Fix | Regression coverage |
 |---|---|---|---|---|
 | M0-001 | S2 | CLOSED — tester PASS | Require a listed eventId in Brain notification arguments; dispatch and account for that exact event. Reject missing/unknown identities. | alertForBAccountsForBAndCannotRepeatB; missingAndUnknownEventIdsCannotDispatch |
 | M0-002 | S2 | CLOSED — tester PASS | Room transactions serialize final cap/deduplication checks and a durable reservation before Android dispatch. Reservations count toward cap/deduplication. | overlappingWorkersWithOneDailySlotSendExactlyOneAlert; overlappingWorkersForSameEventSendExactlyOnce; failureAfterDispatchKeepsReservationAndPreventsRetryDuplicate |
 | M0-003 | S2 | CLOSED — tester PASS | After inference and again immediately before dispatch, read current settings, tier, permission, event contents and time. Cancel disabled, quiet, expired, deleted or edited events. | disablingProactiveDuringInferenceCancelsAlert; enteringQuietHoursDuringInferenceCancelsAlert; deletingEventDuringInferenceCancelsAlert; expiringEventDuringInferenceCancelsAlert; editingEventDuringInferenceCancelsAlert; revokingPermissionDuringInferenceCancelsAlert; requiringConfirmationDuringInferenceCancelsAlert |
 | M0-004 | S2 | CLOSED — tester PASS | SQL excludes delivered/reserved events before applying LIMIT 8. | firstEightSentEventsDoNotHideNinthUnsentEvent |
+| M1-001 | S2 | FIXED LOCALLY — exact-commit CI pending | Validate action identity against an allowlist and enforce each action's exact argument shape and value constraints before tier/permission/confirmation gates. Invalid requests remain denied even when confirmed. | authorizationRejectsUnknownAndBlankActionIdentities; authorizationRejectsMissingExtraAndMalformedArguments; confirmationCannotMakeAnInvalidRequestAuthorizable; validSupportedActionsAreAccepted |
 
-Verification: 13 worker-level JVM tests use actual CoroutineWorker.doWork, real in-memory Room queries/transactions and fake Brain/notification ports. The narrow suite and final assembleDebug, testDebugUnitTest (16 tests total) and lintDebug pass locally. These tests use synthetic data and do not change production SQLCipher initialization. No device testing was performed; notification delivery uses a fake port.
+M0 verification: 13 worker-level JVM tests use actual CoroutineWorker.doWork, real in-memory Room queries/transactions and fake Brain/notification ports. The narrow suite and final assembleDebug, testDebugUnitTest (16 tests total) and lintDebug passed locally. These tests use synthetic data and do not change production SQLCipher initialization. No device testing was performed; notification delivery uses a fake port.
 
-Limit: a crash or uncertain dispatch/commit failure retains the durable reservation. It consumes a daily slot and suppresses that event to avoid a possible duplicate, even when delivery cannot be confirmed. A definite no-delivery result releases the reservation.
+M0 limit: a crash or uncertain dispatch/commit failure retains the durable reservation. It consumes a daily slot and suppresses that event to avoid a possible duplicate, even when delivery cannot be confirmed. A definite no-delivery result releases the reservation.
 
 | Fix commit | CI run | Result |
 |---|---|---|
