@@ -16,8 +16,28 @@ class LocalKeyStore(private val context: Context) {
         val prefs = context.getSharedPreferences("shiv_secure", Context.MODE_PRIVATE)
         val wrapped = prefs.getString("wrapped_db_key", null)
         if (wrapped != null) {
-            val packed = Base64.decode(wrapped, Base64.NO_WRAP)
-            return cipher(Cipher.DECRYPT_MODE, getOrCreateWrappingKey(), packed.copyOfRange(0, 12)).doFinal(packed.copyOfRange(12, packed.size))
+            val packed = try { Base64.decode(wrapped, Base64.NO_WRAP) }
+            catch (failure: IllegalArgumentException) { throw DatabaseKeyRecoveryException("The wrapped database key is corrupt; encrypted data was preserved.", failure) }
+            val wrappingKey = getExistingWrappingKey()
+                ?: throw DatabaseKeyRecoveryException("The Android Keystore key for Shiv's existing database is missing. The encrypted database was preserved; restore from a valid encrypted backup if available.")
+            return try {
+                require(packed.size == 12 + 32 + 16) { "Wrapped database key has an invalid AES-256/GCM envelope length" }
+                val recovered = cipher(Cipher.DECRYPT_MODE, wrappingKey, packed.copyOfRange(0, 12)).doFinal(packed.copyOfRange(12, packed.size))
+                require(recovered.size == 32) { "Unwrapped database key length is invalid" }
+                recovered
+            } catch (failure: Exception) {
+                throw DatabaseKeyRecoveryException("Shiv could not unlock its existing database key. The encrypted database was preserved; restore from a valid encrypted backup if available.", failure)
+            }
+        }
+        if (databaseKeyState(
+                hasWrappedMetadata = false,
+                databaseFileExists = context.getDatabasePath("shiv-memory.db").exists()
+            ) == DatabaseKeyState.MISSING_METADATA_WITH_DATABASE
+        ) {
+            throw DatabaseKeyRecoveryException(
+                "Shiv found an existing encrypted database but its wrapped key metadata is missing. " +
+                    "The database was preserved; restore from a valid encrypted backup if available."
+            )
         }
         val raw = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         val cipher = cipher(Cipher.ENCRYPT_MODE, getOrCreateWrappingKey(), null)
@@ -30,9 +50,12 @@ class LocalKeyStore(private val context: Context) {
         if (mode == Cipher.ENCRYPT_MODE) init(mode, key) else init(mode, key, GCMParameterSpec(128, requireNotNull(iv)))
     }
 
-    private fun getOrCreateWrappingKey(): SecretKey {
+    private fun getExistingWrappingKey(): SecretKey? {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        return store.getKey(ALIAS, null) as? SecretKey
+    }
+    private fun getOrCreateWrappingKey(): SecretKey {
+        getExistingWrappingKey()?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setRandomizedEncryptionRequired(true).build())
         return generator.generateKey()
@@ -40,3 +63,7 @@ class LocalKeyStore(private val context: Context) {
 
     private companion object { const val ALIAS = "shiv_database_wrapping_key" }
 }
+
+
+/** Typed failure that prevents replacing or deleting an existing encrypted database. */
+class DatabaseKeyRecoveryException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)

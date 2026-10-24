@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider android:name="app.shiv.FailingBackupProvider"
+            android:authorities="app.shiv.test.failing-backup"
+            android:exported="true" />
+    </application>
+</manifest>

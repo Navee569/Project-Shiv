@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-24 Asia/Calcutta",
+  "tested_source": "73c7242cb5cfc184f5701372ef19753ddc35789a",
+  "product_correction_source": "cbad02629898b623a3c758c44c3c1d7ff3151139",
+  "device": {
+    "model": "SM-S911B",
+    "android_release": "16",
+    "sdk": "36",
+    "soc": "SM8550"
+  },
+  "device_serial": "redacted",
+  "installed_apks": [
+    {
+      "package": "app.shiv",
+      "sha256": "fc3ceeba7d87566c8254cb667ac2995e03ea3bbf2c384155cb9569e9187e0e9a",
+      "installed_matches": true
+    },
+    {
+      "package": "app.shiv.test",
+      "sha256": "c44819b4b4a1bfa82d1ec22e9d606821e05efe0792e930fa47f6545dd8e81c00",
+      "installed_matches": true
+    }
+  ],
+  "launches": [
+    {
+      "file": "s23-cold-launch.txt",
+      "state": "COLD",
+      "status": "ok",
+      "wait_ms": 727
+    },
+    {
+      "file": "s23-restart-launch.txt",
+      "state": "COLD",
+      "status": "ok",
+      "wait_ms": 668
+    }
+  ],
+  "restore_cases_completed": [
+    "destinationOpenFailureClearsPassphraseAndTemporaryOutput",
+    "destinationWriteFailureDeletesPartialOutputAndClearsPassphrase",
+    "malformedRecordsInEveryCollectionLeaveAllTablesUnchanged",
+    "historicalNullProfileRestoresSuccessfully",
+    "sqliteFailureAfterWritesRollsBackEveryAffectedTable",
+    "corruptTruncatedAndWrongPasswordInputsPreserveAllTables"
+  ],
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "instrumentation_seconds": 60.384,
+  "instrumentation_result": "OK (6 tests); terminal -1 is Android RESULT_OK",
+  "restart_app_crash_buffer_empty": true,
+  "nonfatal_error_log_retained": true,
+  "test_fixture_uninstalled": true,
+  "main_app_retained": true,
+  "app_data_cleared": false,
+  "visible_shiv_labels": null,
+  "scope_limit": "Startup/restart and six isolated in-memory Room restore/export tests only; no full physical-device, encryption/Keystore fault, offline capture, model or security acceptance."
+}
