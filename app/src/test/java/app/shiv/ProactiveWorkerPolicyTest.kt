@@ -1,5 +1,6 @@
 package app.shiv
 
+import app.shiv.platform.proactiveNotificationTier
 import app.shiv.domain.actions.ActionTier
 import app.shiv.domain.scheduling.ProactiveSchedulePolicy
 import org.junit.Assert.assertEquals

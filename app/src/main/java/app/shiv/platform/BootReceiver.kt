@@ -1,4 +1,8 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.data.local.*
+
+import app.shiv.*
 
 import android.content.BroadcastReceiver
 import android.content.Context

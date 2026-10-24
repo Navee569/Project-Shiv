@@ -1,4 +1,9 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.data.local.*
+
+import app.shiv.ui.MainActivity
+import app.shiv.*
 
 import app.shiv.data.mapping.*
 import app.shiv.domain.actions.ActionTier

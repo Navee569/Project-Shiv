@@ -1,4 +1,6 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.*
 
 import android.app.AlarmManager
 import android.app.PendingIntent

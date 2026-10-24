@@ -1,6 +1,8 @@
 package app.shiv.domain.actions
 
 import app.shiv.domain.model.ActionLogEntry
+import app.shiv.domain.integration.DiagnosticCode
+import app.shiv.domain.integration.DiagnosticEvent
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -137,6 +139,40 @@ class AuthorizedActionExecutorTest {
         assertTrue(report.dispatchAttempted)
         assertEquals("FAILED:IllegalStateException", audit.entries.last().result)
         assertFalse(audit.entries.last().result.orEmpty().contains("sensitive details"))
+    }
+
+    @Test
+    fun auditFailureEmitsOnlySanitizedDiagnosticCode() = runBlocking {
+        val audit = InMemoryActionAuditRepository(failOnWrite = 1)
+        val diagnostics = mutableListOf<DiagnosticEvent>()
+        val executor = AuthorizedActionExecutor(
+            auditRepository = audit,
+            clock = ActionClock { now },
+            diagnostics = { diagnostics += it }
+        )
+
+        val report = executor.execute(createEventRequest()) { ActionDispatchResult("unexpected") }
+
+        assertEquals(ActionExecutionStatus.AUDIT_UNAVAILABLE, report.status)
+        assertEquals(1, diagnostics.size)
+        assertEquals(DiagnosticCode.AUDIT_WRITE_FAILED, diagnostics.single().code)
+        assertEquals(now, diagnostics.single().occurredAtMillis)
+    }
+
+    @Test
+    fun dispatchFailureEmitsSanitizedDiagnosticAndDoesNotExposeFailureText() = runBlocking {
+        val audit = InMemoryActionAuditRepository()
+        val diagnostics = mutableListOf<DiagnosticEvent>()
+        val executor = AuthorizedActionExecutor(
+            auditRepository = audit,
+            clock = ActionClock { now },
+            diagnostics = { diagnostics += it }
+        )
+
+        executor.execute(createEventRequest()) { error("private event title") }
+
+        assertEquals(listOf(DiagnosticCode.ACTION_DISPATCH_FAILED), diagnostics.map { it.code })
+        assertFalse(diagnostics.toString().contains("private event title"))
     }
 
     private fun executor(audit: InMemoryActionAuditRepository) = AuthorizedActionExecutor(

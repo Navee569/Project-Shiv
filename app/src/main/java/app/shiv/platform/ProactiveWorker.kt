@@ -1,4 +1,10 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.data.local.*
+
+import app.shiv.*
+import app.shiv.domain.brain.AgentDecision
+import app.shiv.domain.brain.ProactiveBrain
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -25,16 +31,13 @@ import app.shiv.domain.scheduling.ProactiveAlertState
 import app.shiv.domain.scheduling.ProactiveEvent
 import app.shiv.domain.scheduling.ProactiveRepository
 import app.shiv.domain.scheduling.ProactiveSchedulePolicy
+import app.shiv.domain.integration.NotificationDeliveryPort
 import app.shiv.domain.actions.ActionAuthorizationPolicy
 import app.shiv.domain.actions.ActionTier
 import app.shiv.domain.scheduling.ProactiveSettings
 import app.shiv.data.scheduling.newProactiveAlertId
 
-internal interface ProactiveNotifications {
-    fun allowed(): Boolean
-    /** False means definitely not delivered; a thrown failure has an uncertain delivery outcome. */
-    fun post(eventId: String, title: String, body: String): Boolean
-}
+internal typealias ProactiveNotifications = NotificationDeliveryPort
 
 internal data class ProactiveDependencies(
     val repository: ProactiveRepository,

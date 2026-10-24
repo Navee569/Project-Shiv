@@ -1,4 +1,17 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.*
+import app.shiv.domain.brain.AgentDecision
+import app.shiv.domain.brain.BrainPort
+import app.shiv.domain.brain.BrainReply
+import app.shiv.domain.brain.BrainRuntimeStatus
+import app.shiv.domain.brain.ProactiveBrain
+import app.shiv.domain.brain.RescheduleRequest
+import app.shiv.domain.brain.SmsDraft
+import app.shiv.domain.model.EventRecord
+import app.shiv.domain.model.MemoryFact
+import app.shiv.domain.model.UserProfile
+import app.shiv.domain.model.ReplyDraft
 
 import android.content.Context
 import android.content.Intent
@@ -29,40 +42,10 @@ import app.shiv.domain.actions.ActionTier
 import app.shiv.domain.inference.InferenceQueue
 import app.shiv.domain.inference.PrioritizedInferenceQueue
 
-data class BrainReply(
-    val text: String,
-    val event: EventRecord? = null,
-    val memory: MemoryFact? = null,
-    val reminderLeadMinutes: Int? = null,
-    val reschedule: RescheduleRequest? = null,
-    val draft: ReplyDraft? = null,
-    val sms: SmsDraft? = null,
-    val deleteEverything: Boolean = false,
-    val forgetPhrase: String? = null
-)
-
-data class RescheduleRequest(val search: String, val newStart: Long)
-data class SmsDraft(val person: String, val body: String)
-data class AgentDecision(
-    val tool: String?, val say: String, val text: String? = null, val key: String? = null,
-    val minutes: Int? = null, val title: String? = null, val startsAt: Long? = null,
-    val place: String? = null, val person: String? = null, val eventId: String? = null,
-    val notificationTitle: String? = null, val notificationBody: String? = null
-)
-data class BrainRuntimeStatus(val queuedRequests: Int = 0, val inferenceRunning: Boolean = false, val lastRoutingMillis: Long? = null, val lastReplyMillis: Long? = null, val status: String = "No local chat model installed")
-
 /**
  * The single boundary for all assistant intelligence. Beta reasoning and event/photo understanding
  * are local, deterministic functions; no network request or raw audio/photo persistence occurs here.
  */
-interface BrainPort {
-    suspend fun reply(input: String, context: String): String
-}
-
-fun interface ProactiveBrain {
-    suspend fun decideProactive(context: String): AgentDecision?
-}
-
 /** The only class allowed to call a generative model. All inference runs locally. */
 class Brain(private val appContext: Context? = null) : BrainPort, ProactiveBrain {
     companion object {
@@ -73,13 +56,13 @@ class Brain(private val appContext: Context? = null) : BrainPort, ProactiveBrain
     private val modelLock = kotlinx.coroutines.sync.Mutex()
     @Volatile private var loadedEngine: Engine? = null
     @Volatile private var loadedPath: String? = null
-    @Volatile var modelStatus: String = "No local chat model installed"
+    @Volatile override var modelStatus: String = "No local chat model installed"
         private set
     @Volatile var lastInferenceMillis: Long? = null
         private set
     @Volatile var lastRoutingMillis: Long? = null
         private set
-    val runtimeStatus = kotlinx.coroutines.flow.MutableStateFlow(BrainRuntimeStatus())
+    override val runtimeStatus = kotlinx.coroutines.flow.MutableStateFlow(BrainRuntimeStatus())
     private val inferenceQueue: InferenceQueue = PrioritizedInferenceQueue(onChanged = { publishRuntimeStatus() })
 
     private fun publishRuntimeStatus() {
@@ -125,9 +108,6 @@ class Brain(private val appContext: Context? = null) : BrainPort, ProactiveBrain
         val root = appContext?.let { File(it.filesDir, "models") } ?: return false to false
         return File(root, "fast.litertlm").isFile to File(root, "chat.litertlm").isFile
     }
-
-    override suspend fun reply(input: String, context: String): String =
-        generateDecision(input, context, allowNotifications = false)?.say.orEmpty()
 
     override suspend fun decideProactive(context: String): AgentDecision? =
         generateDecision(context.take(800), context, allowNotifications = true)
@@ -328,7 +308,7 @@ User: $input"""
         return BrainReply(withRecall(conversational, message, profile, memories), memory = fact)
     }
 
-    suspend fun respond(
+    override suspend fun respond(
         input: String,
         profile: UserProfile?,
         memories: List<MemoryFact>,

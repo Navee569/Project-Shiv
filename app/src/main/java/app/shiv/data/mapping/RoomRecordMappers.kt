@@ -1,18 +1,10 @@
 package app.shiv.data.mapping
 
+import app.shiv.data.local.*
+
 import app.shiv.ActionLogEntry
 import app.shiv.ActionTierSetting
 import app.shiv.ChatMessage
-import app.shiv.DbActionLogEntry
-import app.shiv.DbActionTierSetting
-import app.shiv.DbChatMessage
-import app.shiv.DbEventRecord
-import app.shiv.DbMemoryFact
-import app.shiv.DbPendingEventRecord
-import app.shiv.DbReminderRule
-import app.shiv.DbReplyDraft
-import app.shiv.DbShivSettings
-import app.shiv.DbUserProfile
 import app.shiv.EventRecord
 import app.shiv.MemoryFact
 import app.shiv.PendingEventRecord

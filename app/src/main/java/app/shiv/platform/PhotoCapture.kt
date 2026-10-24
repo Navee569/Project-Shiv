@@ -1,4 +1,6 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.*
 
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView

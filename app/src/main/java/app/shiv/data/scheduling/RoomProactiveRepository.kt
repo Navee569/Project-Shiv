@@ -1,7 +1,8 @@
 package app.shiv.data.scheduling
 
+import app.shiv.data.local.*
+
 import androidx.room.withTransaction
-import app.shiv.ShivDatabase
 import app.shiv.data.mapping.RoomRecordMappers
 import app.shiv.domain.scheduling.ProactiveAlert
 import app.shiv.domain.scheduling.ProactiveAlertState

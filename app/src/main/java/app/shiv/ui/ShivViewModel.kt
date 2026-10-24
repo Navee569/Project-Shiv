@@ -1,5 +1,17 @@
-package app.shiv
+package app.shiv.ui
 
+import app.shiv.*
+import app.shiv.platform.*
+import app.shiv.domain.brain.BrainPort
+import app.shiv.domain.brain.BrainReply
+import app.shiv.domain.brain.SmsDraft
+import app.shiv.domain.integration.ActionPermissionPort
+import app.shiv.domain.integration.CalendarSyncPort
+import app.shiv.domain.integration.DiagnosticCode
+import app.shiv.domain.integration.DiagnosticArea
+import app.shiv.domain.integration.DiagnosticEvent
+import app.shiv.domain.integration.DiagnosticsPort
+import app.shiv.domain.integration.ReminderSchedulingPort
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
@@ -11,7 +23,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import app.shiv.data.repository.RoomShivViewRepository
 import app.shiv.domain.repository.ShivViewRepository
-import app.shiv.domain.actions.ActionAuthorizationPolicy
 import app.shiv.domain.actions.ActionAuthorizationRequest
 import app.shiv.domain.actions.ActionAuthorizationOutcome
 import app.shiv.domain.actions.ActionAuthorizationDecision
@@ -37,8 +48,13 @@ sealed class PendingShivAction(val title: String, val explanation: String) {
 
 class ShivViewModel(app: Application) : AndroidViewModel(app) {
     private val dao: ShivViewRepository = RoomShivViewRepository(app)
-    private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction))
-    private val brain = BrainProvider.get(app.applicationContext)
+    private val diagnostics: DiagnosticsPort = AndroidDiagnosticsPort()
+    private val permissions: ActionPermissionPort = AndroidActionPermissionPort(app)
+    private val reminders: ReminderSchedulingPort = AndroidReminderSchedulingPort(app)
+    private val calendarSync: CalendarSyncPort = AndroidCalendarSyncPort(app, dao, permissions, diagnostics)
+    private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction), diagnostics = diagnostics)
+    private val brainRuntime = BrainProvider.get(app.applicationContext)
+    private val brain: BrainPort = brainRuntime
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = dao.events(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val pendingEvents = dao.pendingEvents(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -90,7 +106,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     fun importModel(uri: android.net.Uri, role: String) {
         viewModelScope.launch(Dispatchers.IO) {
             modelStatus.value = "Copying selected model into private phone storage…"
-            runCatching { brain.importModel(uri, role) }
+            runCatching { brainRuntime.importModel(uri, role) }
                 .onSuccess {
                     refreshModelStatus()
                     modelStatus.value = "${role.replaceFirstChar(Char::uppercase)} model installed on this phone. It has not been uploaded."
@@ -101,7 +117,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun refreshModelStatus() {
-        modelFiles.value = brain.installedModels()
+        modelFiles.value = brainRuntime.installedModels()
         modelStatus.value = if (modelFiles.value.first || modelFiles.value.second) "Local model file(s) installed; not loaded yet" else brain.modelStatus
     }
 
@@ -119,9 +135,9 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             val oldEvents = dao.upcomingEvents(0)
             runCatching { EncryptedBackup(getApplication()).restore(uri, password) }
                 .onSuccess {
-                    oldEvents.forEach { AlarmScheduler.cancel(getApplication(), it) }
+                    oldEvents.forEach { reminders.cancel(it) }
                     val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
-                    dao.upcomingEvents(System.currentTimeMillis()).forEach { AlarmScheduler.schedule(getApplication(), it, lead) }
+                    dao.upcomingEvents(System.currentTimeMillis()).forEach { reminders.schedule(it, lead) }
                     backupStatus.value = "Restore finished. The backup replaced the data previously in Shiv."
                 }
                 .onFailure { backupStatus.value = "Restore failed; existing Shiv data was left unchanged: ${it.message ?: it.javaClass.simpleName}" }
@@ -153,29 +169,37 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             var answer = parsed.text
             parsed.memory?.let {
                 if (memories.value.none { old -> old.text.equals(it.text, ignoreCase = true) }) {
-                    val decision = authorizeAction("SAVE_MEMORY", mapOf("id" to it.id, "text" to it.text), ActionTier.FREE)
-                    when (decision.outcome) {
-                        ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+                    val report = actionExecutor.execute(
+                        actionRequest("SAVE_MEMORY", mapOf("id" to it.id, "text" to it.text), ActionTier.FREE)
+                    ) {
+                        dao.saveMemory(it)
+                        ActionDispatchResult("Memory saved locally", "DELETE_MEMORY:${it.id}")
+                    }
+                    when (report.status) {
+                        ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                             pendingAction.value = PendingShivAction.SaveMemory(it)
                             answer = "I found a personal fact. I’ll save it only after you confirm."
                         }
-                        ActionAuthorizationOutcome.ALLOW -> {
-                            dao.saveMemory(it)
-                            dao.logAction(ActionLogEntry(action = "Saved a personal memory", tier = decision.effectiveTier.name, outcome = it.text))
-                        }
-                        else -> answer = authorizationFailure(decision)
+                        ActionExecutionStatus.SUCCEEDED -> Unit
+                        else -> answer = executionFailure(report, "memory")
                     }
                 }
             }
             parsed.reminderLeadMinutes?.let {
-                val decision = authorizeAction("SET_REMINDER", mapOf("minutes" to it.toString()), ActionTier.FREE)
-                when (decision.outcome) {
-                    ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+                val previous = reminderLeadMinutes.value
+                val report = actionExecutor.execute(
+                    actionRequest("SET_REMINDER", mapOf("minutes" to it.toString()), ActionTier.FREE)
+                ) {
+                    updateReminderLead(it)
+                    ActionDispatchResult("Reminder lead updated", "SET_REMINDER:$previous")
+                }
+                when (report.status) {
+                    ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                         pendingAction.value = PendingShivAction.SaveRule(it)
                         answer = "I can change that reminder rule. Confirm and I’ll save it."
                     }
-                    ActionAuthorizationOutcome.ALLOW -> updateReminderLead(it)
-                    else -> answer = authorizationFailure(decision)
+                    ActionExecutionStatus.SUCCEEDED -> Unit
+                    else -> answer = executionFailure(report, "reminder rule")
                 }
             }
             parsed.event?.let { event ->
@@ -186,7 +210,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                         ActionTier.FREE
                     )
                 ) {
-                    saveEvent(event, ActionTier.FREE, logAction = false)
+                    saveEvent(event)
                     ActionDispatchResult("Event saved and reminder scheduled", "DELETE_EVENT:${event.id}")
                 }
                 when (report.status) {
@@ -209,92 +233,105 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                     .firstOrNull { it.id == request.search || it.title.contains(request.search, true) || it.person?.contains(request.search, true) == true || request.search.contains(it.title, true) }
                 if (match == null) answer = "I couldn’t find an upcoming event matching ‘${request.search}’. Nothing was changed."
                 else {
-                    val decision = authorizeAction(
-                        "RESCHEDULE",
-                        mapOf("eventId" to match.id, "startsAt" to match.startsAt.toString(), "newStartsAt" to request.newStart.toString()),
-                        ActionTier.ACT_THEN_TELL
-                    )
-                    when (decision.outcome) {
-                        ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+                    val report = actionExecutor.execute(
+                        actionRequest(
+                            "RESCHEDULE",
+                            mapOf("eventId" to match.id, "startsAt" to match.startsAt.toString(), "newStartsAt" to request.newStart.toString()),
+                            ActionTier.ACT_THEN_TELL
+                        )
+                    ) {
+                        val changed = match.copy(startsAt = request.newStart)
+                        dao.saveEvent(changed)
+                        reminders.cancel(match)
+                        reminders.schedule(changed, reminderLeadMinutes.value)
+                        ActionDispatchResult("Event and reminder updated", "RESCHEDULE:${match.id}:${match.startsAt}")
+                    }
+                    when (report.status) {
+                        ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                             pendingAction.value = PendingShivAction.Reschedule(match, request.newStart)
                             answer = "I can move ${match.title}. Confirm and I’ll update the event and reminder."
                         }
-                        ActionAuthorizationOutcome.ALLOW -> decision.dispatchIfAllowed {
-                            val changed = match.copy(startsAt = request.newStart)
-                            dao.saveEvent(changed)
-                            AlarmScheduler.cancel(getApplication(), match)
-                            AlarmScheduler.schedule(getApplication(), changed, reminderLeadMinutes.value)
-                            dao.logAction(ActionLogEntry(action = "Rescheduled ${match.title}", tier = decision.effectiveTier.name, outcome = "Updated and reminder reset"))
-                            answer = "Moved ${match.title} to ${android.text.format.DateFormat.format("EEE, MMM d 'at' h:mm a", changed.startsAt)}. Its reminder is reset."
+                        ActionExecutionStatus.SUCCEEDED -> {
+                            answer = "Moved ${match.title} to ${android.text.format.DateFormat.format("EEE, MMM d 'at' h:mm a", request.newStart)}. Its reminder is reset."
                         }
-                        else -> answer = authorizationFailure(decision)
+                        else -> answer = executionFailure(report, "reschedule")
                     }
                 }
             }
             parsed.draft?.let {
-                val decision = authorizeAction("DRAFT_REPLY", mapOf("person" to it.person, "body" to it.body), ActionTier.ACT_THEN_TELL)
-                when (decision.outcome) {
-                    ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+                val report = actionExecutor.execute(
+                    actionRequest("DRAFT_REPLY", mapOf("person" to it.person, "body" to it.body), ActionTier.ACT_THEN_TELL)
+                ) {
+                    dao.saveDraft(it)
+                    ActionDispatchResult("Reply draft saved")
+                }
+                when (report.status) {
+                    ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                         pendingAction.value = PendingShivAction.SaveDraft(it)
                         answer = "I prepared the reply. Confirm and I’ll save it to your drafts."
                     }
-                    ActionAuthorizationOutcome.ALLOW -> {
-                        dao.saveDraft(it)
-                        dao.logAction(ActionLogEntry(action = "Prepared a reply draft for ${it.person}", tier = decision.effectiveTier.name, outcome = "Draft saved; not sent"))
-                    }
-                    else -> answer = authorizationFailure(decision)
+                    ActionExecutionStatus.SUCCEEDED -> Unit
+                    else -> answer = executionFailure(report, "reply draft")
                 }
             }
             parsed.sms?.let {
-                val decision = authorizeAction("SEND_MESSAGE", mapOf("person" to it.person, "body" to it.body), ActionTier.ASK_FIRST)
-                if (decision.outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-                    pendingAction.value = PendingShivAction.SendSms(it)
-                    dao.logAction(ActionLogEntry(action = "Requested opening a message draft for ${it.person}", tier = decision.effectiveTier.name, outcome = "Waiting for confirmation"))
-                } else if (decision.outcome != ActionAuthorizationOutcome.ALLOW) answer = authorizationFailure(decision)
+                val report = actionExecutor.execute(
+                    actionRequest("SEND_MESSAGE", mapOf("person" to it.person, "body" to it.body), ActionTier.ASK_FIRST)
+                ) { ActionDispatchResult("Waiting for message draft confirmation") }
+                when (report.status) {
+                    ActionExecutionStatus.AWAITING_CONFIRMATION -> {
+                        pendingAction.value = PendingShivAction.SendSms(it)
+                        answer = "I prepared a message draft. Confirm to open it; you will still tap Send in your messaging app."
+                    }
+                    ActionExecutionStatus.SUCCEEDED -> Unit
+                    else -> answer = executionFailure(report, "message draft")
+                }
             }
             parsed.deleteEverything.let { if (it) {
-                val decision = authorizeAction("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST)
-                if (decision.outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-                    pendingAction.value = PendingShivAction.DeleteEverything
-                    dao.logAction(ActionLogEntry(action = "Requested erase of all Shiv data", tier = decision.effectiveTier.name, outcome = "Waiting for confirmation"))
-                } else if (decision.outcome != ActionAuthorizationOutcome.ALLOW) answer = authorizationFailure(decision)
+                val report = actionExecutor.execute(actionRequest("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST)) {
+                    ActionDispatchResult("Waiting for data deletion confirmation")
+                }
+                when (report.status) {
+                    ActionExecutionStatus.AWAITING_CONFIRMATION -> {
+                        pendingAction.value = PendingShivAction.DeleteEverything
+                        answer = "I can erase Shiv’s local data. Confirm to continue."
+                    }
+                    ActionExecutionStatus.SUCCEEDED -> Unit
+                    else -> answer = executionFailure(report, "data deletion")
+                }
             } }
             parsed.forgetPhrase?.let { phrase ->
                 val target = memories.value.firstOrNull { it.text.contains(phrase, true) || phrase.contains(it.text, true) }
                 if (target != null) {
-                    val decision = authorizeAction("DELETE_DATA", mapOf("memoryId" to target.id), ActionTier.ASK_FIRST)
-                    if (decision.outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-                        pendingAction.value = PendingShivAction.DeleteMemory(target)
-                        dao.logAction(ActionLogEntry(action = "Requested forgetting a saved fact", tier = decision.effectiveTier.name, outcome = "Waiting for confirmation"))
-                    } else if (decision.outcome != ActionAuthorizationOutcome.ALLOW) answer = authorizationFailure(decision)
+                    val report = actionExecutor.execute(actionRequest("DELETE_DATA", mapOf("memoryId" to target.id), ActionTier.ASK_FIRST)) {
+                        ActionDispatchResult("Waiting for memory deletion confirmation")
+                    }
+                    when (report.status) {
+                        ActionExecutionStatus.AWAITING_CONFIRMATION -> {
+                            pendingAction.value = PendingShivAction.DeleteMemory(target)
+                            answer = "I found that saved memory. Confirm to remove it."
+                        }
+                        ActionExecutionStatus.SUCCEEDED -> Unit
+                        else -> answer = executionFailure(report, "memory deletion")
+                    }
                 } else answer = "I couldn’t find a saved memory matching that, so nothing was removed."
             }
             if (answer.isNotBlank()) dao.addMessage(ChatMessage(text = answer, fromUser = false, tier = tierFor(parsed).name))
         }
     }
 
-    private fun authorizeAction(
-        actionType: String,
-        arguments: Map<String, String>,
-        minimumTier: ActionTier,
-        permissionState: ActionPermissionState = ActionPermissionState.NOT_REQUIRED,
-        confirmed: Boolean = false
-    ): ActionAuthorizationDecision = ActionAuthorizationPolicy.authorize(
-        actionRequest(actionType, arguments, minimumTier, permissionState, confirmed)
-    )
-
     private fun actionRequest(
         actionType: String,
         arguments: Map<String, String>,
         minimumTier: ActionTier,
-        permissionState: ActionPermissionState = ActionPermissionState.NOT_REQUIRED,
+        permissionState: ActionPermissionState? = null,
         confirmed: Boolean = false
     ) = ActionAuthorizationRequest(
             actionType = actionType,
             arguments = arguments,
             configuredTier = actionTiers.value.firstOrNull { it.actionKey == actionType }?.tier,
             minimumTier = minimumTier,
-            permissionState = permissionState,
+            permissionState = permissionState ?: permissions.stateFor(actionType),
             confirmed = confirmed
         )
 
@@ -304,10 +341,19 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         else -> "I couldn’t authorize that action, so nothing was changed."
     }
 
-    private suspend fun saveEvent(event: EventRecord, tier: ActionTier, logAction: Boolean = true) {
+    private fun executionFailure(report: app.shiv.domain.actions.ActionExecutionReport, subject: String): String = when (report.status) {
+        ActionExecutionStatus.AUDIT_UNAVAILABLE -> when {
+            report.dispatched -> "The $subject action completed, but I couldn’t update its action record."
+            report.dispatchAttempted -> "The $subject action did not finish cleanly. Check its result before retrying."
+            else -> "I couldn’t securely record that action, so I didn’t make the change."
+        }
+        ActionExecutionStatus.FAILED -> "The $subject action did not finish cleanly. Check its result before retrying."
+        else -> authorizationFailure(report.authorization)
+    }
+
+    private suspend fun saveEvent(event: EventRecord) {
         dao.saveEvent(event)
-        AlarmScheduler.schedule(getApplication(), event, reminderLeadMinutes.value)
-        if (logAction) dao.logAction(ActionLogEntry(action = "Saved an event and set its reminder", tier = tier.name, outcome = event.title))
+        reminders.schedule(event, reminderLeadMinutes.value)
     }
 
     private fun tierFor(reply: BrainReply): ActionTier = when {
@@ -320,23 +366,21 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         val safe = minutes.coerceIn(0, 1440)
         reminderLeadMinutes.value = safe
         dao.saveRule(ReminderRule(Brain.REMINDER_LEAD_KEY, safe.toString()))
-        dao.upcomingEvents(System.currentTimeMillis()).forEach { AlarmScheduler.schedule(getApplication(), it, safe) }
-        dao.logAction(ActionLogEntry(action = "Updated the reminder lead-time rule", tier = ActionTier.FREE.name, outcome = "$safe minutes before each event"))
+        dao.upcomingEvents(System.currentTimeMillis()).forEach { reminders.schedule(it, safe) }
     }
 
     fun saveProfile(name: String, notes: String) {
         viewModelScope.launch {
-            val decision = authorizeAction("SAVE_PROFILE", mapOf("name" to name, "notes" to notes), ActionTier.FREE)
-            when (decision.outcome) {
-                ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+            val report = actionExecutor.execute(actionRequest("SAVE_PROFILE", mapOf("name" to name, "notes" to notes), ActionTier.FREE)) {
+                dao.saveProfile(UserProfile(name = name.trim(), notes = notes.trim()))
+                ActionDispatchResult("Profile saved locally")
+            }
+            when (report.status) {
+                ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                     pendingAction.value = PendingShivAction.SaveProfile(name, notes)
-                    return@launch
                 }
-                ActionAuthorizationOutcome.ALLOW -> {
-                    dao.saveProfile(UserProfile(name = name.trim(), notes = notes.trim()))
-                    dao.logAction(ActionLogEntry(action = "Updated personal profile", tier = decision.effectiveTier.name, outcome = "Saved on this phone"))
-                }
-                else -> dao.logAction(ActionLogEntry(action = "Updated personal profile", tier = decision.effectiveTier.name, outcome = authorizationFailure(decision)))
+                ActionExecutionStatus.SUCCEEDED -> Unit
+                else -> dao.addMessage(ChatMessage(text = executionFailure(report, "profile update"), fromUser = false))
             }
         }
     }
@@ -344,40 +388,51 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     fun adjustEvent(event: EventRecord, minutes: Int) {
         viewModelScope.launch {
             val updated = event.copy(startsAt = event.startsAt + minutes * 60_000L)
-            val decision = authorizeAction(
+            val report = actionExecutor.execute(actionRequest(
                 "RESCHEDULE",
                 mapOf("eventId" to event.id, "startsAt" to event.startsAt.toString(), "newStartsAt" to updated.startsAt.toString()),
                 ActionTier.ACT_THEN_TELL
-            )
-            when (decision.outcome) {
-                ActionAuthorizationOutcome.ALLOW -> decision.dispatchIfAllowed {
+            )) {
                     dao.saveEvent(updated)
-                    AlarmScheduler.cancel(getApplication(), event)
-                    AlarmScheduler.schedule(getApplication(), updated, reminderLeadMinutes.value)
-                    dao.logAction(ActionLogEntry(action = "Rescheduled ${event.title} by $minutes minutes", tier = decision.effectiveTier.name, outcome = "Event and reminder updated"))
-                    dao.addMessage(ChatMessage(text = "Done. ${event.title} moved by $minutes minutes, and I reset its reminder.", fromUser = false, tier = decision.effectiveTier.name))
+                    reminders.cancel(event)
+                    reminders.schedule(updated, reminderLeadMinutes.value)
+                    ActionDispatchResult("Event and reminder updated", "RESCHEDULE:${event.id}:${event.startsAt}")
                 }
-                ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> pendingAction.value = PendingShivAction.Reschedule(event, updated.startsAt)
-                else -> dao.logAction(ActionLogEntry(action = "Rescheduled ${event.title}", tier = decision.effectiveTier.name, outcome = authorizationFailure(decision)))
+            when (report.status) {
+                ActionExecutionStatus.AWAITING_CONFIRMATION -> pendingAction.value = PendingShivAction.Reschedule(event, updated.startsAt)
+                ActionExecutionStatus.SUCCEEDED -> dao.addMessage(ChatMessage(text = "Done. ${event.title} moved by $minutes minutes, and I reset its reminder.", fromUser = false, tier = report.authorization.effectiveTier.name))
+                else -> dao.addMessage(ChatMessage(text = executionFailure(report, "reschedule"), fromUser = false))
             }
         }
     }
 
     fun askDeleteEvent(event: EventRecord) {
-        if (authorizeAction("DELETE_DATA", mapOf("eventId" to event.id), ActionTier.ASK_FIRST).outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-            pendingAction.value = PendingShivAction.DeleteEvent(event)
+        viewModelScope.launch {
+            val report = actionExecutor.execute(actionRequest("DELETE_DATA", mapOf("eventId" to event.id), ActionTier.ASK_FIRST)) {
+                ActionDispatchResult("Waiting for deletion confirmation")
+            }
+            if (report.status == ActionExecutionStatus.AWAITING_CONFIRMATION) pendingAction.value = PendingShivAction.DeleteEvent(event)
+            else if (report.status != ActionExecutionStatus.SUCCEEDED) dao.addMessage(ChatMessage(text = executionFailure(report, "event deletion"), fromUser = false))
         }
     }
 
     fun askDeleteMemory(memory: MemoryFact) {
-        if (authorizeAction("DELETE_DATA", mapOf("memoryId" to memory.id), ActionTier.ASK_FIRST).outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-            pendingAction.value = PendingShivAction.DeleteMemory(memory)
+        viewModelScope.launch {
+            val report = actionExecutor.execute(actionRequest("DELETE_DATA", mapOf("memoryId" to memory.id), ActionTier.ASK_FIRST)) {
+                ActionDispatchResult("Waiting for deletion confirmation")
+            }
+            if (report.status == ActionExecutionStatus.AWAITING_CONFIRMATION) pendingAction.value = PendingShivAction.DeleteMemory(memory)
+            else if (report.status != ActionExecutionStatus.SUCCEEDED) dao.addMessage(ChatMessage(text = executionFailure(report, "memory deletion"), fromUser = false))
         }
     }
 
     fun askDeleteEverything() {
-        if (authorizeAction("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST).outcome == ActionAuthorizationOutcome.REQUIRE_CONFIRMATION) {
-            pendingAction.value = PendingShivAction.DeleteEverything
+        viewModelScope.launch {
+            val report = actionExecutor.execute(actionRequest("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST)) {
+                ActionDispatchResult("Waiting for deletion confirmation")
+            }
+            if (report.status == ActionExecutionStatus.AWAITING_CONFIRMATION) pendingAction.value = PendingShivAction.DeleteEverything
+            else if (report.status != ActionExecutionStatus.SUCCEEDED) dao.addMessage(ChatMessage(text = executionFailure(report, "data deletion"), fromUser = false))
         }
     }
 
@@ -388,21 +443,21 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                 dao.logAction(ActionLogEntry(action = "Expired a listening event confirmation", tier = ActionTier.ASK_FIRST.name, outcome = "Event time passed"))
                 return@launch
             }
-            val decision = authorizeAction(
+            val report = actionExecutor.execute(actionRequest(
                 "CREATE_EVENT",
                 mapOf("id" to candidate.id, "title" to candidate.title, "startsAt" to candidate.startsAt.toString()),
                 ActionTier.FREE,
                 confirmed = true
-            )
-            if (!decision.dispatchIfAllowed {
+            )) {
                 val event = EventRecord(id = candidate.id, title = candidate.title, startsAt = candidate.startsAt, place = candidate.place, person = candidate.person, source = "LISTENING", createdAt = candidate.createdAt)
                 dao.saveEvent(event)
                 dao.deletePendingEvent(candidate.id)
-                AlarmScheduler.schedule(getApplication(), event, reminderLeadMinutes.value)
-                dao.logAction(ActionLogEntry(action = "Saved a listening event after confirmation", tier = ActionTier.ASK_FIRST.name, outcome = event.title))
-            }) {
+                reminders.schedule(event, reminderLeadMinutes.value)
+                ActionDispatchResult("Listening event saved", "DELETE_EVENT:${event.id}")
+            }
+            if (report.status != ActionExecutionStatus.SUCCEEDED) {
                 dao.deletePendingEvent(candidate.id)
-                dao.logAction(ActionLogEntry(action = "Rejected a listening event confirmation", tier = decision.effectiveTier.name, outcome = authorizationFailure(decision)))
+                dao.addMessage(ChatMessage(text = executionFailure(report, "listening event"), fromUser = false))
             }
         }
     }
@@ -420,134 +475,76 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.logAction(ActionLogEntry(action = action.title, tier = ActionTier.ASK_FIRST.name, outcome = "Cancelled by user")) }
     }
 
-    /** Returns a message draft only after the user taps the in-app confirm button. */
-    fun confirmPending(): SmsDraft? {
-        val action = pendingAction.value ?: return null
-        if (action is PendingShivAction.SaveEvent) {
-            pendingAction.value = null
-            viewModelScope.launch {
-                val report = actionExecutor.execute(
-                    actionRequest(
-                        "CREATE_EVENT",
-                        mapOf("id" to action.event.id, "title" to action.event.title, "startsAt" to action.event.startsAt.toString()),
-                        ActionTier.FREE,
-                        confirmed = true
-                    )
-                ) {
-                    saveEvent(action.event, ActionTier.ASK_FIRST, logAction = false)
-                    ActionDispatchResult("Event saved and reminder scheduled", "DELETE_EVENT:${action.event.id}")
-                }
-                if (!report.dispatched || report.status == ActionExecutionStatus.AUDIT_UNAVAILABLE) {
-                    val message = when (report.status) {
-                        ActionExecutionStatus.AUDIT_UNAVAILABLE -> when {
-                            report.dispatched -> "The event was saved, but I couldn’t update its action record."
-                            report.dispatchAttempted -> "The event action did not finish cleanly. Check the event and reminder before retrying."
-                            else -> "I couldn’t securely record that action, so I didn’t save the event."
-                        }
-                        ActionExecutionStatus.FAILED -> "The event action did not finish cleanly. Check the event and reminder before retrying."
-                        else -> authorizationFailure(report.authorization)
+    /** Final authorization, audit, and side effect all run after the owner confirms. */
+    fun confirmPending(onSmsDraft: (SmsDraft) -> Unit = {}) {
+        val action = pendingAction.value ?: return
+        viewModelScope.launch {
+            val (type, args, tier) = pendingActionRequest(action)
+            val report = actionExecutor.execute(actionRequest(type, args, tier, confirmed = true)) {
+                when (action) {
+                    is PendingShivAction.SaveProfile -> dao.saveProfile(UserProfile(name = action.name.trim(), notes = action.notes.trim()))
+                    is PendingShivAction.SaveEvent -> saveEvent(action.event)
+                    is PendingShivAction.SaveMemory -> dao.saveMemory(action.memory)
+                    is PendingShivAction.SaveRule -> updateReminderLead(action.minutes)
+                    is PendingShivAction.Reschedule -> {
+                        val changed = action.event.copy(startsAt = action.newStart)
+                        reminders.cancel(action.event)
+                        saveEvent(changed)
                     }
-                    dao.addMessage(ChatMessage(text = message, fromUser = false, tier = report.authorization.effectiveTier.name))
-                }
-            }
-            return null
-        }
-        val decision = authorizePendingAction(action)
-        var confirmedDraft: SmsDraft? = null
-        val dispatched = decision.dispatchIfAllowed {
-            pendingAction.value = null
-            when (action) {
-                is PendingShivAction.SaveProfile -> viewModelScope.launch {
-                    dao.saveProfile(UserProfile(name = action.name.trim(), notes = action.notes.trim()))
-                    dao.logAction(ActionLogEntry(action = "Updated personal profile", tier = ActionTier.ASK_FIRST.name, outcome = "Confirmed by user"))
-                }
-                is PendingShivAction.SaveEvent -> Unit
-                is PendingShivAction.SaveMemory -> viewModelScope.launch {
-                    dao.saveMemory(action.memory)
-                    dao.logAction(ActionLogEntry(action = "Saved a personal memory", tier = ActionTier.ASK_FIRST.name, outcome = action.memory.text))
-                }
-                is PendingShivAction.SaveRule -> viewModelScope.launch {
-                    updateReminderLead(action.minutes)
-                    dao.logAction(ActionLogEntry(action = "Confirmed reminder rule change", tier = ActionTier.ASK_FIRST.name, outcome = "${action.minutes} minutes"))
-                }
-                is PendingShivAction.Reschedule -> viewModelScope.launch {
-                    val changed = action.event.copy(startsAt = action.newStart)
-                    AlarmScheduler.cancel(getApplication(), action.event)
-                    saveEvent(changed, ActionTier.ASK_FIRST)
-                    dao.logAction(ActionLogEntry(action = "Confirmed reschedule", tier = ActionTier.ASK_FIRST.name, outcome = changed.title))
-                }
-                is PendingShivAction.SaveDraft -> viewModelScope.launch {
-                    dao.saveDraft(action.draft)
-                    dao.logAction(ActionLogEntry(action = "Saved reply draft", tier = ActionTier.ASK_FIRST.name, outcome = action.draft.person))
-                }
-                is PendingShivAction.SendSms -> {
-                    viewModelScope.launch {
-                        dao.logAction(ActionLogEntry(action = "Opened the messaging app with a prepared draft", tier = ActionTier.ASK_FIRST.name, outcome = "User must still tap Send there"))
+                    is PendingShivAction.SaveDraft -> dao.saveDraft(action.draft)
+                    is PendingShivAction.SendSms -> onSmsDraft(action.draft)
+                    is PendingShivAction.DeleteEvent -> {
+                        reminders.cancel(action.event)
+                        dao.deleteEvent(action.event.id)
                     }
-                    confirmedDraft = action.draft
+                    is PendingShivAction.DeleteMemory -> dao.deleteMemory(action.memory.id)
+                    PendingShivAction.DeleteEverything -> {
+                        dao.upcomingEvents(0).forEach { reminders.cancel(it) }
+                        dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers()
+                        dao.clearPendingEvents()
+                        dao.clearSettings(); dao.saveSettings(ShivSettings())
+                        reminderLeadMinutes.value = Brain.DEFAULT_LEAD_MINUTES
+                    }
                 }
-                is PendingShivAction.DeleteEvent -> viewModelScope.launch {
-                    AlarmScheduler.cancel(getApplication(), action.event)
-                    dao.deleteEvent(action.event.id)
-                    dao.logAction(ActionLogEntry(action = "Deleted event ${action.event.title}", tier = ActionTier.ASK_FIRST.name, outcome = "Confirmed by user"))
-                }
-                is PendingShivAction.DeleteMemory -> viewModelScope.launch {
-                    dao.deleteMemory(action.memory.id)
-                    dao.logAction(ActionLogEntry(action = "Forgot saved memory", tier = ActionTier.ASK_FIRST.name, outcome = "Confirmed by user"))
-                }
-                PendingShivAction.DeleteEverything -> viewModelScope.launch {
-                    dao.upcomingEvents(0).forEach { AlarmScheduler.cancel(getApplication(), it) }
-                    dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers()
-                    dao.clearPendingEvents()
-                    dao.clearSettings(); dao.saveSettings(ShivSettings())
-                    reminderLeadMinutes.value = Brain.DEFAULT_LEAD_MINUTES
-                }
+                ActionDispatchResult(
+                    result = if (action is PendingShivAction.SendSms) "Message compose opened; user must still tap Send" else "Confirmed action completed",
+                    undoInfo = when (action) {
+                        is PendingShivAction.SaveEvent -> "DELETE_EVENT:${action.event.id}"
+                        is PendingShivAction.SaveMemory -> "DELETE_MEMORY:${action.memory.id}"
+                        is PendingShivAction.DeleteEvent -> "RESTORE_EVENT:${action.event.id}"
+                        is PendingShivAction.DeleteMemory -> "RESTORE_MEMORY:${action.memory.id}"
+                        else -> null
+                    }
+                )
+            }
+            if (report.dispatched) pendingAction.value = null
+            if (report.status != ActionExecutionStatus.SUCCEEDED) {
+                dao.addMessage(ChatMessage(text = executionFailure(report, action.title.lowercase()), fromUser = false, tier = report.authorization.effectiveTier.name))
             }
         }
-        if (!dispatched) {
-            pendingAction.value = null
-            viewModelScope.launch {
-                dao.logAction(ActionLogEntry(action = action.title, tier = decision.effectiveTier.name, outcome = authorizationFailure(decision)))
-            }
-            return null
-        }
-        return confirmedDraft
     }
-    private fun authorizePendingAction(action: PendingShivAction): ActionAuthorizationDecision = when (action) {
-        is PendingShivAction.SaveProfile -> authorizeAction(
-            "SAVE_PROFILE", mapOf("name" to action.name, "notes" to action.notes), ActionTier.FREE, confirmed = true
-        )
-        is PendingShivAction.SaveEvent -> authorizeAction(
-            "CREATE_EVENT", mapOf("id" to action.event.id, "title" to action.event.title, "startsAt" to action.event.startsAt.toString()), ActionTier.FREE, confirmed = true
-        )
-        is PendingShivAction.SaveMemory -> authorizeAction(
-            "SAVE_MEMORY", mapOf("id" to action.memory.id, "text" to action.memory.text), ActionTier.FREE, confirmed = true
-        )
-        is PendingShivAction.SaveRule -> authorizeAction(
-            "SET_REMINDER", mapOf("minutes" to action.minutes.toString()), ActionTier.FREE, confirmed = true
-        )
-        is PendingShivAction.Reschedule -> authorizeAction(
-            "RESCHEDULE", mapOf("eventId" to action.event.id, "startsAt" to action.event.startsAt.toString(), "newStartsAt" to action.newStart.toString()), ActionTier.ACT_THEN_TELL, confirmed = true
-        )
-        is PendingShivAction.SaveDraft -> authorizeAction(
-            "DRAFT_REPLY", mapOf("person" to action.draft.person, "body" to action.draft.body), ActionTier.ACT_THEN_TELL, confirmed = true
-        )
-        is PendingShivAction.DeleteEvent -> authorizeAction(
-            "DELETE_DATA", mapOf("eventId" to action.event.id), ActionTier.ASK_FIRST, confirmed = true
-        )
-        is PendingShivAction.DeleteMemory -> authorizeAction(
-            "DELETE_DATA", mapOf("memoryId" to action.memory.id), ActionTier.ASK_FIRST, confirmed = true
-        )
-        PendingShivAction.DeleteEverything -> authorizeAction("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST, confirmed = true)
-        is PendingShivAction.SendSms -> authorizeAction(
-            "SEND_MESSAGE", mapOf("person" to action.draft.person, "body" to action.draft.body), ActionTier.ASK_FIRST, confirmed = true
-        )
+
+    private fun pendingActionRequest(action: PendingShivAction): Triple<String, Map<String, String>, ActionTier> = when (action) {
+        is PendingShivAction.SaveProfile -> Triple("SAVE_PROFILE", mapOf("name" to action.name, "notes" to action.notes), ActionTier.FREE)
+        is PendingShivAction.SaveEvent -> Triple("CREATE_EVENT", mapOf("id" to action.event.id, "title" to action.event.title, "startsAt" to action.event.startsAt.toString()), ActionTier.FREE)
+        is PendingShivAction.SaveMemory -> Triple("SAVE_MEMORY", mapOf("id" to action.memory.id, "text" to action.memory.text), ActionTier.FREE)
+        is PendingShivAction.SaveRule -> Triple("SET_REMINDER", mapOf("minutes" to action.minutes.toString()), ActionTier.FREE)
+        is PendingShivAction.Reschedule -> Triple("RESCHEDULE", mapOf("eventId" to action.event.id, "startsAt" to action.event.startsAt.toString(), "newStartsAt" to action.newStart.toString()), ActionTier.ACT_THEN_TELL)
+        is PendingShivAction.SaveDraft -> Triple("DRAFT_REPLY", mapOf("person" to action.draft.person, "body" to action.draft.body), ActionTier.ACT_THEN_TELL)
+        is PendingShivAction.SendSms -> Triple("SEND_MESSAGE", mapOf("person" to action.draft.person, "body" to action.draft.body), ActionTier.ASK_FIRST)
+        is PendingShivAction.DeleteEvent -> Triple("DELETE_DATA", mapOf("eventId" to action.event.id), ActionTier.ASK_FIRST)
+        is PendingShivAction.DeleteMemory -> Triple("DELETE_DATA", mapOf("memoryId" to action.memory.id), ActionTier.ASK_FIRST)
+        PendingShivAction.DeleteEverything -> Triple("DELETE_DATA", emptyMap(), ActionTier.ASK_FIRST)
     }
 
     fun syncCalendar(context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val count = CalendarSyncer.sync(context.applicationContext, dao)
-            lastCalendarSync.value = "Synced $count upcoming calendar events on this phone."
+        viewModelScope.launch {
+            val result = calendarSync.synchronize()
+            lastCalendarSync.value = when {
+                result.permissionDenied -> "Calendar permission is off. Grant access before syncing."
+                result.failed -> "Calendar sync failed. Your saved events were left unchanged."
+                else -> "Synced ${result.importedCount} upcoming calendar events on this phone."
+            }
             ProactiveWorker.checkSoon(context.applicationContext)
         }
     }

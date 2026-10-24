@@ -1,5 +1,12 @@
 package app.shiv
 
+import app.shiv.data.local.*
+
+import app.shiv.platform.ProactiveWorker
+import app.shiv.platform.ProactiveNotifications
+import app.shiv.platform.ProactiveDependencies
+import app.shiv.domain.brain.ProactiveBrain
+import app.shiv.domain.brain.AgentDecision
 import app.shiv.domain.actions.ActionTier
 import app.shiv.data.mapping.*
 import android.content.Context

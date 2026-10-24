@@ -1,5 +1,7 @@
-package app.shiv
+package app.shiv.ui
 
+import app.shiv.*
+import app.shiv.platform.*
 import app.shiv.domain.actions.ActionTier
 
 import android.Manifest
@@ -95,13 +97,13 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
             text = { Text(action.explanation) },
             confirmButton = {
                 Button(onClick = {
-                    val sms = vm.confirmPending()
-                    if (sms != null) {
+                    vm.confirmPending { sms ->
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
                             data = Uri.parse("smsto:")
                             putExtra("sms_body", sms.body)
                         }
                         runCatching { context.startActivity(intent) }
+                            .getOrElse { throw it }
                     }
                 }) { Text("Confirm") }
             },

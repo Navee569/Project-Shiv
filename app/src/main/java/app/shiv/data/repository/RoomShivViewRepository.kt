@@ -1,8 +1,8 @@
 package app.shiv.data.repository
 
+import app.shiv.data.local.*
+
 import android.content.Context
-import app.shiv.ShivDao
-import app.shiv.ShivDatabase
 import app.shiv.data.mapping.RoomRecordMappers
 import app.shiv.domain.model.*
 import app.shiv.domain.repository.ShivViewRepository

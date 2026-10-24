@@ -1,5 +1,7 @@
 package app.shiv.data.mapping
 
+import app.shiv.data.local.*
+
 import app.shiv.*
 
 import app.shiv.data.mapping.RoomRecordMappers

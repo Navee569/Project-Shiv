@@ -1,5 +1,7 @@
 package app.shiv.data.repository
 
+import app.shiv.data.local.*
+
 import android.content.Context
 import androidx.room.Room
 import app.shiv.ActionLogEntry
@@ -10,7 +12,6 @@ import app.shiv.MemoryFact
 import app.shiv.PendingEventRecord
 import app.shiv.ReminderRule
 import app.shiv.ReplyDraft
-import app.shiv.ShivDatabase
 import app.shiv.ShivSettings
 import app.shiv.UserProfile
 import kotlinx.coroutines.flow.first

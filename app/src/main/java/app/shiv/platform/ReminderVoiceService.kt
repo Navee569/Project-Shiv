@@ -1,4 +1,7 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.ui.MainActivity
+import app.shiv.*
 
 import android.app.Notification
 import android.app.PendingIntent

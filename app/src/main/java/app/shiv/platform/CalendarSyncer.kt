@@ -1,4 +1,6 @@
-package app.shiv
+package app.shiv.platform
+
+import app.shiv.*
 
 import android.Manifest
 import app.shiv.domain.actions.ActionTier

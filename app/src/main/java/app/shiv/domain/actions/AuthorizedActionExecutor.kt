@@ -1,6 +1,10 @@
 package app.shiv.domain.actions
 
 import app.shiv.domain.model.ActionLogEntry
+import app.shiv.domain.integration.DiagnosticArea
+import app.shiv.domain.integration.DiagnosticCode
+import app.shiv.domain.integration.DiagnosticEvent
+import app.shiv.domain.integration.DiagnosticsPort
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
@@ -39,7 +43,8 @@ data class ActionExecutionReport(
 class AuthorizedActionExecutor(
     private val auditRepository: ActionAuditRepository,
     private val clock: ActionClock = ActionClock(System::currentTimeMillis),
-    private val newId: () -> String = { UUID.randomUUID().toString() }
+    private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val diagnostics: DiagnosticsPort = DiagnosticsPort { }
 ) {
     suspend fun execute(
         request: ActionAuthorizationRequest,
@@ -82,6 +87,7 @@ class AuthorizedActionExecutor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
+            recordDiagnostic(DiagnosticCode.ACTION_DISPATCH_FAILED)
             val failed = startedEntry.copy(
                 outcome = ActionExecutionStatus.FAILED.name,
                 result = "FAILED:${failure.javaClass.simpleName}"
@@ -116,7 +122,18 @@ class AuthorizedActionExecutor(
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
+        recordDiagnostic(DiagnosticCode.AUDIT_WRITE_FAILED)
         false
+    }
+
+    private suspend fun recordDiagnostic(code: DiagnosticCode) {
+        try {
+            diagnostics.record(DiagnosticEvent(DiagnosticArea.ACTION, code, clock.nowMillis()))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Diagnostics failure must not change authorization or action outcome.
+        }
     }
 
     private fun auditEntry(

@@ -1,10 +1,11 @@
-package app.shiv
+package app.shiv.data.local
 
 import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.util.UUID
+import app.shiv.platform.LocalKeyStore
 
 @Entity(tableName = "chat_messages")
 data class DbChatMessage(

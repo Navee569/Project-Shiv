@@ -15,20 +15,20 @@
     <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Shiv" android:usesCleartextTraffic="false" android:allowBackup="false">
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".ui.MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <service android:name=".ListeningService" android:exported="false" android:foregroundServiceType="microphone" />
-        <service android:name=".ReminderVoiceService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <service android:name=".CalendarNotificationListener" android:label="Shiv schedule listener" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
+        <service android:name=".platform.ListeningService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".platform.ReminderVoiceService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".platform.CalendarNotificationListener" android:label="Shiv schedule listener" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>
-        <receiver android:name=".ReminderReceiver" android:exported="false" />
-        <receiver android:name=".PendingEventReceiver" android:exported="false" />
-        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
+        <receiver android:name=".platform.ReminderReceiver" android:exported="false" />
+        <receiver android:name=".platform.PendingEventReceiver" android:exported="false" />
+        <receiver android:name=".platform.BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
     </application>

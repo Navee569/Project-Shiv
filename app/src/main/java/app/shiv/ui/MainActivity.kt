@@ -1,5 +1,6 @@
-package app.shiv
+package app.shiv.ui
 
+import app.shiv.platform.ProactiveWorker
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
