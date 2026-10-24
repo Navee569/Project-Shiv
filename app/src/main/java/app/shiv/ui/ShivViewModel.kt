@@ -71,8 +71,12 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     val reminderLeadMinutes = MutableStateFlow(Brain.DEFAULT_LEAD_MINUTES)
     val pendingAction = MutableStateFlow<PendingShivAction?>(null)
     val lastCalendarSync = MutableStateFlow<String?>(null)
-    val modelStatus = MutableStateFlow("No local chat model installed")
+    val modelStatus = MutableStateFlow("Checking local model storage…")
     val modelFiles = MutableStateFlow(false to false)
+    val modelInventoryLoading = MutableStateFlow(true)
+    val modelInventoryError = MutableStateFlow<String?>(null)
+    val isReplying = MutableStateFlow(false)
+    val chatError = MutableStateFlow<String?>(null)
     val brainRuntimeStatus = brain.runtimeStatus
     val backupStatus = MutableStateFlow<String?>(null)
 
@@ -120,8 +124,16 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun refreshModelStatus() {
-        modelFiles.value = brainRuntime.installedModels()
-        modelStatus.value = if (modelFiles.value.first || modelFiles.value.second) "Local model file(s) installed; not loaded yet" else brain.modelStatus
+        modelInventoryLoading.value = true
+        modelInventoryError.value = null
+        try {
+            modelFiles.value = brainRuntime.installedModels()
+            modelStatus.value = if (modelFiles.value.first || modelFiles.value.second) "Local model file(s) installed; not loaded yet" else brain.modelStatus
+        } catch (error: Exception) {
+            modelInventoryError.value = "Couldn’t read installed models: ${error.message ?: error.javaClass.simpleName}"
+        } finally {
+            modelInventoryLoading.value = false
+        }
     }
 
     fun exportBackup(uri: android.net.Uri, password: CharArray) {
@@ -152,6 +164,10 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         val input = text.trim()
         if (input.isBlank()) return
         viewModelScope.launch {
+            if (isReplying.value) return@launch
+            isReplying.value = true
+            chatError.value = null
+            try {
             dao.addMessage(ChatMessage(text = input, fromUser = true))
             val contextSnapshot = buildString {
                 appendLine("Current time: ${java.time.ZonedDateTime.now()}")
@@ -320,6 +336,12 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                 } else answer = "I couldn’t find a saved memory matching that, so nothing was removed."
             }
             if (answer.isNotBlank()) dao.addMessage(ChatMessage(text = answer, fromUser = false, tier = tierFor(parsed).name))
+            } catch (error: Exception) {
+                chatError.value = "Shiv couldn’t finish that request. Some processing may have completed; check Events and action history before retrying."
+                runCatching { dao.addMessage(ChatMessage(text = "I couldn’t finish processing that request. Please try again.", fromUser = false)) }
+            } finally {
+                isReplying.value = false
+            }
         }
     }
 

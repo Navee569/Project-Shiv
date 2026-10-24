@@ -14,6 +14,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,19 +43,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.shiv.domain.speech.SpeechRecognitionSession
 import app.shiv.domain.speech.SpeechSynthesis
 
-private enum class ShivTab(val label: String) { CHAT("Chat"), EVENTS("Events"), MEMORY("Memory"), SETTINGS("Settings") }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShivApp(vm: ShivViewModel = viewModel()) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf(ShivTab.CHAT) }
+    val destination = rememberShivDestination()
     val messages by vm.messages.collectAsStateWithLifecycle()
     val pending by vm.pendingAction.collectAsStateWithLifecycle()
     val speakReplies = remember { mutableStateOf(context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).getBoolean("speak_replies", true)) }
     val speaker: SpeechSynthesis = remember { OfflineSpeechOutput(context) }
     var lastSpokenId by remember { mutableStateOf<String?>(null) }
     DisposableEffect(speaker) { onDispose { speaker.close() } }
+    BackHandler(enabled = !destination.value.isPrimary) {
+        destination.value = ShivDestination.SETTINGS
+    }
     LaunchedEffect(messages.lastOrNull()?.id, speakReplies.value) {
         val latest = messages.lastOrNull()
         if (latest != null && !latest.fromUser && latest.id != lastSpokenId) {
@@ -65,27 +68,47 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("Shiv"); Text("Your personal manager", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+                title = { Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Shiv")
+                    Text(
+                        if (destination.value.isPrimary) "Your personal manager" else destination.value.title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } }
             )
         },
         bottomBar = {
             NavigationBar {
-                ShivTab.entries.forEach { tab ->
-                    val icon = when (tab) { ShivTab.CHAT -> Icons.Default.Chat; ShivTab.EVENTS -> Icons.Default.Event; ShivTab.MEMORY -> Icons.Default.Bookmark; ShivTab.SETTINGS -> Icons.Default.Settings }
-                    NavigationBarItem(selected = selectedTab == tab, onClick = { selectedTab = tab }, icon = { Icon(icon, contentDescription = tab.label) }, label = { Text(tab.label) })
+                ShivDestination.entries.filter { it.isPrimary }.forEach { tab ->
+                    val icon = when (tab) {
+                        ShivDestination.CHAT -> Icons.Default.Chat
+                        ShivDestination.EVENTS -> Icons.Default.Event
+                        ShivDestination.MEMORY -> Icons.Default.Bookmark
+                        else -> Icons.Default.Settings
+                    }
+                    NavigationBarItem(
+                        selected = destination.value == tab,
+                        onClick = { destination.value = tab },
+                        icon = { Icon(icon, contentDescription = tab.title) },
+                        label = { Text(tab.title) }
+                    )
                 }
             }
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            when (selectedTab) {
-                ShivTab.CHAT -> ChatTab(vm, messages, Modifier.fillMaxSize())
-                ShivTab.EVENTS -> EventsTab(vm, Modifier.fillMaxSize())
-                ShivTab.MEMORY -> MemoryTab(vm, Modifier.fillMaxSize())
-                ShivTab.SETTINGS -> SettingsTab(vm, speakReplies.value, { value ->
+            when (destination.value) {
+                ShivDestination.CHAT -> ChatTab(vm, messages, Modifier.fillMaxSize())
+                ShivDestination.EVENTS -> EventsTab(vm, Modifier.fillMaxSize())
+                ShivDestination.MEMORY -> MemoryTab(vm, Modifier.fillMaxSize())
+                ShivDestination.SETTINGS -> SettingsTab(vm, speakReplies.value, { value ->
                     speakReplies.value = value
                     context.getSharedPreferences("shiv_preferences", Context.MODE_PRIVATE).edit().putBoolean("speak_replies", value).apply()
-                }, Modifier.fillMaxSize())
+                }, onOpenDestination = { destination.value = it }, modifier = Modifier.fillMaxSize())
+                ShivDestination.MODELS -> ModelManagementTab(vm, Modifier.fillMaxSize())
+                ShivDestination.AI_STATUS -> AiStatusTab(vm, Modifier.fillMaxSize())
+                ShivDestination.PERMISSIONS -> PermissionExplanationTab(Modifier.fillMaxSize())
             }
         }
     }
@@ -115,7 +138,9 @@ fun ShivApp(vm: ShivViewModel = viewModel()) {
 @Composable
 private fun ChatTab(vm: ShivViewModel, messages: List<ChatMessage>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var draft by remember { mutableStateOf("") }
+    var draft by rememberSaveable { mutableStateOf("") }
+    val replying by vm.isReplying.collectAsStateWithLifecycle()
+    val chatError by vm.chatError.collectAsStateWithLifecycle()
     var showCamera by remember { mutableStateOf(false) }
     var micNotice by remember { mutableStateOf<String?>(null) }
     var photoNotice by remember { mutableStateOf<String?>(null) }
@@ -177,6 +202,13 @@ private fun ChatTab(vm: ShivViewModel, messages: List<ChatMessage>, modifier: Mo
             }
             item { photoNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
             item { micNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+            item { chatError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) } }
+            if (replying) item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Shiv is working on this on your phone…")
+                }
+            }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = {
@@ -188,7 +220,7 @@ private fun ChatTab(vm: ShivViewModel, messages: List<ChatMessage>, modifier: Mo
                 if (granted) startMic() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
             }) { Icon(Icons.Default.Mic, "Speak to Shiv") }
             OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f), placeholder = { Text("Message Shiv…") }, shape = RoundedCornerShape(24.dp), maxLines = 4)
-            IconButton(onClick = { vm.send(draft); draft = "" }, enabled = draft.isNotBlank()) { Icon(Icons.Default.Send, "Send") }
+            IconButton(onClick = { vm.send(draft); draft = "" }, enabled = draft.isNotBlank() && !replying) { Icon(Icons.Default.Send, "Send") }
         }
     }
     if (showCamera) Dialog(onDismissRequest = { showCamera = false }) {
@@ -201,13 +233,27 @@ private fun ChatTab(vm: ShivViewModel, messages: List<ChatMessage>, modifier: Mo
 @Composable
 private fun EventsTab(vm: ShivViewModel, modifier: Modifier = Modifier) {
     val events by vm.events.collectAsStateWithLifecycle()
+    val pendingEvents by vm.pendingEvents.collectAsStateWithLifecycle()
     val lead by vm.reminderLeadMinutes.collectAsStateWithLifecycle()
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Column {
-                Text("Upcoming", style = MaterialTheme.typography.headlineSmall)
-                Text("Shiv reminds you $lead minutes early. Tell him if you want to change that.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item { Text("Needs your review", style = MaterialTheme.typography.headlineSmall) }
+        if (pendingEvents.isEmpty()) item { Text("No detected events are waiting for your confirmation.") }
+        items(pendingEvents, key = { "pending-${it.id}" }) { candidate ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(candidate.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(android.text.format.DateFormat.format("EEE, MMM d · h:mm a", candidate.startsAt).toString())
+                    Text("Detected while listening. Nothing is saved until you confirm.", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.confirmPendingEvent(candidate) }) { Text("Save event · ASK_FIRST") }
+                        TextButton(onClick = { vm.ignorePendingEvent(candidate) }) { Text("Ignore") }
+                    }
+                }
             }
+        }
+        item { Text("Upcoming", style = MaterialTheme.typography.titleLarge) }
+        item {
+            Text("Shiv reminds you $lead minutes early. Tell him if you want to change that.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (events.isEmpty()) item { Text("No upcoming events yet. Tell Shiv, ‘Meeting with Raj Thursday at 5.’") }
         items(events, key = { it.id }) { event ->
@@ -270,11 +316,15 @@ private fun MemoryTab(vm: ShivViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+private fun SettingsTab(
+    vm: ShivViewModel,
+    speakReplies: Boolean,
+    onSpeakReplies: (Boolean) -> Unit,
+    onOpenDestination: (ShivDestination) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val lead by vm.reminderLeadMinutes.collectAsStateWithLifecycle()
-    val modelStatus by vm.modelStatus.collectAsStateWithLifecycle()
-    val modelFiles by vm.modelFiles.collectAsStateWithLifecycle()
     val actionTiers by vm.actionTiers.collectAsStateWithLifecycle()
     val backupStatus by vm.backupStatus.collectAsStateWithLifecycle()
     val synced by vm.lastCalendarSync.collectAsStateWithLifecycle()
@@ -298,7 +348,6 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
     val enabledListeners = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners").orEmpty()
     val notificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     val exactAlarms = Build.VERSION.SDK_INT < 31 || (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
-    var modelRole by remember { mutableStateOf<String?>(null) }
     var backupDialogMode by remember { mutableStateOf<String?>(null) }
     var backupUri by remember { mutableStateOf<Uri?>(null) }
     var backupPassword by remember { mutableStateOf("") }
@@ -308,15 +357,17 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
     val backupOpen = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { backupUri = uri; backupDialogMode = "restore" }
     }
-    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val role = modelRole
-        if (uri != null && role != null) vm.importModel(uri, role)
-        modelRole = null
-    }
-
     LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Permissions & privacy", style = MaterialTheme.typography.headlineSmall) }
         item { Text("Shiv does nothing in the background unless you turn it on here. Your events and memories stay in the encrypted local database.") }
+        item {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("More Shiv settings", style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(onClick = { onOpenDestination(ShivDestination.MODELS) }, modifier = Modifier.fillMaxWidth()) { Text("Manage local AI models") }
+                OutlinedButton(onClick = { onOpenDestination(ShivDestination.AI_STATUS) }, modifier = Modifier.fillMaxWidth()) { Text("View AI status") }
+                OutlinedButton(onClick = { onOpenDestination(ShivDestination.PERMISSIONS) }, modifier = Modifier.fillMaxWidth()) { Text("Permission explanations") }
+            } }
+        }
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Calendar · read-only", style = MaterialTheme.typography.titleMedium)
@@ -387,19 +438,6 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
         }
         item {
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Local AI models", style = MaterialTheme.typography.titleMedium)
-                Text("Status: $modelStatus")
-                Text("Fast model: ${if (modelFiles.first) "installed" else "not installed"} · Chat model: ${if (modelFiles.second) "installed" else "not installed"}")
-                Text("Import .litertlm model files from your phone. Shiv copies them into private app storage. Model files stay on this device; there is no AI network permission or API key.", style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { modelRole = "fast"; modelPicker.launch(arrayOf("*/*")) }) { Text("Choose fast model") }
-                    OutlinedButton(onClick = { modelRole = "chat"; modelPicker.launch(arrayOf("*/*")) }) { Text("Choose chat model") }
-                }
-                Text("Room + SQLCipher database is encrypted with a random key wrapped by Android Keystore. Photo labels and speech recognition use on-device components.", style = MaterialTheme.typography.bodySmall)
-            } }
-        }
-        item {
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Samsung background setting", style = MaterialTheme.typography.titleMedium)
                 Text("To keep alarms and listening reliable: Settings → Battery → Background usage limits → Never sleeping apps → add Shiv. Samsung may still pause apps in power-saving mode.")
             } }
@@ -416,6 +454,7 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
             } }
         }
         item { Text("Recent action history", style = MaterialTheme.typography.titleLarge) }
+        if (actionLog.isEmpty()) item { Text("No actions have been recorded yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(actionLog, key = { it.id }) { entry ->
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { Text(entry.action, Modifier.weight(1f), fontWeight = FontWeight.Medium); TierChip(entry.tier) }
@@ -447,6 +486,131 @@ private fun SettingsTab(vm: ShivViewModel, speakReplies: Boolean, onSpeakReplies
             },
             dismissButton = { TextButton(onClick = { backupDialogMode = null; backupPassword = ""; backupUri = null }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+private fun ModelManagementTab(vm: ShivViewModel, modifier: Modifier = Modifier) {
+    val modelStatus by vm.modelStatus.collectAsStateWithLifecycle()
+    val modelFiles by vm.modelFiles.collectAsStateWithLifecycle()
+    val inventoryLoading by vm.modelInventoryLoading.collectAsStateWithLifecycle()
+    val inventoryError by vm.modelInventoryError.collectAsStateWithLifecycle()
+    var modelRole by rememberSaveable { mutableStateOf<String?>(null) }
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val role = modelRole
+        if (uri != null && role != null) vm.importModel(uri, role)
+        modelRole = null
+    }
+
+    LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Local AI models", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Status: $modelStatus", style = MaterialTheme.typography.titleMedium)
+                if (inventoryLoading) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Checking private model storage…")
+                    }
+                } else if (inventoryError != null) {
+                    Text(inventoryError!!, color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text("Fast model: ${if (modelFiles.first) "installed" else "not installed"} · Chat model: ${if (modelFiles.second) "installed" else "not installed"}")
+                }
+                if (modelStatus.startsWith("Copying")) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Import in progress")
+                    }
+                } else if (modelStatus.startsWith("Model import failed")) {
+                    Text(modelStatus, color = MaterialTheme.colorScheme.error)
+                } else if (!inventoryLoading && inventoryError == null && !modelFiles.first && !modelFiles.second) {
+                    Text("No models are installed. Chat answers that require a language model will be unavailable until you import one.")
+                }
+                Text("Choose model files already on this phone. Shiv copies them into private app storage; files are not uploaded or bundled with the app.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { modelRole = "fast"; modelPicker.launch(arrayOf("*/*")) }) { Text("Import fast model") }
+                    OutlinedButton(onClick = { modelRole = "chat"; modelPicker.launch(arrayOf("*/*")) }) { Text("Import chat model") }
+                }
+                Text("Model removal is not available in this screen yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } }
+        }
+    }
+}
+
+@Composable
+private fun AiStatusTab(vm: ShivViewModel, modifier: Modifier = Modifier) {
+    val status by vm.brainRuntimeStatus.collectAsStateWithLifecycle()
+    val modelFiles by vm.modelFiles.collectAsStateWithLifecycle()
+    val inventoryLoading by vm.modelInventoryLoading.collectAsStateWithLifecycle()
+    val inventoryError by vm.modelInventoryError.collectAsStateWithLifecycle()
+    LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("AI status", style = MaterialTheme.typography.headlineSmall) }
+        item {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("On-device Brain", style = MaterialTheme.typography.titleMedium)
+                Text(status.status)
+                Text("Inference: ${if (status.inferenceRunning) "running" else "idle"}")
+                Text("Requests waiting: ${status.queuedRequests}")
+                Text("Last routing: ${status.lastRoutingMillis?.let { "$it ms" } ?: "not yet measured"}")
+                Text("Last reply: ${status.lastReplyMillis?.let { "$it ms" } ?: "not yet measured"}")
+            } }
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Installed models", style = MaterialTheme.typography.titleMedium)
+                when {
+                    inventoryLoading -> Text("Checking private model storage…")
+                    inventoryError != null -> Text(inventoryError!!, color = MaterialTheme.colorScheme.error)
+                    else -> {
+                        Text("Fast model: ${if (modelFiles.first) "installed locally" else "not installed"}")
+                        Text("Chat model: ${if (modelFiles.second) "installed locally" else "not installed"}")
+                    }
+                }
+                if (!inventoryLoading && inventoryError == null && !modelFiles.first && !modelFiles.second) {
+                    Text("No model is installed. Deterministic event and reminder features remain available.")
+                } else {
+                    Text("Installed does not mean loaded. The runtime reports whether inference has started.", style = MaterialTheme.typography.bodySmall)
+                }
+            } }
+        }
+    }
+}
+
+@Composable
+private fun PermissionExplanationTab(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val notificationsAllowed = Build.VERSION.SDK_INT < 33 || androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+    val exactAlarmsAllowed = Build.VERSION.SDK_INT < 31 || (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+    val notificationReaderEnabled = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners").orEmpty().contains(context.packageName)
+    LazyColumn(modifier, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("Permission explanations", style = MaterialTheme.typography.headlineSmall) }
+        item { Text("These permissions unlock optional features. Shiv does not grant access automatically; you control each permission in Android.") }
+        item { PermissionExplanation("Calendar", "Read calendar entries only when you choose to sync them. Shiv does not write to your calendar.", hasPermission(context, Manifest.permission.READ_CALENDAR)) }
+        item { PermissionExplanation("Notifications", "Show reminder alerts and the visible status for listening mode.", notificationsAllowed) }
+        item { PermissionExplanation("Notification access", "Read notifications you explicitly allow so Shiv can offer relevant event candidates.", notificationReaderEnabled) }
+        item { PermissionExplanation("Microphone", "Use one-shot on-device speech recognition or the listening service you start.", hasPermission(context, Manifest.permission.RECORD_AUDIO)) }
+        item { PermissionExplanation("Camera", "Capture a photo only after you tap the camera control.", hasPermission(context, Manifest.permission.CAMERA)) }
+        item { PermissionExplanation("Exact alarms", "Schedule reminders at their requested time. Android's inexact fallback remains available when exact alarms are disabled.", exactAlarmsAllowed) }
+        item {
+            OutlinedButton(
+                onClick = { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Manage Shiv permissions in Android settings") }
+        }
+    }
+}
+
+@Composable
+private fun PermissionExplanation(title: String, explanation: String, granted: Boolean) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Text(if (granted) "Allowed" else "Not allowed", color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(explanation, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
