@@ -48,7 +48,19 @@ class RoomShivViewRepositoryTest {
         val memory = MemoryFact(id = "memory", text = "Prefers quiet mornings", createdAt = 11L)
         val event = EventRecord(id = "meeting", title = "Meeting", startsAt = 100L, source = "CHAT")
         val pending = PendingEventRecord(id = "pending", title = "Possible meeting", startsAt = 120L)
-        val action = ActionLogEntry(id = "action", action = "Saved", tier = "FREE", outcome = "Local", createdAt = 12L)
+        val action = ActionLogEntry(
+            id = "action",
+            action = "Action CREATE_EVENT",
+            tier = "ACT_THEN_TELL",
+            outcome = "SUCCEEDED",
+            createdAt = 12L,
+            actionType = "CREATE_EVENT",
+            arguments = mapOf("id" to "event-1", "title" to "Meet \"Raj\"", "startsAt" to "1700000000000"),
+            permissionState = "NOT_REQUIRED",
+            confirmationState = "CONFIRMED",
+            result = "Event saved",
+            undoInfo = "DELETE_EVENT:event-1"
+        )
         val rule = ReminderRule("lead", "15", 13L)
         val draft = ReplyDraft(id = "draft", person = "Raj", body = "See you", createdAt = 14L)
         val tier = ActionTierSetting("CREATE_EVENT", "ASK_FIRST")

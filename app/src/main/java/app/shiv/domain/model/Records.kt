@@ -38,7 +38,13 @@ data class ActionLogEntry(
     val action: String,
     val tier: String,
     val outcome: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val actionType: String? = null,
+    val arguments: Map<String, String> = emptyMap(),
+    val permissionState: String? = null,
+    val confirmationState: String? = null,
+    val result: String? = null,
+    val undoInfo: String? = null
 )
 
 data class ReminderRule(val ruleKey: String, val value: String, val updatedAt: Long = System.currentTimeMillis())

@@ -33,8 +33,17 @@ data class DbEventRecord(
 
 @Entity(tableName = "action_log", indices = [Index("createdAt")])
 data class DbActionLogEntry(
-    @PrimaryKey val id: String = UUID.randomUUID().toString(), val action: String,
-    val tier: String, val outcome: String, val createdAt: Long = System.currentTimeMillis()
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val action: String,
+    val tier: String,
+    val outcome: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val actionType: String? = null,
+    @ColumnInfo(defaultValue = "'{}'") val argumentsJson: String = "{}",
+    val permissionState: String? = null,
+    val confirmationState: String? = null,
+    val result: String? = null,
+    val undoInfo: String? = null
 )
 
 @Entity(tableName = "reminder_rules")
@@ -133,7 +142,7 @@ interface ShivDao {
 
 @Database(
     entities = [DbChatMessage::class, DbUserProfile::class, DbMemoryFact::class, DbEventRecord::class, DbActionLogEntry::class, DbReminderRule::class, DbReplyDraft::class, DbActionTierSetting::class, DbShivSettings::class, DbPendingEventRecord::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class ShivDatabase : RoomDatabase() {
@@ -157,6 +166,16 @@ abstract class ShivDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pending_events_startsAt ON pending_events(startsAt)")
             }
         }
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE action_log ADD COLUMN actionType TEXT")
+                db.execSQL("ALTER TABLE action_log ADD COLUMN argumentsJson TEXT NOT NULL DEFAULT '{}'")
+                db.execSQL("ALTER TABLE action_log ADD COLUMN permissionState TEXT")
+                db.execSQL("ALTER TABLE action_log ADD COLUMN confirmationState TEXT")
+                db.execSQL("ALTER TABLE action_log ADD COLUMN result TEXT")
+                db.execSQL("ALTER TABLE action_log ADD COLUMN undoInfo TEXT")
+            }
+        }
         @Volatile private var instance: ShivDatabase? = null
         fun get(context: Context): ShivDatabase = instance ?: synchronized(this) {
             instance ?: run {
@@ -168,6 +187,7 @@ abstract class ShivDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_1_2)
                     .addMigrations(MIGRATION_2_3)
                     .addMigrations(MIGRATION_3_4)
+                    .addMigrations(MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

@@ -17,6 +17,10 @@ import app.shiv.domain.actions.ActionAuthorizationOutcome
 import app.shiv.domain.actions.ActionAuthorizationDecision
 import app.shiv.domain.actions.ActionPermissionState
 import app.shiv.domain.actions.ActionTier
+import app.shiv.domain.actions.ActionAuditRepository
+import app.shiv.domain.actions.ActionDispatchResult
+import app.shiv.domain.actions.ActionExecutionStatus
+import app.shiv.domain.actions.AuthorizedActionExecutor
 
 sealed class PendingShivAction(val title: String, val explanation: String) {
     class SaveProfile(val name: String, val notes: String) : PendingShivAction("Update your local profile?", "Confirm to replace the profile details stored on this phone.")
@@ -33,6 +37,7 @@ sealed class PendingShivAction(val title: String, val explanation: String) {
 
 class ShivViewModel(app: Application) : AndroidViewModel(app) {
     private val dao: ShivViewRepository = RoomShivViewRepository(app)
+    private val actionExecutor = AuthorizedActionExecutor(ActionAuditRepository(dao::logAction))
     private val brain = BrainProvider.get(app.applicationContext)
     val messages = dao.messages().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val events = dao.events(System.currentTimeMillis()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -174,18 +179,29 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             parsed.event?.let { event ->
-                val decision = authorizeAction(
-                    "CREATE_EVENT",
-                    mapOf("id" to event.id, "title" to event.title, "startsAt" to event.startsAt.toString()),
-                    ActionTier.FREE
-                )
-                when (decision.outcome) {
-                    ActionAuthorizationOutcome.REQUIRE_CONFIRMATION -> {
+                val report = actionExecutor.execute(
+                    actionRequest(
+                        "CREATE_EVENT",
+                        mapOf("id" to event.id, "title" to event.title, "startsAt" to event.startsAt.toString()),
+                        ActionTier.FREE
+                    )
+                ) {
+                    saveEvent(event, ActionTier.FREE, logAction = false)
+                    ActionDispatchResult("Event saved and reminder scheduled", "DELETE_EVENT:${event.id}")
+                }
+                when (report.status) {
+                    ActionExecutionStatus.AWAITING_CONFIRMATION -> {
                         pendingAction.value = PendingShivAction.SaveEvent(event)
                         answer = "I found an event to save. Confirm and I’ll add it and set the reminder."
                     }
-                    ActionAuthorizationOutcome.ALLOW -> decision.dispatchIfAllowed { saveEvent(event, decision.effectiveTier) }
-                    else -> answer = authorizationFailure(decision)
+                    ActionExecutionStatus.SUCCEEDED -> Unit
+                    ActionExecutionStatus.AUDIT_UNAVAILABLE -> answer = when {
+                        report.dispatched -> "The event was saved, but I couldn’t update its action record."
+                        report.dispatchAttempted -> "The event action did not finish cleanly. Check the event and reminder before retrying."
+                        else -> "I couldn’t securely record that action, so I didn’t save the event."
+                    }
+                    ActionExecutionStatus.FAILED -> answer = "The event action did not finish cleanly. Check the event and reminder before retrying."
+                    else -> answer = authorizationFailure(report.authorization)
                 }
             }
             parsed.reschedule?.let { request ->
@@ -264,7 +280,16 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         permissionState: ActionPermissionState = ActionPermissionState.NOT_REQUIRED,
         confirmed: Boolean = false
     ): ActionAuthorizationDecision = ActionAuthorizationPolicy.authorize(
-        ActionAuthorizationRequest(
+        actionRequest(actionType, arguments, minimumTier, permissionState, confirmed)
+    )
+
+    private fun actionRequest(
+        actionType: String,
+        arguments: Map<String, String>,
+        minimumTier: ActionTier,
+        permissionState: ActionPermissionState = ActionPermissionState.NOT_REQUIRED,
+        confirmed: Boolean = false
+    ) = ActionAuthorizationRequest(
             actionType = actionType,
             arguments = arguments,
             configuredTier = actionTiers.value.firstOrNull { it.actionKey == actionType }?.tier,
@@ -272,7 +297,6 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             permissionState = permissionState,
             confirmed = confirmed
         )
-    )
 
     private fun authorizationFailure(decision: ActionAuthorizationDecision): String = when (decision.outcome) {
         ActionAuthorizationOutcome.DENY_PERMISSION -> "I don’t have permission to perform that action. Nothing was changed."
@@ -280,10 +304,10 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
         else -> "I couldn’t authorize that action, so nothing was changed."
     }
 
-    private suspend fun saveEvent(event: EventRecord, tier: ActionTier) {
+    private suspend fun saveEvent(event: EventRecord, tier: ActionTier, logAction: Boolean = true) {
         dao.saveEvent(event)
         AlarmScheduler.schedule(getApplication(), event, reminderLeadMinutes.value)
-        dao.logAction(ActionLogEntry(action = "Saved an event and set its reminder", tier = tier.name, outcome = event.title))
+        if (logAction) dao.logAction(ActionLogEntry(action = "Saved an event and set its reminder", tier = tier.name, outcome = event.title))
     }
 
     private fun tierFor(reply: BrainReply): ActionTier = when {
@@ -399,6 +423,35 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     /** Returns a message draft only after the user taps the in-app confirm button. */
     fun confirmPending(): SmsDraft? {
         val action = pendingAction.value ?: return null
+        if (action is PendingShivAction.SaveEvent) {
+            pendingAction.value = null
+            viewModelScope.launch {
+                val report = actionExecutor.execute(
+                    actionRequest(
+                        "CREATE_EVENT",
+                        mapOf("id" to action.event.id, "title" to action.event.title, "startsAt" to action.event.startsAt.toString()),
+                        ActionTier.FREE,
+                        confirmed = true
+                    )
+                ) {
+                    saveEvent(action.event, ActionTier.ASK_FIRST, logAction = false)
+                    ActionDispatchResult("Event saved and reminder scheduled", "DELETE_EVENT:${action.event.id}")
+                }
+                if (!report.dispatched || report.status == ActionExecutionStatus.AUDIT_UNAVAILABLE) {
+                    val message = when (report.status) {
+                        ActionExecutionStatus.AUDIT_UNAVAILABLE -> when {
+                            report.dispatched -> "The event was saved, but I couldn’t update its action record."
+                            report.dispatchAttempted -> "The event action did not finish cleanly. Check the event and reminder before retrying."
+                            else -> "I couldn’t securely record that action, so I didn’t save the event."
+                        }
+                        ActionExecutionStatus.FAILED -> "The event action did not finish cleanly. Check the event and reminder before retrying."
+                        else -> authorizationFailure(report.authorization)
+                    }
+                    dao.addMessage(ChatMessage(text = message, fromUser = false, tier = report.authorization.effectiveTier.name))
+                }
+            }
+            return null
+        }
         val decision = authorizePendingAction(action)
         var confirmedDraft: SmsDraft? = null
         val dispatched = decision.dispatchIfAllowed {
@@ -408,7 +461,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                     dao.saveProfile(UserProfile(name = action.name.trim(), notes = action.notes.trim()))
                     dao.logAction(ActionLogEntry(action = "Updated personal profile", tier = ActionTier.ASK_FIRST.name, outcome = "Confirmed by user"))
                 }
-                is PendingShivAction.SaveEvent -> viewModelScope.launch { saveEvent(action.event, ActionTier.ASK_FIRST) }
+                is PendingShivAction.SaveEvent -> Unit
                 is PendingShivAction.SaveMemory -> viewModelScope.launch {
                     dao.saveMemory(action.memory)
                     dao.logAction(ActionLogEntry(action = "Saved a personal memory", tier = ActionTier.ASK_FIRST.name, outcome = action.memory.text))

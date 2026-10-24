@@ -97,7 +97,14 @@ class EncryptedBackup(context: Context) {
     private fun memoryJson(v: MemoryFact) = JSONObject().put("id", v.id).put("text", v.text).put("createdAt", v.createdAt)
     private fun eventJson(v: EventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("source", v.source).put("createdAt", v.createdAt)
     private fun pendingEventJson(v: PendingEventRecord) = JSONObject().put("id", v.id).put("title", v.title).put("startsAt", v.startsAt).put("place", v.place).put("person", v.person).put("createdAt", v.createdAt)
-    private fun actionJson(v: ActionLogEntry) = JSONObject().put("id", v.id).put("action", v.action).put("tier", v.tier).put("outcome", v.outcome).put("createdAt", v.createdAt)
+    private fun actionJson(v: ActionLogEntry) = JSONObject()
+        .put("id", v.id).put("action", v.action).put("tier", v.tier).put("outcome", v.outcome).put("createdAt", v.createdAt)
+        .put("actionType", v.actionType ?: JSONObject.NULL)
+        .put("arguments", JSONObject(v.arguments))
+        .put("permissionState", v.permissionState ?: JSONObject.NULL)
+        .put("confirmationState", v.confirmationState ?: JSONObject.NULL)
+        .put("result", v.result ?: JSONObject.NULL)
+        .put("undoInfo", v.undoInfo ?: JSONObject.NULL)
     private fun ruleJson(v: ReminderRule) = JSONObject().put("ruleKey", v.ruleKey).put("value", v.value).put("updatedAt", v.updatedAt)
     private fun draftJson(v: ReplyDraft) = JSONObject().put("id", v.id).put("person", v.person).put("body", v.body).put("createdAt", v.createdAt)
     private fun tierJson(v: ActionTierSetting) = JSONObject().put("actionKey", v.actionKey).put("tier", v.tier)
@@ -107,7 +114,27 @@ class EncryptedBackup(context: Context) {
     private fun readMemory(o: JSONObject) = MemoryFact(o.getString("id"), o.getString("text"), o.getLong("createdAt"))
     private fun readEvent(o: JSONObject) = EventRecord(o.getString("id"), o.getString("title"), o.getLong("startsAt"), o.optString("place").takeUnless { it == "null" || it.isEmpty() }, o.optString("person").takeUnless { it == "null" || it.isEmpty() }, o.optString("source", "CHAT"), o.getLong("createdAt"))
     private fun readPendingEvent(o: JSONObject) = PendingEventRecord(o.getString("id"), o.getString("title"), o.getLong("startsAt"), o.optString("place").takeUnless { it == "null" || it.isEmpty() }, o.optString("person").takeUnless { it == "null" || it.isEmpty() }, o.getLong("createdAt"))
-    private fun readAction(o: JSONObject) = ActionLogEntry(o.getString("id"), o.getString("action"), o.getString("tier"), o.getString("outcome"), o.getLong("createdAt"))
+    private fun readAction(o: JSONObject): ActionLogEntry {
+        val arguments = o.optJSONObject("arguments")?.let { values ->
+            values.keys().asSequence().associateWith(values::getString)
+        }.orEmpty()
+        return ActionLogEntry(
+            id = o.getString("id"),
+            action = o.getString("action"),
+            tier = o.getString("tier"),
+            outcome = o.getString("outcome"),
+            createdAt = o.getLong("createdAt"),
+            actionType = optionalString(o, "actionType"),
+            arguments = arguments,
+            permissionState = optionalString(o, "permissionState"),
+            confirmationState = optionalString(o, "confirmationState"),
+            result = optionalString(o, "result"),
+            undoInfo = optionalString(o, "undoInfo")
+        )
+    }
+
+    private fun optionalString(json: JSONObject, key: String): String? =
+        if (json.isNull(key)) null else json.optString(key).takeIf(String::isNotEmpty)
     private fun readRule(o: JSONObject) = ReminderRule(o.getString("ruleKey"), o.getString("value"), o.getLong("updatedAt"))
     private fun readDraft(o: JSONObject) = ReplyDraft(o.getString("id"), o.getString("person"), o.getString("body"), o.getLong("createdAt"))
     private fun readTier(o: JSONObject) = ActionTierSetting(o.getString("actionKey"), o.getString("tier"))
