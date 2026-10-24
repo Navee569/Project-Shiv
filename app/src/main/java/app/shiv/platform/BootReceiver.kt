@@ -19,6 +19,7 @@ open class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
+                CaptureQueueWorker.enqueuePending(context)
                 val dao = ShivDatabase.get(context).dao()
                 val now = System.currentTimeMillis()
                 val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES

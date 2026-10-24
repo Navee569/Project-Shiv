@@ -2,10 +2,10 @@
 
 | Feature | Status | Verification | Last verified commit | Limitations | Open defects |
 |---|---|---|---|---|---|
-| M0 baseline build | BUILT AND TESTED (CI) | Tester confirmed M0 pass; final CI run 40045079241 passed assembleDebug, testDebugUnitTest and lintDebug | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | None. | None. |
-| M0 worker delivery fixes | BUILT AND TESTED (CI) | Tester confirmed M0 pass; runs 40044537471 and 40045079241 passed build, 16 unit tests and lint | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | Uncertain dispatch retains a reservation; documented in DEFECT_LOG.md and accepted for M0. | None; tester closed M0-001 through M0-004. |
-| M1 architecture foundation | PARTIAL — M1-009 fix awaiting retest | Tester verified M1-006 through M1-008 on 0f5eee5; CI run 40100438617 passed build, unit tests, lint and APK upload | 0f5eee5bd286b2b0a610066f3c1fd23eeb31e481 | M3 persistence verification and M4 queue requirements remain separate. The accepted M0 reservation limitation is unchanged. | M1-009 fix awaiting exact-commit CI and independent review; M1-001 through M1-008 closed. |
-| M2 Compose shell | BUILT AND TESTED (CI) — independently accepted | Tester PASS on 0f5eee5; CI run 40100438617 passed build, unit tests, lint and APK upload | 0f5eee5bd286b2b0a610066f3c1fd23eeb31e481 | Tasks remain explicitly unavailable; model removal and later runtime capabilities belong to M4. | None; M2-001 through M2-004 closed. |
+| M0 baseline and worker delivery | BUILT AND TESTED (CI) — accepted | M0 passed independent review; exact evidence in DEFECT_LOG.md | a2c632054b5d20f6c5e46256c24b1044ca1e7741 | Uncertain proactive delivery retains a reservation and may consume a daily slot; accepted for M0. | None; M0-001 through M0-004 closed. |
+| M1 architecture foundation | BUILT AND TESTED (CI) — accepted | M1 passed independent review; M1-001 through M1-009 closed | a2c632054b5d20f6c5e46256c24b1044ca1e7741 | Later milestone work is separate. | None. |
+| M2 Compose shell | BUILT AND TESTED (CI) — accepted | M2 passed independent review; M2-001 through M2-004 closed | a2c632054b5d20f6c5e46256c24b1044ca1e7741 | Later model, tasks, and runtime capabilities remain separate. | None. |
+| M3 persistence foundation | PARTIAL — implementation delivered; independent review pending | Local assembleDebug, testDebugUnitTest (80 tests; 0 failures/errors/skips), lintDebug, and compileDebugAndroidTestKotlin passed. CI is configured to execute Android instrumentation for the real Keystore/SQLCipher open path and encrypted v5→v6 migration. | Base a2c632054b5d20f6c5e46256c24b1044ca1e7741 | Android instrumentation/device behavior is not claimed locally. | Exact-commit CI and independent M3 review pending. |
 
 ## M0 root cause
 

@@ -23,6 +23,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build, test, and lint
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - name: Verify SQLCipher and Keystore persistence on Android
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4

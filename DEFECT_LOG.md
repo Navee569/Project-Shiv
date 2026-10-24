@@ -52,3 +52,9 @@ M1-009 developer local verification: the real-Room event confirmation regression
 | Tested commit | CI run | Result |
 |---|---|---|
 | adfa2b269426a267d1181a41e69f708b2223011b | [40097224474](https://github.com/Navee569/Project-Shiv/actions/runs/40097224474) | Tester independently verified PASS: assembleDebug, testDebugUnitTest, lintDebug and APK upload; no rerun initiated |
+
+## M3 persistence foundation — implementation under review
+
+Schema version 6 adds task, reminder, model metadata, source/confidence, and encrypted capture-queue records with an explicit 5→6 migration. Listening transcripts and notification summaries are committed before event extraction. A serialized WorkManager consumer claims due captures by priority, stores retry/lease state, commits event/reminder results idempotently, and resumes pending work at app start and reboot. Missing or invalid Keystore material fails closed; completed capture payloads are cleared while retryable/failed payloads remain encrypted. Model weights remain in app-private files; only metadata is stored in Room.
+
+Regression coverage added for capture IDs/deduplication, priority order, save-before-scheduling, retry with retained input, repeated processing, concurrent claims, expired-lease recovery, transactional rollback, repository CRUD/correction/deletion, and version-5 migration. Android instrumentation exercises the production key-wrapper/SQLCipher path, plain-SQLite rejection, reopen persistence, wrong SQLCipher key, Keystore key loss, and encrypted migration. These changes are not M3 acceptance: exact-commit CI and independent Tester review are pending. No phone behavior is claimed.

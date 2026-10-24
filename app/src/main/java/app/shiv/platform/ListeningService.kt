@@ -5,8 +5,11 @@ import app.shiv.data.local.*
 import app.shiv.*
 
 import app.shiv.data.mapping.*
-import app.shiv.domain.actions.ActionAuthorizationPolicy
+import app.shiv.data.repository.RoomCaptureQueueRepository
+import app.shiv.domain.integration.CaptureSignalIntake
 import app.shiv.domain.actions.ActionTier
+import app.shiv.domain.model.CapturePriority
+import app.shiv.domain.model.CaptureSignal
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,7 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** User-started, visible, on-device transcription. Transcripts are transient and never stored. */
+/** User-started, visible, on-device transcription. Audio stays transient; text enters the encrypted inbox. */
 open class ListeningService : Service() {
     private var transcriber: Brain.OnDeviceTranscriber? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -68,23 +71,19 @@ open class ListeningService : Service() {
     }
 
     private fun saveOnlyExtractedEvent(transcript: String) {
-        val event = brain.extractEvent(transcript, source = "LISTENING") ?: return
         scope.launch {
-            val dao = ShivDatabase.get(applicationContext).dao()
-            val tier = ActionAuthorizationPolicy.effectiveTier(dao.actionTier("CREATE_EVENT"), ActionTier.FREE)
-            if (tier == ActionTier.ASK_FIRST) {
-                PendingEventConfirmation.request(applicationContext, event)
-                dao.logAction(ActionLogEntry(action = "Requested confirmation for a listening event", tier = ActionTier.ASK_FIRST.name, outcome = "Candidate not saved automatically"))
-                return@launch
-            }
-            dao.saveEvent(event)
-            dao.logAction(ActionLogEntry(action = "Saved an event from listening mode", tier = tier.name, outcome = event.title))
-            val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
-            AlarmScheduler.schedule(applicationContext, event, lead)
-            if (tier == ActionTier.ACT_THEN_TELL) ReminderReceiver.showNotification(applicationContext, "Saved event: ${event.title}", event.startsAt)
-            ProactiveWorker.checkSoon(applicationContext)
+            val database = ShivDatabase.get(applicationContext)
+            val signal = CaptureSignal(
+                payload = transcript,
+                source = CaptureQueueWorker.SOURCE_LISTENING,
+                capturedAt = System.currentTimeMillis(),
+                priority = CapturePriority.NORMAL
+            )
+            CaptureSignalIntake(RoomCaptureQueueRepository(database)) { queued ->
+                CaptureQueueWorker.enqueue(applicationContext, queued.id)
+            }.receive(signal)
         }
-        // No transcript or audio buffer is written to disk or the database.
+        // Audio stays in memory and is released by the recognizer; queued text is SQLCipher encrypted.
     }
 
     private fun listeningNotification(): Notification {
@@ -94,7 +93,7 @@ open class ListeningService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Shiv is listening on this phone")
-            .setContentText("Only detected events are saved. Tap Stop to end listening.")
+            .setContentText("Audio is not saved. Detected text is processed locally. Tap Stop to end listening.")
             .addAction(0, "Stop listening", stop)
             .setOngoing(true)
             .build()

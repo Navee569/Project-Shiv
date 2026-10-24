@@ -20,7 +20,9 @@ data class UserProfile(
 data class MemoryFact(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val source: String = "OWNER",
+    val confidence: Double? = null
 )
 
 data class EventRecord(
@@ -30,7 +32,8 @@ data class EventRecord(
     val place: String? = null,
     val person: String? = null,
     val source: String = "CHAT",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val confidence: Double? = null
 )
 
 data class ActionLogEntry(
@@ -73,4 +76,61 @@ data class PendingEventRecord(
     val place: String? = null,
     val person: String? = null,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+data class TaskRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val notes: String = "",
+    val dueAt: Long? = null,
+    val status: String = "OPEN",
+    val source: String = "OWNER",
+    val confidence: Double? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ReminderRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val eventId: String,
+    val triggerAt: Long,
+    val deliveryState: String = "PENDING",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ModelMetadata(
+    val role: String,
+    val format: String,
+    val fileName: String,
+    val sizeBytes: Long,
+    val sha256: String,
+    val importedAt: Long = System.currentTimeMillis()
+)
+
+data class RecordSourceMetadata(
+    val id: String = UUID.randomUUID().toString(),
+    val recordType: String,
+    val recordId: String,
+    val source: String,
+    val confidence: Double? = null,
+    val capturedAt: Long = System.currentTimeMillis()
+)
+
+enum class CaptureStatus { QUEUED, PROCESSING, RETRY, COMPLETED, FAILED }
+enum class CapturePriority(val rank: Int) { BACKGROUND(0), NORMAL(1), HIGH(2), URGENT(3) }
+
+data class CaptureSignal(
+    val id: String = UUID.randomUUID().toString(),
+    val payload: String,
+    val source: String,
+    val capturedAt: Long = System.currentTimeMillis(),
+    val priority: CapturePriority = CapturePriority.NORMAL,
+    val status: CaptureStatus = CaptureStatus.QUEUED,
+    val attempts: Int = 0,
+    val nextAttemptAt: Long = capturedAt,
+    val leaseToken: String? = null,
+    val leaseUntil: Long? = null,
+    val processedAt: Long? = null,
+    val failureCode: String? = null
 )

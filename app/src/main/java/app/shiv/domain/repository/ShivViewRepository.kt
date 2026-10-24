@@ -44,4 +44,26 @@ interface ShivViewRepository : CalendarImportRepository {
     suspend fun clearDrafts()
     suspend fun clearActionTiers()
     suspend fun clearPendingEvents()
+    fun tasks(): Flow<List<TaskRecord>>
+    suspend fun task(id: String): TaskRecord?
+    suspend fun saveTask(value: TaskRecord)
+    suspend fun deleteTask(id: String)
+    suspend fun saveReminder(value: ReminderRecord)
+    suspend fun reminder(id: String): ReminderRecord?
+    suspend fun remindersForEvent(eventId: String): List<ReminderRecord>
+    suspend fun pendingReminders(limit: Int): List<ReminderRecord>
+    suspend fun setReminderState(id: String, state: String, updatedAt: Long): Boolean
+    suspend fun deleteReminder(id: String)
+    fun modelMetadata(): Flow<List<ModelMetadata>>
+    suspend fun modelMetadata(role: String): ModelMetadata?
+    suspend fun saveModelMetadata(value: ModelMetadata)
+    suspend fun deleteModelMetadata(role: String)
+    suspend fun saveRecordSource(value: RecordSourceMetadata)
+    suspend fun recordSources(recordType: String, recordId: String): List<RecordSourceMetadata>
+    suspend fun deleteRecordSources(recordType: String, recordId: String)
+    suspend fun clearTasks()
+    suspend fun clearReminders()
+    suspend fun clearModelMetadata()
+    suspend fun clearRecordSources()
+    suspend fun clearCaptures()
 }

@@ -14,13 +14,17 @@ object AlarmScheduler {
     const val EXTRA_START = "event_start"
 
     fun schedule(context: Context, event: EventRecord, leadMinutes: Int) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val fireAt = (event.startsAt - leadMinutes.coerceAtLeast(0) * 60_000L).coerceAtLeast(System.currentTimeMillis() + 1_000L)
+        scheduleAt(context, event, fireAt)
+    }
+
+    fun scheduleAt(context: Context, event: EventRecord, fireAtMillis: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pending = pendingIntent(context, event)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAt, pending)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pending)
         } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAt, pending)
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireAtMillis, pending)
         }
     }
 

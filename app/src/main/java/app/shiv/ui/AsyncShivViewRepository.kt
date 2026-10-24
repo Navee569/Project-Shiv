@@ -59,4 +59,26 @@ internal class AsyncShivViewRepository(private val create: () -> ShivViewReposit
     override suspend fun clearDrafts() = io { clearDrafts() }
     override suspend fun clearActionTiers() = io { clearActionTiers() }
     override suspend fun clearPendingEvents() = io { clearPendingEvents() }
+    override fun tasks() = stream { tasks() }
+    override suspend fun task(id: String) = io { task(id) }
+    override suspend fun saveTask(value: TaskRecord) = io { saveTask(value) }
+    override suspend fun deleteTask(id: String) = io { deleteTask(id) }
+    override suspend fun saveReminder(value: ReminderRecord) = io { saveReminder(value) }
+    override suspend fun reminder(id: String) = io { reminder(id) }
+    override suspend fun remindersForEvent(eventId: String) = io { remindersForEvent(eventId) }
+    override suspend fun pendingReminders(limit: Int) = io { pendingReminders(limit) }
+    override suspend fun setReminderState(id: String, state: String, updatedAt: Long) = io { setReminderState(id, state, updatedAt) }
+    override suspend fun deleteReminder(id: String) = io { deleteReminder(id) }
+    override fun modelMetadata() = stream { modelMetadata() }
+    override suspend fun modelMetadata(role: String) = io { modelMetadata(role) }
+    override suspend fun saveModelMetadata(value: ModelMetadata) = io { saveModelMetadata(value) }
+    override suspend fun deleteModelMetadata(role: String) = io { deleteModelMetadata(role) }
+    override suspend fun saveRecordSource(value: RecordSourceMetadata) = io { saveRecordSource(value) }
+    override suspend fun recordSources(recordType: String, recordId: String) = io { recordSources(recordType, recordId) }
+    override suspend fun deleteRecordSources(recordType: String, recordId: String) = io { deleteRecordSources(recordType, recordId) }
+    override suspend fun clearTasks() = io { clearTasks() }
+    override suspend fun clearReminders() = io { clearReminders() }
+    override suspend fun clearModelMetadata() = io { clearModelMetadata() }
+    override suspend fun clearRecordSources() = io { clearRecordSources() }
+    override suspend fun clearCaptures() = io { clearCaptures() }
 }

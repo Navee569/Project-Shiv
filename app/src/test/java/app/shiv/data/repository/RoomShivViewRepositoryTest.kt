@@ -14,11 +14,16 @@ import app.shiv.ReminderRule
 import app.shiv.ReplyDraft
 import app.shiv.ShivSettings
 import app.shiv.UserProfile
+import app.shiv.domain.model.TaskRecord
+import app.shiv.domain.model.ReminderRecord
+import app.shiv.domain.model.ModelMetadata
+import app.shiv.domain.model.RecordSourceMetadata
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -126,6 +131,45 @@ class RoomShivViewRepositoryTest {
 
         assertEquals(listOf(importedCalendar), repository.calendarEvents())
         assertEquals(listOf(personalEvent, importedCalendar), repository.upcomingEvents(0))
+    }
+
+    @Test
+    fun taskReminderModelAndSourceMetadataSupportCorrectionAndDeletion() = runBlocking {
+        val task = TaskRecord(id = "task-1", title = "Call Raj", source = "CHAT", confidence = 0.7)
+        repository.saveTask(task)
+        repository.saveTask(task.copy(title = "Call Raj tomorrow", confidence = 0.9, updatedAt = 50))
+        assertEquals("Call Raj tomorrow", repository.task(task.id)?.title)
+        assertEquals(0.9, repository.tasks().first().single().confidence!!, 0.0001)
+        repository.deleteTask(task.id)
+        assertEquals(emptyList<TaskRecord>(), repository.tasks().first())
+
+        repository.saveEvent(EventRecord(id = "event-1", title = "Meeting", startsAt = 500))
+        val reminder = ReminderRecord(id = "reminder-1", eventId = "event-1", triggerAt = 100)
+        repository.saveReminder(reminder)
+        assertEquals(reminder, repository.reminder(reminder.id))
+        assertTrue(repository.setReminderState(reminder.id, "SCHEDULED", 101))
+        assertEquals("SCHEDULED", repository.remindersForEvent("event-1").single().deliveryState)
+        repository.deleteReminder(reminder.id)
+        assertNull(repository.reminder(reminder.id))
+        repository.saveReminder(reminder.copy(id = "reminder-cascade"))
+        repository.deleteEvent("event-1")
+        assertNull(repository.reminder("reminder-cascade"))
+
+        val metadata = ModelMetadata("chat", "litertlm", "chat.litertlm", 1_200_000, "a".repeat(64), 20)
+        repository.saveModelMetadata(metadata)
+        repository.saveModelMetadata(metadata.copy(sizeBytes = 1_300_000, sha256 = "b".repeat(64)))
+        assertEquals(1_300_000L, repository.modelMetadata("chat")?.sizeBytes)
+        assertEquals("chat.litertlm", repository.modelMetadata().first().single().fileName)
+        repository.deleteModelMetadata("chat")
+        assertNull(repository.modelMetadata("chat"))
+
+        val source = RecordSourceMetadata(recordType = "MEMORY", recordId = "memory-1", source = "LISTENING", confidence = 0.4)
+        repository.saveRecordSource(source)
+        repository.saveRecordSource(source.copy(confidence = 0.95, capturedAt = 200))
+        assertEquals(1, repository.recordSources("MEMORY", "memory-1").size)
+        assertEquals(0.95, repository.recordSources("MEMORY", "memory-1").single().confidence!!, 0.0001)
+        repository.deleteRecordSources("MEMORY", "memory-1")
+        assertEquals(emptyList<RecordSourceMetadata>(), repository.recordSources("MEMORY", "memory-1"))
     }
 
     @Test

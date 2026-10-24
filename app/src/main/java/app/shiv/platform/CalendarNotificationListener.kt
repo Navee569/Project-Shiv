@@ -4,8 +4,10 @@ import app.shiv.data.local.*
 
 import app.shiv.*
 
-import app.shiv.data.mapping.*
-import app.shiv.domain.actions.ActionTier
+import app.shiv.data.repository.RoomCaptureQueueRepository
+import app.shiv.domain.integration.CaptureSignalIntake
+import app.shiv.domain.model.CapturePriority
+import app.shiv.domain.model.CaptureSignal
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import kotlinx.coroutines.CoroutineScope
@@ -13,10 +15,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** Optional user-enabled listener. Notification text is inspected in memory and never stored. */
+/** Optional user-enabled listener. Notification text is encrypted before any Brain processing. */
 open class CalendarNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val brain = Brain()
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
@@ -25,14 +26,16 @@ open class CalendarNotificationListener : NotificationListenerService() {
         val text = extras.getCharSequence("android.text")?.toString().orEmpty()
         val transientText = "$title $text".trim()
         if (transientText.isBlank()) return
-        val event = brain.extractEvent(transientText, source = "NOTIFICATION") ?: return
         scope.launch {
-            val dao = ShivDatabase.get(applicationContext).dao()
-            dao.saveEvent(event)
-            dao.logAction(ActionLogEntry(action = "Saved an event from a notification", tier = ActionTier.FREE.name, outcome = event.title))
-            val lead = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
-            AlarmScheduler.schedule(applicationContext, event, lead)
+            val signal = CaptureSignal(
+                payload = transientText,
+                source = CaptureQueueWorker.SOURCE_NOTIFICATION,
+                capturedAt = sbn.postTime,
+                priority = CapturePriority.NORMAL
+            )
+            CaptureSignalIntake(RoomCaptureQueueRepository(ShivDatabase.get(applicationContext))) { queued ->
+                CaptureQueueWorker.enqueue(applicationContext, queued.id)
+            }.receive(signal)
         }
-        // The notification is only a transient input; only a parsed event is persisted.
     }
 }

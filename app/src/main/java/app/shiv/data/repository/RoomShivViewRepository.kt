@@ -63,4 +63,32 @@ class RoomShivViewRepository internal constructor(private val database: ShivData
     override suspend fun clearDrafts() = dao.clearDrafts()
     override suspend fun clearActionTiers() = dao.clearActionTiers()
     override suspend fun clearPendingEvents() = dao.clearPendingEvents()
+    override fun tasks(): Flow<List<TaskRecord>> = dao.tasks().map { rows -> rows.map(RoomRecordMappers::toDomain) }
+    override suspend fun task(id: String): TaskRecord? = dao.task(id)?.let(RoomRecordMappers::toDomain)
+    override suspend fun saveTask(value: TaskRecord) = dao.saveTask(RoomRecordMappers.toRoom(value))
+    override suspend fun deleteTask(id: String) = dao.deleteTask(id)
+    override suspend fun saveReminder(value: ReminderRecord) = dao.saveReminder(RoomRecordMappers.toRoom(value))
+    override suspend fun reminder(id: String): ReminderRecord? = dao.reminder(id)?.let(RoomRecordMappers::toDomain)
+    override suspend fun remindersForEvent(eventId: String): List<ReminderRecord> = dao.remindersForEvent(eventId).map(RoomRecordMappers::toDomain)
+    override suspend fun pendingReminders(limit: Int): List<ReminderRecord> = dao.pendingReminders(limit.coerceIn(1, 500)).map(RoomRecordMappers::toDomain)
+    override suspend fun setReminderState(id: String, state: String, updatedAt: Long): Boolean = dao.setReminderState(id, state, updatedAt) == 1
+    override suspend fun deleteReminder(id: String) = dao.deleteReminder(id)
+    override fun modelMetadata(): Flow<List<ModelMetadata>> = dao.modelMetadata().map { rows -> rows.map(RoomRecordMappers::toDomain) }
+    override suspend fun modelMetadata(role: String): ModelMetadata? = dao.modelMetadata(role)?.let(RoomRecordMappers::toDomain)
+    override suspend fun saveModelMetadata(value: ModelMetadata) = dao.saveModelMetadata(RoomRecordMappers.toRoom(value))
+    override suspend fun deleteModelMetadata(role: String) = dao.deleteModelMetadata(role)
+    override suspend fun saveRecordSource(value: RecordSourceMetadata) {
+        database.withTransaction {
+            dao.deleteRecordSources(value.recordType, value.recordId)
+            dao.saveRecordSource(RoomRecordMappers.toRoom(value))
+        }
+    }
+    override suspend fun recordSources(recordType: String, recordId: String): List<RecordSourceMetadata> =
+        dao.recordSources(recordType, recordId).map(RoomRecordMappers::toDomain)
+    override suspend fun deleteRecordSources(recordType: String, recordId: String) = dao.deleteRecordSources(recordType, recordId)
+    override suspend fun clearTasks() = dao.clearTasks()
+    override suspend fun clearReminders() = dao.clearReminders()
+    override suspend fun clearModelMetadata() = dao.clearModelMetadata()
+    override suspend fun clearRecordSources() = dao.clearRecordSources()
+    override suspend fun clearCaptures() = dao.clearCaptures()
 }

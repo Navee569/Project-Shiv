@@ -89,6 +89,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
             reminderLeadMinutes.value = dao.reminderRule(Brain.REMINDER_LEAD_KEY)?.value?.toIntOrNull() ?: Brain.DEFAULT_LEAD_MINUTES
             if (dao.profileOnce() == null) dao.saveProfile(UserProfile())
             if (dao.settingsOnce() == null) dao.saveSettings(ShivSettings())
+            runCatching { CaptureQueueWorker.enqueuePending(getApplication()) }
             ProactiveWorker.schedule(getApplication())
             refreshModelStatus()
         }
@@ -529,7 +530,7 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
                     PendingShivAction.DeleteEverything -> {
                         dao.upcomingEvents(0).forEach { reminders.cancel(it) }
                         dao.clearMessages(); dao.clearProfile(); dao.clearMemories(); dao.clearEvents(); dao.clearLog(); dao.clearRules(); dao.clearDrafts(); dao.clearActionTiers()
-                        dao.clearPendingEvents()
+                        dao.clearPendingEvents(); dao.clearCaptures(); dao.clearTasks(); dao.clearReminders(); dao.clearModelMetadata(); dao.clearRecordSources()
                         dao.clearSettings(); dao.saveSettings(ShivSettings())
                         reminderLeadMinutes.value = Brain.DEFAULT_LEAD_MINUTES
                     }
