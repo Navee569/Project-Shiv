@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|
 | M0 baseline build | BUILT AND TESTED (CI) | Tester confirmed M0 pass; final CI run 40045079241 passed assembleDebug, testDebugUnitTest and lintDebug | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | None. | None. |
 | M0 worker delivery fixes | BUILT AND TESTED (CI) | Tester confirmed M0 pass; runs 40044537471 and 40045079241 passed build, 16 unit tests and lint | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | Uncertain dispatch retains a reservation; documented in DEFECT_LOG.md and accepted for M0. | None; tester closed M0-001 through M0-004. |
-| M1 architecture foundation | PARTIAL — fix delivery locally verified; exact-commit CI and independent retest pending | `assembleDebug`, full `testDebugUnitTest`, and `lintDebug` pass locally on the fix snapshot | Pending fix commit | UI, domain, data-local, and platform packages are separated; Brain and integration contracts are in domain; model mutations and final confirmations use audited execution. The queue remains unbounded and lacks shutdown/recovery and running-inference cancellation (M4 work). Fresh-schema audit round-trip is tested; the 4→5 upgrade migration has no dedicated test yet (M3 work). M1-002 remains closed. | M1-001 (reopened), M1-003, M1-004, M1-005 await exact-commit CI and independent retest. |
+| M1 architecture foundation | COMPLETE — independently accepted | Tester confirmed PASS on exact commit; CI run 40063996960 passed `assembleDebug`, `testDebugUnitTest`, and `lintDebug` | 2bfeb8cb999278221eede2c7c54085bf2c1b74f1 | M3 persistence verification and M4 queue requirements remain separate; release acceptance is not claimed. The accepted M0 reservation limitation is unchanged. | None; M1-001 through M1-005 are closed. |
 
 ## M0 root cause
 

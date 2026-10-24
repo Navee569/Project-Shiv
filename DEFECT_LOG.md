@@ -8,10 +8,10 @@
 | M0-004 | S2 | CLOSED — tester PASS | SQL excludes delivered/reserved events before applying LIMIT 8. | firstEightSentEventsDoNotHideNinthUnsentEvent |
 | M1-001 | S2 | CLOSED — tester PASS | Validate allowlisted action shapes and compare event targets with injected current time on every authorization, including after confirmation; expired targets do not reach event write/scheduling paths. | eventTargetsMustBeStrictlyInTheFutureAtAuthorizationTime; eventThatExpiresWhileAwaitingConfirmationIsRejectedWithoutWritesOrDispatch; rejectedEventAuthorizationDoesNotInvokeWriteOrDispatchCallbacks |
 | M1-002 | S2 | CLOSED — tester PASS | Preserve SET_REMINDER minutes in inclusive range 0..1440. | reminderMinuteBoundariesRemainSupported |
-| M1-001 (reopened) | S2 | FIX IMPLEMENTED — CI/retest pending | Reauthorize the exact proposal against the injected clock after STARTED audit persistence returns and immediately before dispatch; record a denied final outcome without invoking the effect. | eventThatExpiresWhileStartedAuditWriteIsSuspendedIsRejected |
-| M1-003 | S2 | FIX IMPLEMENTED — CI/retest pending | Claim confirmation synchronously before launching the coroutine; only one overlapping confirmation can execute the pending action. | ActionConfirmationGateTest.claimIsExclusiveUntilReleased |
-| M1-004 | S2 | FIX IMPLEMENTED — CI/retest pending | Treat missing provider cursor as failure, replace imported rows transactionally, and report event/reminder/audit partial outcomes accurately. | CalendarSyncerTest null/failed source, persistence failure, reminder failure; RoomShivViewRepositoryTest replacement isolation |
-| M1-005 | S2 | FIX IMPLEMENTED — CI/retest pending | Restore old manifest component FQCNs and compatibility subclasses for persisted worker/receiver/service/activity identities; schedule proactive work using the legacy worker name. | LegacyComponentCompatibilityTest manifest registration and both worker constructors/superclasses |
+| M1-001 (reopened) | S2 | CLOSED — tester PASS | Reauthorize the exact proposal against the injected clock after STARTED audit persistence returns and immediately before dispatch; record a denied final outcome without invoking the effect. | eventThatExpiresWhileStartedAuditWriteIsSuspendedIsRejected |
+| M1-003 | S2 | CLOSED — tester PASS | Claim confirmation synchronously before launching the coroutine; only one overlapping confirmation can execute the pending action. | ActionConfirmationGateTest.claimIsExclusiveUntilReleased |
+| M1-004 | S2 | CLOSED — tester PASS | Treat missing provider cursor as failure, replace imported rows transactionally, and report event/reminder/audit partial outcomes accurately. | CalendarSyncerTest null/failed source, persistence failure, reminder failure; RoomShivViewRepositoryTest replacement isolation |
+| M1-005 | S2 | CLOSED — tester PASS | Restore old manifest component FQCNs and compatibility subclasses for persisted worker/receiver/service/activity identities; schedule proactive work using the legacy worker name. | LegacyComponentCompatibilityTest manifest registration and both worker constructors/superclasses |
 
 M0 verification: 13 worker-level JVM tests use actual CoroutineWorker.doWork, real in-memory Room queries/transactions and fake Brain/notification ports. The narrow suite and final assembleDebug, testDebugUnitTest (16 tests total) and lintDebug passed locally. These tests use synthetic data and do not change production SQLCipher initialization. No device testing was performed; notification delivery uses a fake port.
 
@@ -26,3 +26,9 @@ Independent retest: PASS on commit 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4. Tes
 | Tested commit | CI run | Result |
 |---|---|---|
 | 4838d058f6c6ba3c7c703aa9308ccd5ab09879e4 | [40045079241](https://github.com/Navee569/Project-Shiv/actions/runs/40045079241) | PASS: assembleDebug, testDebugUnitTest, lintDebug |
+
+M1 independent retest: PASS on commit 2bfeb8cb999278221eede2c7c54085bf2c1b74f1. Tester closed M1-001, M1-003, and M1-004 through M1-005; no additional material defects were found. M1 architecture acceptance is complete. M3 persistence verification, M4 queue requirements, and release acceptance remain separate.
+
+| Tested commit | CI run | Result |
+|---|---|---|
+| 2bfeb8cb999278221eede2c7c54085bf2c1b74f1 | [40063996960](https://github.com/Navee569/Project-Shiv/actions/runs/40063996960) | PASS: assembleDebug, testDebugUnitTest, lintDebug |
