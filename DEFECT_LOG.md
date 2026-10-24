@@ -12,8 +12,8 @@
 | M1-003 | S2 | CLOSED — tester PASS | Claim confirmation synchronously before launching the coroutine; only one overlapping confirmation can execute the pending action. | ActionConfirmationGateTest.claimIsExclusiveUntilReleased |
 | M1-004 | S2 | CLOSED — tester PASS | Treat missing provider cursor as failure, replace imported rows transactionally, and report event/reminder/audit partial outcomes accurately. | CalendarSyncerTest null/failed source, persistence failure, reminder failure; RoomShivViewRepositoryTest replacement isolation |
 | M1-005 | S2 | CLOSED — tester PASS | Restore old manifest component FQCNs and compatibility subclasses for persisted worker/receiver/service/activity identities; schedule proactive work using the legacy worker name. | LegacyComponentCompatibilityTest manifest registration and both worker constructors/superclasses |
-| M2-001 | S2 | FIXED — retest pending | Hoist unsent chat and profile drafts into the saveable shell state above conditional destinations; initialize profile drafts from persisted profile only once. | ShivNavigationTest actual shell navigation, unsent chat draft, profile draft and saved-state restoration |
-| M2-002 | S2 | FIXED — retest pending | Observe permission status on lifecycle resume in Settings and Permission explanations; combine app notification enablement on all supported APIs with the Android 13+ runtime permission. | ShivNavigationTest resume refresh and API 28/API 33 notification capability boundaries |
+| M2-001 | S2 | CLOSED — tester PASS | Hoist unsent chat and profile drafts into the saveable shell state above conditional destinations; initialize profile drafts from persisted profile only once. | ShivNavigationTest actual shell navigation, unsent chat draft, profile draft and saved-state restoration |
+| M2-002 | S2 | CLOSED — tester PASS | Observe permission status on lifecycle resume in Settings and Permission explanations; combine app notification enablement on all supported APIs with the Android 13+ runtime permission. | ShivNavigationTest resume refresh and API 28/API 33 notification capability boundaries |
 
 M0 verification: 13 worker-level JVM tests use actual CoroutineWorker.doWork, real in-memory Room queries/transactions and fake Brain/notification ports. The narrow suite and final assembleDebug, testDebugUnitTest (16 tests total) and lintDebug passed locally. These tests use synthetic data and do not change production SQLCipher initialization. No device testing was performed; notification delivery uses a fake port.
 
@@ -34,3 +34,9 @@ M1 independent retest: PASS on commit 2bfeb8cb999278221eede2c7c54085bf2c1b74f1. 
 | Tested commit | CI run | Result |
 |---|---|---|
 | 2bfeb8cb999278221eede2c7c54085bf2c1b74f1 | [40063996960](https://github.com/Navee569/Project-Shiv/actions/runs/40063996960) | PASS: assembleDebug, testDebugUnitTest, lintDebug |
+
+M2 independent retest: PASS on commit adfa2b269426a267d1181a41e69f708b2223011b. Tester closed M2-001 and M2-002 and verified draft retention, saved-state restoration, resume permission refresh, notification API boundaries and explicit Tasks unavailability. No additional material defects were found. Tester reports CI evidence saved as M2_CI_adfa2b2.json; that file was not present in the developer checkout during this documentation update.
+
+| Tested commit | CI run | Result |
+|---|---|---|
+| adfa2b269426a267d1181a41e69f708b2223011b | [40097224474](https://github.com/Navee569/Project-Shiv/actions/runs/40097224474) | Tester independently verified PASS: assembleDebug, testDebugUnitTest, lintDebug and APK upload; no rerun initiated |
