@@ -99,7 +99,7 @@ class EncryptedPersistenceInstrumentationTest {
                                 val entity = entities.getJSONObject(i)
                                 db.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
                                 val indices = entity.optJSONArray("indices") ?: continue
-                                for (index in 0 until indices.length()) db.execSQL(indices.getJSONObject(index).getString("createSql"))
+                                for (index in 0 until indices.length()) db.execSQL(indices.getJSONObject(index).getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
                             }
                             val setup = schema.getJSONArray("setupQueries")
                             for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
