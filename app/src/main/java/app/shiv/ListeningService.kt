@@ -1,6 +1,8 @@
 package app.shiv
 
 import app.shiv.data.mapping.*
+import app.shiv.domain.actions.ActionAuthorizationPolicy
+import app.shiv.domain.actions.ActionTier
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -65,7 +67,7 @@ class ListeningService : Service() {
         val event = brain.extractEvent(transcript, source = "LISTENING") ?: return
         scope.launch {
             val dao = ShivDatabase.get(applicationContext).dao()
-            val tier = dao.actionTier("CREATE_EVENT")?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() } ?: ActionTier.FREE
+            val tier = ActionAuthorizationPolicy.effectiveTier(dao.actionTier("CREATE_EVENT"), ActionTier.FREE)
             if (tier == ActionTier.ASK_FIRST) {
                 PendingEventConfirmation.request(applicationContext, event)
                 dao.logAction(ActionLogEntry(action = "Requested confirmation for a listening event", tier = ActionTier.ASK_FIRST.name, outcome = "Candidate not saved automatically"))

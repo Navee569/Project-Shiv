@@ -31,8 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import app.shiv.domain.memory.MemoryRelevance
-
-enum class ActionTier { FREE, ACT_THEN_TELL, ASK_FIRST }
+import app.shiv.domain.actions.ActionTier
 
 data class BrainReply(
     val text: String,

@@ -25,6 +25,8 @@ import app.shiv.domain.scheduling.ProactiveAlertState
 import app.shiv.domain.scheduling.ProactiveEvent
 import app.shiv.domain.scheduling.ProactiveRepository
 import app.shiv.domain.scheduling.ProactiveSchedulePolicy
+import app.shiv.domain.actions.ActionAuthorizationPolicy
+import app.shiv.domain.actions.ActionTier
 import app.shiv.domain.scheduling.ProactiveSettings
 import app.shiv.data.scheduling.newProactiveAlertId
 
@@ -192,9 +194,5 @@ private fun startOfDay(now: Long): Long = Calendar.getInstance().apply {
 }.timeInMillis
 
 internal fun proactiveNotificationTier(configuredTier: String?): ActionTier? {
-    val configured = configuredTier
-        ?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() }
-        ?: ActionTier.ACT_THEN_TELL
-    val effective = if (configured.ordinal < ActionTier.ACT_THEN_TELL.ordinal) ActionTier.ACT_THEN_TELL else configured
-    return effective.takeUnless { it == ActionTier.ASK_FIRST }
+    return ActionAuthorizationPolicy.backgroundTier(configuredTier, ActionTier.ACT_THEN_TELL)
 }

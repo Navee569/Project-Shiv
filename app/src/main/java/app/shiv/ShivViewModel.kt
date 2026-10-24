@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import app.shiv.data.repository.RoomShivViewRepository
 import app.shiv.domain.repository.ShivViewRepository
+import app.shiv.domain.actions.ActionAuthorizationPolicy
+import app.shiv.domain.actions.ActionTier
 
 sealed class PendingShivAction(val title: String, val explanation: String) {
     class SaveProfile(val name: String, val notes: String) : PendingShivAction("Update your local profile?", "Confirm to replace the profile details stored on this phone.")
@@ -209,8 +211,8 @@ class ShivViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun configuredTier(key: String, minimum: ActionTier): ActionTier {
-        val saved = actionTiers.value.firstOrNull { it.actionKey == key }?.tier?.let { runCatching { ActionTier.valueOf(it) }.getOrNull() } ?: minimum
-        return if (saved.ordinal < minimum.ordinal) minimum else saved
+        val saved = actionTiers.value.firstOrNull { it.actionKey == key }?.tier
+        return ActionAuthorizationPolicy.effectiveTier(saved, minimum)
     }
 
     private suspend fun saveEvent(event: EventRecord, tier: ActionTier) {
