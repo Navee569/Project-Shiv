@@ -6,6 +6,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
+import app.shiv.data.scheduling.RoomProactiveRepository
 import java.util.Calendar
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
@@ -189,7 +190,7 @@ class ProactiveWorkerTest {
         TestListenableWorkerBuilder<ProactiveWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker =
-                    ProactiveWorker(appContext, workerParameters, ProactiveDependencies(database, brain, notifications, clock::get))
+                    ProactiveWorker(appContext, workerParameters, ProactiveDependencies(RoomProactiveRepository(database), brain, notifications, clock::get))
             }).build()
 
     private fun alert(id: String?) = AgentDecision("send_notification", "", eventId = id,

@@ -9,7 +9,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.room.withTransaction
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -20,7 +19,14 @@ import androidx.work.WorkerParameters
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import app.shiv.data.scheduling.RoomProactiveRepository
+import app.shiv.domain.scheduling.ProactiveAlert
+import app.shiv.domain.scheduling.ProactiveAlertState
+import app.shiv.domain.scheduling.ProactiveEvent
+import app.shiv.domain.scheduling.ProactiveRepository
 import app.shiv.domain.scheduling.ProactiveSchedulePolicy
+import app.shiv.domain.scheduling.ProactiveSettings
+import app.shiv.data.scheduling.newProactiveAlertId
 
 internal interface ProactiveNotifications {
     fun allowed(): Boolean
@@ -29,7 +35,7 @@ internal interface ProactiveNotifications {
 }
 
 internal data class ProactiveDependencies(
-    val database: ShivDatabase,
+    val repository: ProactiveRepository,
     val brain: ProactiveBrain,
     val notifications: ProactiveNotifications,
     val now: () -> Long = System::currentTimeMillis
@@ -45,18 +51,16 @@ class ProactiveWorker internal constructor(
 
     override suspend fun doWork(): Result {
         val dependencies = injected ?: ProactiveDependencies(
-            ShivDatabase.get(applicationContext), BrainProvider.get(applicationContext),
+            RoomProactiveRepository(ShivDatabase.get(applicationContext)), BrainProvider.get(applicationContext),
             AndroidProactiveNotifications(applicationContext)
         )
-        val database = dependencies.database
-        val dao = database.dao()
         val initialNow = dependencies.now()
-        val settings = dao.settingsOnce() ?: ShivSettings()
+        val settings = dependencies.repository.settings() ?: ProactiveSettings.DEFAULT
         if (!eligibleSettings(settings, initialNow) || !dependencies.notifications.allowed()) return Result.success()
-        if (dao.countProactiveSince(startOfDay(initialNow)) >= settings.maxDailyInterruptions) return Result.success()
+        if (dependencies.repository.countAlertsSince(startOfDay(initialNow)) >= settings.maxDailyInterruptions) return Result.success()
 
         // SQL excludes both delivered and reserved events before applying the context limit.
-        val events = dao.proactiveEvents(initialNow, initialNow + TimeUnit.HOURS.toMillis(48))
+        val events = dependencies.repository.candidates(initialNow, initialNow + TimeUnit.HOURS.toMillis(48))
         if (events.isEmpty()) return Result.success()
         val contextSnapshot = buildString {
             appendLine("Current time: $initialNow")
@@ -74,28 +78,33 @@ class ProactiveWorker internal constructor(
 
         // Commit the reservation BEFORE touching Android. Room serializes the cap/dedupe checks
         // with this write across immediate and periodic workers. A crash cannot free a used slot.
-        val reservation = database.withTransaction {
+        val reservation = dependencies.repository.withTransaction {
             val now = dependencies.now()
-            val current = dao.settingsOnce() ?: ShivSettings()
+            val current = settings() ?: ProactiveSettings.DEFAULT
             if (!eligibleSettings(current, now) || !dependencies.notifications.allowed() ||
-                !eligibleEvent(selected, dao.eventById(selected.id), now) ||
-                dao.wasProactiveSent(selected.id) ||
-                dao.countProactiveSince(startOfDay(now)) >= current.maxDailyInterruptions) return@withTransaction null
-            val tier = proactiveNotificationTier(dao.actionTier("SEND_NOTIFICATION")) ?: return@withTransaction null
-            ActionLogEntry(action = RESERVED_ACTION, tier = tier.name, outcome = selected.id, createdAt = now)
-                .also { dao.logAction(it) }
+                !eligibleEvent(selected, event(selected.id), now) ||
+                hasAlert(selected.id) ||
+                countAlertsSince(startOfDay(now)) >= current.maxDailyInterruptions) return@withTransaction null
+            val tier = proactiveNotificationTier(notificationTier()) ?: return@withTransaction null
+            ProactiveAlert(
+                id = newProactiveAlertId(),
+                eventId = selected.id,
+                state = ProactiveAlertState.RESERVED,
+                tier = tier.name,
+                createdAt = now
+            ).also { saveAlert(it) }
         } ?: return Result.success()
 
         try {
             // Re-read after reservation as well: settings/event edits can commit between the two
             // transactions. Keep the final validation, dispatch, and accounting serialized with
             // other workers and DB writers. Full event equality invalidates an edited snapshot.
-            database.withTransaction {
-                val current = dao.settingsOnce() ?: ShivSettings()
-                val tier = proactiveNotificationTier(dao.actionTier("SEND_NOTIFICATION"))
-                val reserved = dao.actionById(reservation.id)
-                val currentEvent = dao.eventById(selected.id)
-                val interruptions = dao.countProactiveSince(startOfDay(reservation.createdAt))
+            dependencies.repository.withTransaction {
+                val current = settings() ?: ProactiveSettings.DEFAULT
+                val tier = proactiveNotificationTier(notificationTier())
+                val reserved = alert(reservation.id)
+                val currentEvent = event(selected.id)
+                val interruptions = countAlertsSince(startOfDay(reservation.createdAt))
                 // Sample time after the suspended DB reads; the valid path dispatches immediately.
                 val now = dependencies.now()
                 if (reserved != reservation || !eligibleSettings(current, now) ||
@@ -103,13 +112,13 @@ class ProactiveWorker internal constructor(
                     !eligibleEvent(selected, currentEvent, now) ||
                     startOfDay(now) != startOfDay(reservation.createdAt) ||
                     interruptions > current.maxDailyInterruptions) {
-                    dao.deleteAction(reservation.id)
+                    deleteAlert(reservation.id)
                     return@withTransaction
                 }
                 if (dependencies.notifications.post(selected.id, title, body)) {
-                    dao.logAction(reservation.copy(action = SENT_ACTION, tier = tier.name, createdAt = now))
+                    saveAlert(reservation.copy(state = ProactiveAlertState.SENT, tier = tier.name, createdAt = now))
                 } else {
-                    dao.deleteAction(reservation.id)
+                    deleteAlert(reservation.id)
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -159,11 +168,11 @@ private class AndroidProactiveNotifications(private val context: Context) : Proa
     }
 }
 
-private fun eligibleSettings(settings: ShivSettings, now: Long): Boolean {
+private fun eligibleSettings(settings: ProactiveSettings, now: Long): Boolean {
     val calendar = Calendar.getInstance().apply { timeInMillis = now }
     val minute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
     return ProactiveSchedulePolicy.isEligible(
-        settings.proactiveEnabled,
+        settings.enabled,
         settings.maxDailyInterruptions,
         minute,
         settings.quietStartMinute,
@@ -171,7 +180,7 @@ private fun eligibleSettings(settings: ShivSettings, now: Long): Boolean {
     )
 }
 
-private fun eligibleEvent(snapshot: EventRecord, current: EventRecord?, now: Long): Boolean =
+private fun eligibleEvent(snapshot: ProactiveEvent, current: ProactiveEvent?, now: Long): Boolean =
     snapshot == current && snapshot.startsAt > now && snapshot.startsAt <= now + TimeUnit.HOURS.toMillis(48)
 
 private fun startOfDay(now: Long): Long = Calendar.getInstance().apply {
