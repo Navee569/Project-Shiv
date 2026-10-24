@@ -30,7 +30,25 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
+          script: |
+            set +e
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon
+            test_status=$?
+            if [ "$test_status" -ne 0 ]; then
+              mkdir -p app/build/ci-diagnostics
+              adb logcat -d -b all -v threadtime | grep -E -A 80 -B 20 'FATAL EXCEPTION|Fatal signal|am_crash|AndroidRuntime|E/TestRunner|INSTRUMENTATION_RESULT|Instrumentation run failed|sqlcipher' > app/build/ci-diagnostics/android-test-logcat.txt || true
+            fi
+            exit "$test_status"
+      - name: Upload Android test failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-diagnostics
+          path: |
+            app/build/ci-diagnostics/android-test-logcat.txt
+            app/build/reports/androidTests/connected/debug/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
