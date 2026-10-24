@@ -6,6 +6,7 @@ plugins {
 }
 
 android {
+    testOptions { unitTests.isIncludeAndroidResources = true }
     namespace = "app.shiv"
     compileSdk = 35
     compileOptions {
@@ -50,5 +51,7 @@ dependencies {
     // On-device inference only. Model files are imported by the user and are never bundled.
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.work:work-testing:2.10.0")
+    testImplementation("org.robolectric:robolectric:4.17")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

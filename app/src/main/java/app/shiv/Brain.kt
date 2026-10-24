@@ -63,8 +63,12 @@ interface BrainPort {
     suspend fun reply(input: String, context: String): String
 }
 
+fun interface ProactiveBrain {
+    suspend fun decideProactive(context: String): AgentDecision?
+}
+
 /** The only class allowed to call a generative model. All inference runs locally. */
-class Brain(private val appContext: Context? = null) : BrainPort {
+class Brain(private val appContext: Context? = null) : BrainPort, ProactiveBrain {
     companion object {
         const val REMINDER_LEAD_KEY = "default_lead_minutes"
         const val DEFAULT_LEAD_MINUTES = 10
@@ -129,7 +133,7 @@ class Brain(private val appContext: Context? = null) : BrainPort {
     override suspend fun reply(input: String, context: String): String =
         generateDecision(input, context, allowNotifications = false)?.say.orEmpty()
 
-    suspend fun decideProactive(context: String): AgentDecision? =
+    override suspend fun decideProactive(context: String): AgentDecision? =
         generateDecision(context.take(800), context, allowNotifications = true)
 
     private suspend fun generateDecision(input: String, context: String, allowNotifications: Boolean): AgentDecision? =
@@ -172,7 +176,7 @@ class Brain(private val appContext: Context? = null) : BrainPort {
             }
             val path = chat ?: fast!!
             val proactiveTool = if (allowNotifications) ", send_notification" else ""
-            val proactiveRule = if (allowNotifications) " In this proactive check, choose send_notification only if it is useful, timely, non-repetitive, and worth interrupting; otherwise choose stay_quiet. send_notification arguments are {title,body}." else " Do not use send_notification in a chat response."
+            val proactiveRule = if (allowNotifications) " In this proactive check, choose send_notification only if it is useful, timely, non-repetitive, and worth interrupting; otherwise choose stay_quiet. send_notification arguments are {eventId,title,body}; eventId must exactly match one event listed in the context." else " Do not use send_notification in a chat response."
             val prompt = """You are Shiv, a loyal, warm, concise personal manager. Use the private context. Do not invent facts or claim an action happened unless the app did it. Return exactly one JSON object and no markdown, with keys "tool", "arguments", "say". "tool" must be null or one of: create_event, update_event, set_reminder, save_memory, save_rule, ask_user, stay_quiet$proactiveTool. Use only a tool when its arguments are fully grounded in the user's words and context; if time or meaning is unclear, choose ask_user. Otherwise use null.$proactiveRule Allowed arguments: create_event={title,startsAt,person?,place?}, update_event={eventId,newStart}, set_reminder={minutes}, save_memory={text}, save_rule={key,value}, ask_user={}, stay_quiet={}, null={}. startsAt/newStart are Unix milliseconds. Only use future dates. set_reminder minutes must be 0..1440; save_rule key must be "$REMINDER_LEAD_KEY". Keep "say" under 90 words and never claim an unexecuted tool succeeded.
 
 PRIVATE CONTEXT (on this phone only):
@@ -242,9 +246,9 @@ User: $input"""
                 require(say.isNotEmpty()); AgentDecision(tool, say, eventId = eventId, startsAt = newStart)
             }
             "send_notification" -> {
-                require(allowNotifications); keys("title", "body")
+                require(allowNotifications); keys("eventId", "title", "body")
                 val title = string("title", 80); val body = string("body", 220)
-                AgentDecision(tool, "", notificationTitle = title, notificationBody = body)
+                AgentDecision(tool, "", eventId = string("eventId", 80), notificationTitle = title, notificationBody = body)
             }
             else -> error("Unsupported or unsafe tool")
         }

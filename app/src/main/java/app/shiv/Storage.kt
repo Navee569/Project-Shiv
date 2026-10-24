@@ -98,6 +98,9 @@ interface ShivDao {
     @Query("DELETE FROM memories WHERE id = :id") suspend fun deleteMemory(id: String)
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") fun events(from: Long): Flow<List<EventRecord>>
     @Query("SELECT * FROM events WHERE startsAt >= :from ORDER BY startsAt") suspend fun upcomingEvents(from: Long): List<EventRecord>
+    @Query("SELECT * FROM events WHERE id = :id") suspend fun eventById(id: String): EventRecord?
+    @Query("SELECT * FROM events WHERE startsAt > :from AND startsAt <= :until AND NOT EXISTS (SELECT 1 FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND outcome = events.id) ORDER BY startsAt, id LIMIT 8")
+    suspend fun proactiveEvents(from: Long, until: Long): List<EventRecord>
     @Query("SELECT * FROM events ORDER BY startsAt") suspend fun allEvents(): List<EventRecord>
     @Query("SELECT * FROM pending_events WHERE startsAt >= :from ORDER BY startsAt") fun pendingEvents(from: Long): Flow<List<PendingEventRecord>>
     @Query("SELECT * FROM pending_events WHERE id = :id") suspend fun pendingEvent(id: String): PendingEventRecord?
@@ -109,6 +112,9 @@ interface ShivDao {
     @Upsert suspend fun saveEvent(value: EventRecord)
     @Query("DELETE FROM events WHERE id = :id") suspend fun deleteEvent(id: String)
     @Query("DELETE FROM events WHERE source = 'CALENDAR'") suspend fun clearCalendarEvents()
+    @Query("SELECT * FROM action_log WHERE id = :id") suspend fun actionById(id: String): ActionLogEntry?
+    @Query("DELETE FROM action_log WHERE id = :id") suspend fun deleteAction(id: String)
+    @Query("SELECT COUNT(*) FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND createdAt >= :since") suspend fun countProactiveSince(since: Long): Int
     @Upsert suspend fun logAction(value: ActionLogEntry)
     @Query("SELECT * FROM action_log ORDER BY createdAt") suspend fun allActions(): List<ActionLogEntry>
     @Query("SELECT * FROM reminder_rules ORDER BY ruleKey") suspend fun allRules(): List<ReminderRule>
@@ -127,7 +133,7 @@ interface ShivDao {
     @Upsert suspend fun saveSettings(value: ShivSettings)
     @Query("DELETE FROM shiv_settings") suspend fun clearSettings()
     @Query("SELECT COUNT(*) FROM action_log WHERE action = :action AND createdAt >= :since") suspend fun countActionsSince(action: String, since: Long): Int
-    @Query("SELECT EXISTS(SELECT 1 FROM action_log WHERE action = 'Proactive notification' AND outcome = :eventId)") suspend fun wasProactiveSent(eventId: String): Boolean
+    @Query("SELECT EXISTS(SELECT 1 FROM action_log WHERE action IN ('Proactive notification', 'Proactive notification reserved') AND outcome = :eventId)") suspend fun wasProactiveSent(eventId: String): Boolean
     @Upsert suspend fun saveMessages(values: List<ChatMessage>)
     @Upsert suspend fun saveMemories(values: List<MemoryFact>)
     @Upsert suspend fun saveEvents(values: List<EventRecord>)

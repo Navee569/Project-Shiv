@@ -2,7 +2,8 @@
 
 | Feature | Status | Verification | Last verified commit | Limitations | Open defects |
 |---|---|---|---|---|---|
-| M0 baseline build | VERIFIED | Local assembleDebug, testDebugUnitTest (3 tests), and lintDebug pass; GitHub Actions run 40042340290 passed | 4d3de1e | None known for M0. | None. |
+| M0 baseline build | BUILT AND TESTED (CI) | Tester independently verified runs 40042340290 and 40042679808 | 514ce1c | Worker delivery findings tracked separately below. | None for build/launcher. |
+| M0 worker delivery fixes | PARTIAL | Local assembleDebug, 16 unit tests (13 worker regressions), and lintDebug pass; fix CI pending | Pending fix CI | Uncertain delivery retains a reservation; see DEFECT_LOG.md. | M0-001 through M0-004 implemented; awaiting independent retest. |
 
 ## M0 root cause
 
