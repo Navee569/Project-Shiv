@@ -294,6 +294,15 @@ fun ShivInterface(
     var error by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        Header("VOICE LANGUAGE", "Offline recognizer and Google TTS require locally installed voice data.")
+        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            listOf("kn-IN","te-IN","en-IN").forEach { locale ->
+                FilterChip(selected=controller.speechLocale==locale,
+                    onClick={controller.setSpeechLocale(locale)},label={Text(locale)})
+            }
+        }
+        Text("If Kannada or Telugu is unavailable, Shiv reports the missing voice instead of silently speaking a different language.",
+            color=Muted,fontSize=11.sp)
         Header("INTELLIGENCE ROUTING", "Choose private local actions, cloud reasoning, or a hybrid that prefers local actions.")
         GlassCard {
             IntelligenceMode.entries.forEach { option ->

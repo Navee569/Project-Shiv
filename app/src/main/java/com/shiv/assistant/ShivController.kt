@@ -93,6 +93,37 @@ class ShivController(private val context: Context) {
         append("user", question)
         // Durable, encrypted signal is saved BEFORE any model inference.
         phase.submitSignal("owner_input", question, 5)
+        // Precise scheduling/DB questions never require model hallucination.
+        val lower=question.lowercase().trimEnd('?', '.', '!')
+        if(lower=="what's on tomorrow" || lower=="what is on tomorrow") {
+            val day=java.time.LocalDate.now().plusDays(1)
+            val zone=java.time.ZoneId.systemDefault()
+            val begin=day.atStartOfDay(zone).toInstant().toEpochMilli()
+            val end=day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()-1
+            val events=com.shiv.assistant.data.EncryptedDatabase.open(context).dao().events(begin,end)
+            append("assistant", if(events.isEmpty())"There are no Shiv-recorded events tomorrow."
+                else events.joinToString("\n"){it.title+" at "+
+                    java.time.Instant.ofEpochMilli(it.startAt).atZone(zone).toLocalTime()})
+            return
+        }
+        val before=Regex("(?i)^ignore reminders before\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)$")
+            .matchEntire(question.trim().trimEnd('.', '!'))
+        if(before!=null) {
+            val hour=(before.groupValues[1].toInt()%12)+
+                if(before.groupValues[3].equals("pm",true))12 else 0
+            val minute=before.groupValues[2].toIntOrNull()?:0
+            if(hour !in 0..23 || minute !in 0..59) {
+                append("assistant","Please use a valid time such as 9 AM.")
+            } else {
+                val value=(hour*60+minute).toString()
+                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putRule(
+                    com.shiv.assistant.data.RuleRecord("quiet-reminders-before",
+                        "Ignore reminders before "+hour+":"+minute.toString().padStart(2,'0'),
+                        "reminders_minute_of_day",value))
+                append("assistant","Saved. Reminders scheduled before that local time will be deferred.")
+            }
+            return
+        }
         val proposal = ShivPlanner.parse(question)
         if (proposal.kind == ActionKind.NOTES) {
             saveNote(proposal.argument)

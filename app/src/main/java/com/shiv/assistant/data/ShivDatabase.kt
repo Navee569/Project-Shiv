@@ -72,6 +72,8 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putTask(value: TaskRecord)
     @Query("SELECT * FROM tasks WHERE status='OPEN' ORDER BY dueAt") suspend fun pendingTasks(): List<TaskRecord>
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putReminder(value: ReminderRecord)
+    @Query("SELECT * FROM reminders WHERE id=:id") suspend fun reminder(id: String): ReminderRecord?
+    @Query("UPDATE reminders SET status=:status WHERE id=:id") suspend fun reminderStatus(id:String,status:String)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putRule(value: RuleRecord)
     @Query("SELECT * FROM saved_rules WHERE enabled=1") suspend fun rules(): List<RuleRecord>
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putChat(value: ChatRecord)

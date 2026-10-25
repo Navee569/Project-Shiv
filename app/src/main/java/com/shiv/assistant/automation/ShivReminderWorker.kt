@@ -7,50 +7,72 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.work.CoroutineWorker
-import androidx.work.Data
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkerParameters
+import androidx.work.*
+import com.shiv.assistant.data.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.time.*
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-class ShivReminderWorker(context: Context, parameters: WorkerParameters) :
-    CoroutineWorker(context, parameters) {
-    override suspend fun doWork(): Result {
-        val text = inputData.getString("text") ?: return Result.failure()
-        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(NotificationChannel("shiv_reminders", "Shiv reminders", NotificationManager.IMPORTANCE_DEFAULT))
-        if (Build.VERSION.SDK_INT >= 33 &&
-            applicationContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            return Result.success() // notification permission is user-controlled
-        manager.notify(text.hashCode(), NotificationCompat.Builder(applicationContext, "shiv_reminders")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Shiv reminder")
-            .setContentText(text.take(240))
-            .setAutoCancel(true).build())
-        return Result.success()
+/** WorkManager stores ONLY an opaque UUID; reminder text lives in SQLCipher. */
+class ShivReminderWorker(context:Context,parameters:WorkerParameters):CoroutineWorker(context,parameters) {
+    override suspend fun doWork():Result=withContext(Dispatchers.IO) {
+        val id=inputData.getString("reminder_id")?:return@withContext Result.failure()
+        val dao=EncryptedDatabase.open(applicationContext).dao()
+        val reminder=dao.reminder(id)?:return@withContext Result.failure()
+        if(reminder.status !in setOf("SCHEDULED","DEFERRED"))return@withContext Result.success()
+        val before=dao.rules().firstOrNull{it.key=="reminders_minute_of_day"}?.value?.toIntOrNull()
+        val now=ZonedDateTime.now()
+        if(before!=null && (now.hour*60+now.minute)<before && before in 0..1439) {
+            val deferUntil=now.toLocalDate().atStartOfDay(now.zone).plusMinutes(before.toLong())
+            val seconds=java.time.Duration.between(now,deferUntil).seconds.coerceAtLeast(30L)
+            dao.reminderStatus(id,"DEFERRED")
+            ShivReminders.enqueueId(applicationContext,id,seconds)
+            return@withContext Result.success()
+        }
+        val manager=applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel("shiv_reminders","Shiv reminders",
+            NotificationManager.IMPORTANCE_DEFAULT))
+        if(Build.VERSION.SDK_INT>=33 &&
+            applicationContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) {
+            dao.reminderStatus(id,"NOTIFICATION_BLOCKED")
+            return@withContext Result.success()
+        }
+        manager.notify(id.hashCode(),NotificationCompat.Builder(applicationContext,"shiv_reminders")
+            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("Shiv reminder")
+            .setContentText(reminder.label.take(240)).setAutoCancel(true).build())
+        dao.reminderStatus(id,"SHOWN")
+        Result.success()
     }
 }
 object ShivReminders {
-    private val delay = Regex("(?i)\\bin\\s+(\\d+)\\s*(minutes?|hours?|days?)\\b")
-    fun parseSeconds(command: String): Long? {
-        val match = delay.find(command) ?: return null
-        val n = match.groupValues[1].toLongOrNull() ?: return null
-        if (n < 1 || n > 365) return null
-        return when (match.groupValues[2].lowercase().first()) {
-            'm' -> n * 60
-            'h' -> n * 3600
-            'd' -> n * 86400
-            else -> null
+    private val delay=Regex("(?i)\\bin\\s+(\\d+)\\s*(minutes?|hours?|days?)\\b")
+    fun parseSeconds(command:String):Long? {
+        val match=delay.find(command)?:return null
+        val n=match.groupValues[1].toLongOrNull()?:return null
+        if(n<1 || n>365)return null
+        return when(match.groupValues[2].lowercase().first()) {
+            'm'->n*60
+            'h'->n*3600
+            'd'->n*86400
+            else->null
         }
     }
-    fun schedule(context: Context, text: String): UUID? {
-        val secs = parseSeconds(text) ?: return null
-        val task = OneTimeWorkRequestBuilder<ShivReminderWorker>()
-            .setInputData(Data.Builder().putString("text", text.take(240)).build())
-            .setInitialDelay(secs, TimeUnit.SECONDS).build()
+    fun enqueueId(context:Context,id:String,delaySeconds:Long) {
+        val task=OneTimeWorkRequestBuilder<ShivReminderWorker>()
+            .setInputData(Data.Builder().putString("reminder_id",id).build())
+            .setInitialDelay(delaySeconds,TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueue(task)
-        return task.id
+    }
+    fun schedule(context:Context,text:String):UUID? {
+        val secs=parseSeconds(text)?:return null
+        val id=UUID.randomUUID()
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            EncryptedDatabase.open(context).dao().putReminder(
+                ReminderRecord(id.toString(),text.take(240),System.currentTimeMillis()+secs*1000,null))
+        }
+        enqueueId(context,id.toString(),secs)
+        return id
     }
 }
