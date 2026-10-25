@@ -106,16 +106,18 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-      - name: Build full-feature Shiv candidate
+      - name: Build Shiv debug APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
-      - name: Upload APK
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload debug APK independently of test outcomes
         uses: actions/upload-artifact@v4
         with:
           name: shiv-integration-candidate-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Run Shiv unit tests and lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
       - name: Upload diagnostic reports
         if: always()
         uses: actions/upload-artifact@v4
