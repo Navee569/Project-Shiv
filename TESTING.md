@@ -1,6 +1,16 @@
-# Shiv verification plan (not executed in this development prompt)
+# Shiv verification: verified CI evidence and outstanding release gates
 
-## Automated tests for a later testing session
+## Automated CI evidence — verified
+
+- Build / APK assembly, Kotlin JVM tests and lint: PASS — https://github.com/Navee569/Project-Shiv/actions/runs/40220199926
+- Android API 35 emulator: 4 tests PASS (SQLCipher file header and round-trip, encrypted vault, denylisted input, malformed tool checks) — https://github.com/Navee569/Project-Shiv/actions/runs/40220199919
+- App-launch and Activity recreation smoke test: PASS — full 5/5 API 35 suite, https://github.com/Navee569/Project-Shiv/actions/runs/40220610385
+- Security static checks: PASS, integrated into native workflow.
+- **No coverage percentage claimed.** Emulator is not Samsung Galaxy S23.
+
+
+
+## Additional tests required before release
 
 1. Compile `assembleDebug`, `testDebugUnitTest`, `lintDebug`; run SQLCipher wrong key and raw SQLite-open checks.
 2. Run migration interruption, duplicate, correction, expiry, restart, concurrency, rollback and database integrity tests.

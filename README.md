@@ -29,7 +29,7 @@ Shiv is his own Android app, built with Kotlin + Jetpack Compose. He keeps local
 
 ## Limitations
 
-This development prompt intentionally did **not** run Gradle tests or device checks. This code must not be treated as an install-ready, verified APK. See [STATUS.md](STATUS.md), [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the owner requirements files attached to the project conversation.
+Phase 1 Android compilation, JVM unit tests, Android lint and API 35 emulator encryption/privacy checks have run successfully on verified development commits. **Galaxy S23 device checks and broader acceptance tests remain pending.** This code must not be treated as an install-ready, verified APK. See [STATUS.md](STATUS.md), [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the owner requirements files attached to the project conversation.
 
 A number of Phase 1 requirements remain incomplete, notably complete continuous mic duty cycling, wake-word support, per-source permissions/awareness, tested LiteRT formats and delegates, recovery/restore, full scenario suite, and a verified device battery/runtime baseline. They remain visible as incomplete in STATUS. **Phase 2 is not started until M11 is accepted.**
 
