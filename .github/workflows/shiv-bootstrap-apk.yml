@@ -59,6 +59,18 @@ jobs:
           s=app.read_text()
           s=re.sub(r'applicationId\s+["\'][^"\']+["\']','applicationId "com.shiv.assistant"',s)
           app.write_text(s)
+          # Room migration fixtures are loaded by the database's fully qualified
+          # Kotlin class name. Keep historical fixtures, and provide an additive
+          # copy at the Shiv namespace so migration tests can find them.
+          import shutil
+          schemas=Path('app/schemas')
+          old=schemas/'com.opendroid.ai.data.db.OpenDroidDatabase'
+          new=schemas/'com.shiv.ai.data.db.OpenDroidDatabase'
+          if not old.is_dir():
+              raise FileNotFoundError(f'Expected historical migration schemas at {old}')
+          if not new.exists():
+              shutil.copytree(old,new)
+          assert all((new/f'{version}.json').is_file() for version in (6,7,8,9))
           manifest=Path('app/src/main/AndroidManifest.xml').read_text()
           assert 'android:allowBackup="false"' in manifest
           assert 'com.shiv.assistant' in s
