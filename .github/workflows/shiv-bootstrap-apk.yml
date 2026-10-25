@@ -65,12 +65,14 @@ jobs:
           import shutil
           schemas=Path('app/schemas')
           old=schemas/'com.opendroid.ai.data.db.OpenDroidDatabase'
-          new=schemas/'com.shiv.ai.data.db.OpenDroidDatabase'
+          new=schemas/'com.shiv.ai.data.db.ShivDatabase'
           if not old.is_dir():
               raise FileNotFoundError(f'Expected historical migration schemas at {old}')
           if not new.exists():
               shutil.copytree(old,new)
           assert all((new/f'{version}.json').is_file() for version in (6,7,8,9))
+          # Test sources refer to this exact Room-export location after renaming.
+          assert (Path('app/src/main/java/com/shiv/ai/data/db/OpenDroidDatabase.kt')).is_file()
           manifest=Path('app/src/main/AndroidManifest.xml').read_text()
           assert 'android:allowBackup="false"' in manifest
           assert 'com.shiv.assistant' in s
