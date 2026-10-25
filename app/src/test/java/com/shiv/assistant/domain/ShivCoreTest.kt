@@ -40,7 +40,9 @@ class ShivCoreTest {
         assertEquals(Risk.READ_ONLY, p.risk)
     }
     @Test fun incompleteIntegrationsAreLabelled() {
-        listOf("wakeword","model-local","accessibility","social-publish","terminal").forEach {
+        assertEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { it.id == "model-local" }.state)
+        assertEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { it.id == "model-download" }.state)
+        listOf("wakeword","accessibility","social-publish","terminal").forEach {
             assertNotEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { c -> c.id == it }.state)
         }
     }
