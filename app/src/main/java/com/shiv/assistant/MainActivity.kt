@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
             val document = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 if (it != null) scope.launch { controller.importText(it) }
             }
+            val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                controller.phase.selectModel(uri)
+            }
             val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
             MaterialTheme(colorScheme = darkColorScheme(
                 background = Color(0xFF070C18), surface = Color(0xFF111B2B),
@@ -59,6 +62,7 @@ class MainActivity : ComponentActivity() {
                     onPhoto = { photo.launch("image/*") },
                     onDocument = { document.launch("text/*") },
                     onSpeak = { spoken -> speech.speak(spoken,controller.speechLocale)?.let(controller::showNotice) },
+                    onModelPick = { modelPicker.launch(arrayOf("*/*")) },
                     onNotificationPermission = {
                         if (android.os.Build.VERSION.SDK_INT >= 33)
                             permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
