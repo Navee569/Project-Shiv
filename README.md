@@ -1,18 +1,32 @@
-# Shiv Android
+# Shiv — native Android personal intelligence
 
-Shiv is an offline-first Android assistant beta starter built with Kotlin and Jetpack Compose.
+**Status: experimental development, not production-cleared.**
 
-## Included
+This is an original Android app in package \`com.shiv.assistant\`, not an APK assembled by renaming OpenDroid. Its code, Compose user interface, capability registry, consent model, intelligence router and storage system are Shiv-owned implementations. The original Shiv README is preserved in [docs/ORIGINAL_SHIV_README.md](docs/ORIGINAL_SHIV_README.md); original working application sources were not available in GitHub.
 
-- Compose chat interface with a simple local assistant response loop.
-- Room chat/event storage encrypted through SQLCipher. The database key is random and wrapped by a non-exportable Android Keystore AES-GCM key.
-- Small, deterministic on-device reminder extraction for phrases such as: Remind me to call Alex tomorrow; Remember to submit the form in 3 days.
-- WorkManager scheduled notifications. Android 13+ notification permission is requested when a reminder is sent; if permission is denied, the reminder is saved but no notification is shown.
+## Product
 
-## Build
+- Futuristic Compose dashboard, aurora backgrounds and original Shiv orbital design.
+- **Configurable intelligence:** LOCAL (deterministic offline), CLOUD (user-selected OpenAI-compatible HTTPS API) or HYBRID (offline commands plus opt-in cloud text). No outbound prompts without opt-in.
+- Encrypted memory, chat history, provider credentials, and macros using Android Keystore AES-GCM; device backup disabled.
+- Bounded multi-step plans, reviewed external Android handoffs, local relative reminders, audio dictation and TTS, explicit cloud image analysis, document import, and optional notification metadata.
+- No background accessibility automation, silent posts, SMS, financial transfers or root shell.
 
-Open this folder in Android Studio (Hedgehog or newer), allow Gradle sync, then run the app configuration on an Android 8.0+ device or emulator. Requires Android SDK 35 and JDK 17. No API keys or paid services are used.
+**Reference to OpenDroid is an architecture/capability study, not imported Android application code.** See [reference study](docs/REFERENCE_STUDY.md).
 
-## Beta limitations
+## Setup
 
-The assistant is intentionally local and rule-based; it does not call an LLM or access contacts, calendar, microphone, location, or other private data. Reminder extraction accepts relative days only and schedules 9:00 local time. Add event review/edit flows before broader beta distribution.
+Install JDK 21, Android SDK 36, Gradle 9.7.0, then:
+
+    python3 scripts/verify_shiv.py
+    gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+
+CI publishes the native Shiv debug APK as the \`shiv-native-debug-apk\` artifact; this is not a release-signed APK.
+
+## Requirements and limitations
+
+The in-app feature matrix includes every capability family identified in the reference study, and labels items \`ACTIVE\`, \`CONNECT\`, \`PERMISSION\` or \`PENDING\`. **A visible module is not proof that its complete integration is implemented.**
+
+Full offline neural model execution, model download, semantic knowledge graph, habit inference, full third-party UI automation, authenticated social publishing/analytics, complex bookings, privileged terminal/MCP, wakeword and live screen capture remain outstanding. See [SHIV_CAPABILITY_MATRIX.md](SHIV_CAPABILITY_MATRIX.md).
+
+A build result is not a complete test or production readiness claim. No emulator/real-device and full third-party acceptance testing has been completed.
