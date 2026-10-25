@@ -298,7 +298,7 @@ fun ShivInterface(
         Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             listOf("kn-IN","te-IN","en-IN").forEach { locale ->
                 FilterChip(selected=controller.speechLocale==locale,
-                    onClick={controller.setSpeechLocale(locale)},label={Text(locale)})
+                    onClick={controller.updateSpeechLocale(locale)},label={Text(locale)})
             }
         }
         Text("If Kannada or Telugu is unavailable, Shiv reports the missing voice instead of silently speaking a different language.",

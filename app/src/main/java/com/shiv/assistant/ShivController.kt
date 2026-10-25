@@ -26,7 +26,7 @@ class ShivController(private val context: Context) {
     val phase = PhaseOneController(context, brain.localBrain)
     var speechLocale by mutableStateOf("en-IN")
         private set
-    fun setSpeechLocale(value: String) {
+    fun updateSpeechLocale(value: String) {
         require(value in setOf("kn-IN","te-IN","en-IN"))
         speechLocale = value
         vault.put("speech_locale",value)
