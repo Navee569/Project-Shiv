@@ -71,6 +71,7 @@ jobs:
           if not new.exists():
               shutil.copytree(old,new)
           assert all((new/f'{version}.json').is_file() for version in (6,7,8,9))
+          assert 'class ShivDatabase' in next(Path('app/src/main/java').rglob('ShivDatabase.kt')).read_text()
           # Test sources refer to this exact Room-export location after renaming.
           assert (Path('app/src/main/java/com/shiv/ai/data/db/OpenDroidDatabase.kt')).is_file()
           manifest=Path('app/src/main/AndroidManifest.xml').read_text()
