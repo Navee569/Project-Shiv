@@ -59,6 +59,15 @@ jobs:
           s=app.read_text()
           s=re.sub(r'applicationId\s+["\'][^"\']+["\']','applicationId "com.shiv.assistant"',s)
           app.write_text(s)
+          # Keep the source filename aligned with the renamed database class.
+          # The annotation processor regression test reads this exact source path.
+          db_dir=Path('app/src/main/java/com/shiv/ai/data/db')
+          old_db=db_dir/'OpenDroidDatabase.kt'
+          new_db=db_dir/'ShivDatabase.kt'
+          if not old_db.is_file():
+              raise FileNotFoundError(f'Expected database Kotlin source at {old_db}')
+          old_db.rename(new_db)
+          assert 'class ShivDatabase' in new_db.read_text()
           # Room migration fixtures are loaded by the database's fully qualified
           # Kotlin class name. Keep historical fixtures, and provide an additive
           # copy at the Shiv namespace so migration tests can find them.
@@ -73,7 +82,7 @@ jobs:
           assert all((new/f'{version}.json').is_file() for version in (6,7,8,9))
           assert 'class ShivDatabase' in Path('app/src/main/java/com/shiv/ai/data/db/OpenDroidDatabase.kt').read_text()
           # Test sources refer to this exact Room-export location after renaming.
-          assert (Path('app/src/main/java/com/shiv/ai/data/db/OpenDroidDatabase.kt')).is_file()
+          assert (Path('app/src/main/java/com/shiv/ai/data/db/ShivDatabase.kt')).is_file()
           manifest=Path('app/src/main/AndroidManifest.xml').read_text()
           assert 'android:allowBackup="false"' in manifest
           assert 'com.shiv.assistant' in s
