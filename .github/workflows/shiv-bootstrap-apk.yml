@@ -1,0 +1,94 @@
+name: Shiv APK integration bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shiv-bootstrap-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out pinned integration base
+        run: |
+          git clone https://github.com/yashab-cyber/opendroid.git /tmp/upstream
+          git -C /tmp/upstream checkout --detach 9f7c0a40a64c37a4f8175545f1293b09106d59de
+          test "$(git -C /tmp/upstream rev-parse HEAD)" = "9f7c0a40a64c37a4f8175545f1293b09106d59de"
+      - name: Apply Shiv namespace and security patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a /tmp/upstream/. ./ 
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('.')
+          # Upstream license and archived Room schema files are provenance and migration-critical.
+          for p in root.rglob('*'):
+              if not p.is_file() or '.git' in p.parts or p.stat().st_size > 1500000: continue
+              if p.name == 'LICENSE' or 'schemas' in p.parts: continue
+              try: data=p.read_text('utf-8')
+              except (OSError,UnicodeDecodeError): continue
+              updated=data.replace('com.opendroid.ai','com.shiv.ai').replace('com.opendroid','com.shiv')
+              updated=updated.replace('com.shiv.ai"','com.shiv.assistant"') if p.as_posix() == 'app/build.gradle' else updated
+              updated=re.sub(r'OpenDroid','Shiv',updated)
+              updated=re.sub(r'opendroid','shiv',updated)
+              if p.as_posix()=='app/src/main/AndroidManifest.xml':
+                  updated=updated.replace('android:allowBackup="true"','android:allowBackup="false"')
+              if data != updated: p.write_text(updated,'utf-8')
+          for source in sorted(root.glob('app/src/**/com/opendroid'),key=lambda x:len(x.parts),reverse=True):
+              if source.is_dir():
+                  target=source.with_name('shiv')
+                  if target.exists():
+                      for f in source.rglob('*'):
+                          if f.is_file():
+                              dest=target/f.relative_to(source)
+                              dest.parent.mkdir(parents=True,exist_ok=True)
+                              f.rename(dest)
+                      import shutil
+                      shutil.rmtree(source)
+                  else: source.rename(target)
+          app=Path('app/build.gradle')
+          s=app.read_text()
+          s=re.sub(r'applicationId\s+["\'][^"\']+["\']','applicationId "com.shiv.assistant"',s)
+          app.write_text(s)
+          manifest=Path('app/src/main/AndroidManifest.xml').read_text()
+          assert 'android:allowBackup="false"' in manifest
+          assert 'com.shiv.assistant' in s
+          print('Shiv ID, packages and sensitive backup policy verified')
+          PY
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Build full-feature Shiv candidate
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-integration-candidate-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shiv-bootstrap-diagnostics
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
