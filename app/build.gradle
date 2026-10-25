@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.google.devtools.ksp'
 }
 android {
     namespace = 'com.shiv.assistant'
@@ -19,6 +20,7 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
     buildTypes { release { minifyEnabled false } }
+    // Only exported Room schemas will be checked into Git after a verified build.
 }
 kotlin { jvmToolchain(21) }
 dependencies {
@@ -32,5 +34,15 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.work:work-runtime-ktx:2.11.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'androidx.room:room-runtime:2.8.5'
+    implementation 'androidx.room:room-ktx:2.8.5'
+    ksp 'androidx.room:room-compiler:2.8.5'
+    implementation 'net.zetetic:sqlcipher-android:4.19.1'
+    implementation 'androidx.sqlite:sqlite:2.7.0'
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.18.0'
+    implementation 'com.google.mlkit:image-labeling:17.0.9'
     testImplementation 'junit:junit:4.13.2'
 }
+
+// Room version-1 schema is exported for review and future migration verification.
+ksp { arg('room.schemaLocation', "$projectDir/schemas") }

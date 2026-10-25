@@ -1,32 +1,36 @@
-# Shiv — native Android personal intelligence
+# Shiv — private personal Android manager
 
-**Status: experimental development, not production-cleared.**
+**Development branch:** `feature/shiv-phase1-implementation`. This is source development, not a finished release.
 
-This is an original Android app in package \`com.shiv.assistant\`, not an APK assembled by renaming OpenDroid. Its code, Compose user interface, capability registry, consent model, intelligence router and storage system are Shiv-owned implementations. The original Shiv README is preserved in [docs/ORIGINAL_SHIV_README.md](docs/ORIGINAL_SHIV_README.md); original working application sources were not available in GitHub.
+Shiv is his own Android app, built with Kotlin + Jetpack Compose. He keeps local data encrypted, helps with owner-approved actions, and can use **two locally imported LiteRT-LM models**: a small router and an on-demand conversation model. A **cloud AI API is an explicit exception**, available only when the owner switches to cloud/hybrid and opts in. Nothing contacts a cloud provider simply because a setting screen exists.
 
-## Product
+## Windows / Android Studio — OWNER STEPS
 
-- Futuristic Compose dashboard, aurora backgrounds and original Shiv orbital design.
-- **Configurable intelligence:** LOCAL (deterministic offline), CLOUD (user-selected OpenAI-compatible HTTPS API) or HYBRID (offline commands plus opt-in cloud text). No outbound prompts without opt-in.
-- Encrypted memory, chat history, provider credentials, and macros using Android Keystore AES-GCM; device backup disabled.
-- Bounded multi-step plans, reviewed external Android handoffs, local relative reminders, audio dictation and TTS, explicit cloud image analysis, document import, and optional notification metadata.
-- No background accessibility automation, silent posts, SMS, financial transfers or root shell.
+1. In GitHub, open the `feature/shiv-phase1-implementation` branch and select **Code > Download ZIP**.
+2. Extract the ZIP, open **Android Studio > File > Open** and select its `Project-Shiv` folder.
+3. Install the Android SDK 36 and use **JDK 21** in **Settings > Build, Execution, Deployment > Build Tools > Gradle**.
+4. Sync Gradle. Select the `app` run configuration and a connected Galaxy S23 to build/run when you start testing.
+5. For local models, download the `.litertlm` weights yourself onto the phone (they are **not in the APK**). Open **Shiv > Models > SELECT MODEL FILE > choose router/conversation > CONFIRM APP-PRIVATE COPY > LOAD**. Expect a large duplicate copy because the LiteRT runtime requires an actual filesystem path. The 1B and E2B candidate models need on-phone verification.
+6. For Kannada/Telugu speaking voices: **Settings > General management > Language > Text-to-speech > Preferred engine > Speech Services by Google > gear > Install voice data**.
+7. To allow optional notification awareness, use **Shiv > Settings > notification switch** and manually grant access in Android settings. To allow one-shot screen facts, use **Shiv > Permissions > Open Accessibility Settings**, read the warning and turn on Shiv only if desired; use the 15-second one-shot button to capture an allowed app.
+8. For Samsung background reminders later: **Settings > Apps > Shiv > Battery > Unrestricted**, if you elect to allow reminders to run reliably. Device testing remains necessary.
 
-**Reference to OpenDroid is an architecture/capability study, not imported Android application code.** See [reference study](docs/REFERENCE_STUDY.md).
+## Core modules added in this development branch
 
-## Setup
+- Private Room + SQLCipher database with Android Keystore-wrapped random passphrase; one-way legacy encrypted-preferences migration (old records are deleted only after copying).
+- Profile, memory with provenance/confidence, rules, events, tasks, reminders, chat, action logs, model metadata, encrypted signal queue, beliefs, decision traces.
+- LiteRT-LM 0.18.0 Brain runtime (not a fake rule-based chatbot), local router/conversation model import, SHA-256, memory/battery checks, inference priorities and error reporting.
+- Three language selections (Kannada, Telugu, English) for on-device Android STT and Google TTS; no implicit cloud recognition.
+- Save-first WorkManager signal processing, owner-review trace generation, deterministic proactive/quiet-hours policy, charging-only hypothesis learning.
+- Deterministic FREE / ACT_THEN_TELL / ASK_FIRST authority engine with a hard ASK_FIRST floor for sensitive actions; no model-controlled tiers.
+- Opt-in notification facts with Indian banking/payment/authenticator denylist, one-shot restricted Accessibility facts, reviewed Android handoffs and encrypted event/calendar integration.
+- Bundled **offline image labeling**, distinctly labeled from OCR or scene understanding. Cloud image analysis is an owner-approved API exception.
+- Original Shiv Compose UI plus Models, AI Status, Events, Beliefs, Decisions, and Permissions.
 
-Install JDK 21, Android SDK 36, Gradle 9.7.0, then:
+## Limitations
 
-    python3 scripts/verify_shiv.py
-    gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+This development prompt intentionally did **not** run Gradle tests or device checks. This code must not be treated as an install-ready, verified APK. See [STATUS.md](STATUS.md), [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the owner requirements files attached to the project conversation.
 
-CI publishes the native Shiv debug APK as the \`shiv-native-debug-apk\` artifact; this is not a release-signed APK.
+A number of Phase 1 requirements remain incomplete, notably complete continuous mic duty cycling, wake-word support, per-source permissions/awareness, tested LiteRT formats and delegates, recovery/restore, full scenario suite, and a verified device battery/runtime baseline. They remain visible as incomplete in STATUS. **Phase 2 is not started until M11 is accepted.**
 
-## Requirements and limitations
-
-The in-app feature matrix includes every capability family identified in the reference study, and labels items \`ACTIVE\`, \`CONNECT\`, \`PERMISSION\` or \`PENDING\`. **A visible module is not proof that its complete integration is implemented.**
-
-Full offline neural model execution, model download, semantic knowledge graph, habit inference, full third-party UI automation, authenticated social publishing/analytics, complex bookings, privileged terminal/MCP, wakeword and live screen capture remain outstanding. See [SHIV_CAPABILITY_MATRIX.md](SHIV_CAPABILITY_MATRIX.md).
-
-A build result is not a complete test or production readiness claim. No emulator/real-device and full third-party acceptance testing has been completed.
+Neither Shizuku nor root/kernel tooling is part of the current implementation. Shiv does not intercept cellular call audio.

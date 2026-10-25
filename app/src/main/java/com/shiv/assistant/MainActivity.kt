@@ -2,7 +2,9 @@ package com.shiv.assistant
 
 import android.content.Intent
 import android.os.Bundle
-import android.speech.RecognizerIntent
+import com.shiv.assistant.voice.ShivVoice
+import android.content.pm.PackageManager
+import android.Manifest
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,12 +22,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             val controller = remember { ShivController(applicationContext) }
             val scope = rememberCoroutineScope()
-            val tts = remember { TextToSpeech(applicationContext, null) }
-            DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
-            val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                val words = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                val heard = words?.firstOrNull()
-                if (!heard.isNullOrBlank()) scope.launch { controller.submit(heard) }
+            val speech = remember { ShivVoice(applicationContext).also {
+                it.initSpeech { ready, error ->
+                    if(!ready) controller.showNotice(error ?: "Google TTS engine not available")
+                }
+            } }
+            DisposableEffect(speech) { onDispose { speech.close() } }
+            val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if(!granted) controller.showNotice("Microphone denied; offline recognition not started")
+            }
+            val beginListening = {
+                if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
+                    microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                } else {
+                    speech.startRecognition(controller.speechLocale,
+                        onPartial={},
+                        onResult={ heard -> if(heard.isNotBlank()) scope.launch { controller.submit(heard) } },
+                        onFailure={ controller.showNotice(it) })
+                }
             }
             val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 controller.chooseImage(it)
@@ -41,15 +55,10 @@ class MainActivity : ComponentActivity() {
             )) {
                 ShivInterface(
                     controller = controller,
-                    onVoice = {
-                        try {
-                            voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
-                        } catch (_: Exception) { /* recognition app is optional */ }
-                    },
+                    onVoice = { beginListening() },
                     onPhoto = { photo.launch("image/*") },
                     onDocument = { document.launch("text/*") },
-                    onSpeak = { spoken -> tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "shiv_response") },
+                    onSpeak = { spoken -> speech.speak(spoken,controller.speechLocale)?.let(controller::showNotice) },
                     onNotificationPermission = {
                         if (android.os.Build.VERSION.SDK_INT >= 33)
                             permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)

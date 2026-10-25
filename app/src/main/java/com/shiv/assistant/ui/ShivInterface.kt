@@ -35,7 +35,8 @@ fun ShivInterface(
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
     onSpeak: (String) -> Unit,
-    onNotificationPermission: () -> Unit
+    onNotificationPermission: () -> Unit,
+    onModelPick: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf("Core") }
@@ -61,7 +62,7 @@ fun ShivInterface(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Core", "Chat", "Automate", "Memory", "Settings").forEach {
+                listOf("Core", "Chat", "Automate", "Memory", "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions", "Settings").forEach {
                     val active = tab == it
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -216,6 +217,8 @@ fun ShivInterface(
                     color = Muted)
                 OutlinedButton(onClick = { controller.clearHistory() }) { Text("ERASE CHAT HISTORY") }
             }
+            "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions" ->
+                PhaseOneScreen(tab, controller.phase, onModelPick)
             "Settings" -> ShivSettings(controller, onNotificationPermission)
         }
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
@@ -234,8 +237,11 @@ fun ShivInterface(
         title = { Text("Share selected image with AI?") },
         text = { Text("This sends the selected image to your configured cloud endpoint. Only proceed if you trust that provider. Images stay local otherwise.") },
         confirmButton = {
-            Button(onClick = { scope.launch { controller.approveVision() } },
-                enabled = CloudSafety.maySend(controller.config)) { Text("SEND IMAGE") }
+            Row {
+                TextButton(onClick={scope.launch{controller.labelImageLocally()}}) { Text("LOCAL LABELS") }
+                Button(onClick={scope.launch{controller.approveVision()}},
+                    enabled=CloudSafety.maySend(controller.config)) { Text("SEND TO API") }
+            }
         },
         dismissButton = { TextButton(onClick = controller::cancelImage) { Text("KEEP PRIVATE") } }
     )

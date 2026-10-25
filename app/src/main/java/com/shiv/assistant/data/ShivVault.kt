@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec
  * Encrypted local persistence. AES key never leaves the Android Keystore.
  * There are no unencrypted credentials, memories, or conversation bodies in SharedPreferences.
  */
-class ShivVault(context: Context) {
+internal class LegacyShivVault(private val context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("shiv_encrypted_v1", Context.MODE_PRIVATE)
     private val alias = "shiv_vault_master_v1"
     private val key: SecretKey by lazy {
@@ -35,6 +35,8 @@ class ShivVault(context: Context) {
             )
         }.generateKey()
     }
+    fun keys(): Set<String> = preferences.all.keys
+    fun erase() { check(preferences.edit().clear().commit()) }
     @Synchronized
     fun put(name: String, value: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -94,4 +96,64 @@ class ShivVault(context: Context) {
     }
     fun notificationCount(): Int = JSONArray(get("notifications") ?: "[]").length()
     fun clearNotifications() { put("notifications", "[]") }
+}
+
+/**
+ * Compatibility façade: current records live only inside SQLCipher.
+ * Legacy AES-GCM preferences are read once and erased only after all records
+ * have been copied successfully. Never fall back to plaintext storage.
+ */
+class ShivVault(private val context: Context) {
+    private val dao by lazy { EncryptedDatabase.open(context).dao() }
+    init {
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            val legacyStore = context.getSharedPreferences("shiv_encrypted_v1", Context.MODE_PRIVATE)
+            if (legacyStore.all.isNotEmpty()) {
+                val original = LegacyShivVault(context)
+                for (key in original.keys()) {
+                    val value = original.get(key)
+                        ?: error("Legacy entry missing; migration stopped without deleting data")
+                    dao.putVault(VaultEntry(key,value))
+                }
+                original.erase()
+            }
+        }
+    }
+    @Synchronized fun put(name:String,value:String) =
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            dao.putVault(VaultEntry(name,value))
+        }
+    @Synchronized fun get(name:String):String? =
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) { dao.vault(name)?.value }
+    fun notes(): List<String> {
+        val array = org.json.JSONArray(get("notes") ?: "[]")
+        return (0 until array.length()).map { array.getString(it) }
+    }
+    fun addNote(note:String) {
+        require(note.isNotBlank() && note.length <= 8192)
+        put("notes",org.json.JSONArray((notes()+note.trim()).takeLast(250)).toString())
+    }
+    fun history():List<Pair<String,String>> {
+        val json = org.json.JSONArray(get("history")?:"[]")
+        return (0 until json.length()).map { val row=json.getJSONObject(it)
+            row.getString("role") to row.getString("body") }
+    }
+    fun addChat(role:String,message:String) {
+        require(role=="user"||role=="assistant")
+        val array=org.json.JSONArray()
+        (history().takeLast(99)+(role to message.take(12000))).forEach { (r,m) ->
+            array.put(org.json.JSONObject().put("role",r).put("body",m))
+        }
+        put("history",array.toString())
+    }
+    fun clearHistory() { put("history","[]") }
+    fun addNotificationSummary(source:String,title:String) {
+        val json=org.json.JSONArray(get("notifications")?:"[]")
+        val next=org.json.JSONArray()
+        for(i in maxOf(0,json.length()-48) until json.length())next.put(json.get(i))
+        next.put(org.json.JSONObject().put("app",source.take(100)).put("title",title.take(200)))
+        put("notifications",next.toString())
+    }
+    fun notificationCount()=org.json.JSONArray(get("notifications")?:"[]").length()
+    fun clearNotifications()=put("notifications","[]")
 }

@@ -23,6 +23,15 @@ data class ChatEntry(val role: String, val text: String)
 class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
+    val phase = PhaseOneController(context, brain.localBrain)
+    var speechLocale by mutableStateOf("en-IN")
+        private set
+    fun setSpeechLocale(value: String) {
+        require(value in setOf("kn-IN","te-IN","en-IN"))
+        speechLocale = value
+        vault.put("speech_locale",value)
+    }
+    fun showNotice(text: String) { notice = text }
     val messages = mutableStateListOf<ChatEntry>()
     val notes = mutableStateListOf<String>()
     val macros = mutableStateListOf<String>()
@@ -49,6 +58,7 @@ class ShivController(private val context: Context) {
                 allowCloudTransmission = vault.get("cloud_consent") == "yes"
             )
             apiKey = vault.get("api_secret").orEmpty()
+            speechLocale = vault.get("speech_locale") ?: "en-IN"
             notificationSummaries = vault.get("notification_opt_in") == "yes"
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
             notes.addAll(vault.notes())
@@ -72,11 +82,17 @@ class ShivController(private val context: Context) {
     private fun append(role: String, text: String) {
         messages.add(ChatEntry(role, text))
         vault.addChat(role, text)
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putChat(
+                com.shiv.assistant.data.ChatRecord(java.util.UUID.randomUUID().toString(), role, text.take(12000)))
+        }
     }
     suspend fun submit(message: String) {
         val question = message.trim()
         if (question.isEmpty() || working) return
         append("user", question)
+        // Durable, encrypted signal is saved BEFORE any model inference.
+        phase.submitSignal("owner_input", question, 5)
         val proposal = ShivPlanner.parse(question)
         if (proposal.kind == ActionKind.NOTES) {
             saveNote(proposal.argument)
@@ -97,10 +113,26 @@ class ShivController(private val context: Context) {
         } finally { working = false }
     }
     fun propose(action: ActionProposal) { pending = action }
-    fun reject() { pending = null; notice = "Action cancelled" }
+    fun reject() {
+        val action=pending
+        pending=null
+        notice="Action cancelled"
+        if(action!=null) {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                val decision=ActionAuthorization.decide(action,null,false)
+                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+                    ActionAuthorization.log(action,decision,"NOT_REQUESTED","CANCELLED"))
+            }
+        }
+    }
     fun approve() {
         val action = pending ?: return
         pending = null
+        val authorization=ActionAuthorization.decide(action,null,true)
+        if(!authorization.permitted) {
+            notice="Action blocked by Shiv owner policy"
+            return
+        }
         when (action.kind) {
             ActionKind.NOTES -> saveNote(action.argument)
             ActionKind.REMINDER -> {
@@ -110,10 +142,17 @@ class ShivController(private val context: Context) {
             else -> notice = if (ShivActions.launch(context, action)) "Opened external app for review"
                 else "No compatible app installed, or action unavailable"
         }
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+                ActionAuthorization.log(action,authorization,"APP_HANDOFF","OWNER_CONFIRMED"))
+        }
     }
     fun saveNote(value: String) {
         if (value.trim().isEmpty()) return
         vault.addNote(value.trim())
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            com.shiv.assistant.data.ShivRepository(context).remember(value.trim())
+        }
         notes.clear(); notes.addAll(vault.notes())
         notice = "Encrypted note saved"
     }
@@ -132,10 +171,23 @@ class ShivController(private val context: Context) {
     fun notifications(on: Boolean) {
         notificationSummaries = on
         vault.put("notification_opt_in", if (on) "yes" else "no")
+        context.getSharedPreferences("shiv_awareness_control", Context.MODE_PRIVATE).edit()
+            .putBoolean("notifications_enabled", on).apply()
         if (!on) vault.clearNotifications()
     }
     fun chooseImage(uri: Uri?) { visionCandidate = uri }
     fun cancelImage() { visionCandidate = null }
+    suspend fun labelImageLocally() {
+        val uri=visionCandidate?:return
+        visionCandidate=null
+        working=true
+        try {
+            val labels=com.shiv.assistant.ai.OfflineImageLabels(context).labels(uri)
+            append("assistant",if(labels.isEmpty()) "No confident on-device image labels found."
+                else "On-device image labels (not OCR or a full scene description): "+labels.joinToString(", "))
+        } catch(e:Exception) { notice="Offline labels failed: "+(e.message?:"unknown error") }
+        finally { working=false }
+    }
     suspend fun approveVision() {
         val uri = visionCandidate ?: return
         visionCandidate = null

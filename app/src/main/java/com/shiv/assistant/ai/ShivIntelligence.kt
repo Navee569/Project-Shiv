@@ -15,7 +15,7 @@ import java.net.URL
  * The LOCAL mode never contacts a server. HYBRID attempts local commands before
  * the explicitly consented cloud model; a cloud outage does not erase local functionality.
  */
-class ShivIntelligence(private val context: Context) {
+class ShivIntelligence(private val context: Context, val localBrain: ShivBrainHub = ShivBrainHub(context)) {
     fun local(message: String, notes: List<String>): String {
         val lower = message.trim().lowercase()
         val action = ShivPlanner.parse(message)
@@ -36,15 +36,25 @@ class ShivIntelligence(private val context: Context) {
     }
     suspend fun respond(message: String, notes: List<String>, config: AssistantConfiguration, apiKey: String): String {
         val kind = ShivPlanner.parse(message).kind
-        if (config.mode == IntelligenceMode.LOCAL || (config.mode == IntelligenceMode.HYBRID && kind != ActionKind.UNKNOWN))
-            return local(message, notes)
-        if (!CloudSafety.maySend(config)) return local(message, notes) +
-            "\n\nCloud transmission is disabled until you opt in and provide a valid endpoint."
+        // Deterministic command handling is not represented as neural reasoning.
+        if (kind != ActionKind.UNKNOWN) return local(message, notes)
+        if (config.mode == IntelligenceMode.LOCAL) {
+            return try { localBrain.infer(message) }
+            catch (_: Exception) {
+                "No on-device AI model loaded. Import your router or conversation model in Model Manager. Supported deterministic commands still work offline."
+            }
+        }
+        if (config.mode == IntelligenceMode.HYBRID && !CloudSafety.maySend(config)) {
+            return try { localBrain.infer(message) }
+            catch (_: Exception) { "No local model loaded and cloud transmission is disabled." }
+        }
+        if (!CloudSafety.maySend(config)) return "Cloud mode requires an explicit opt-in."
         return try { completeCloud(message, config, apiKey) }
         catch (e: Exception) {
-            if (config.mode == IntelligenceMode.HYBRID) local(message, notes) +
-                "\n\nCloud unavailable: " + (e.message ?: "network error")
-            else "Cloud request failed: " + (e.message ?: "network error")
+            if (config.mode == IntelligenceMode.HYBRID) {
+                try { localBrain.infer(message) }
+                catch (_: Exception) { "Cloud failed, and no local model is loaded: " + (e.message ?: "network issue") }
+            } else "Cloud request failed: " + (e.message ?: "network issue")
         }
     }
     private suspend fun completeCloud(message: String, settings: AssistantConfiguration, apiKey: String): String =

@@ -1,2 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">Shiv</string></resources>
+<resources><string name="app_name">Shiv</string>    <string name="shiv_awareness_explanation">Optional on-demand facts from allowed apps. Excludes sensitive apps and passwords. Disabled until owner enables in settings.</string>
+</resources>
