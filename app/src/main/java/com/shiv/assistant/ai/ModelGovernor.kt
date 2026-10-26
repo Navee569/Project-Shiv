@@ -7,8 +7,11 @@ import android.os.PowerManager
 import com.shiv.assistant.domain.PowerContext
 import com.shiv.assistant.domain.PowerMode
 import com.shiv.assistant.domain.PowerPolicy
+import com.shiv.assistant.data.ShivVault
+import com.shiv.assistant.data.LocalModelComputeLedger
 
-data class ModelLease(val allowed:Boolean,val reason:String,val freeRamBytes:Long,val mode:PowerMode)
+data class ModelLease(val allowed:Boolean,val reason:String,val freeRamBytes:Long,
+    val mode:PowerMode,val maxModelSeconds:Int=0)
 
 /** Conservative measured gating, not a fabricated S23 performance benchmark. */
 class ModelGovernor(private val context:Context) {
@@ -21,15 +24,20 @@ class ModelGovernor(private val context:Context) {
         val hot=if(android.os.Build.VERSION.SDK_INT>=29)
             power.currentThermalStatus>=PowerManager.THERMAL_STATUS_SEVERE else false
         val charging=battery.isCharging
-        val mode=PowerPolicy.mode(PowerContext(pct,charging,hot,0))
+        val ledger=LocalModelComputeLedger(ShivVault(context))
+        val remaining=ledger.leaseSeconds(if(role=="conversation")60 else 30)
+        val usedPercent=if(remaining==0)100 else 0
+        val mode=PowerPolicy.mode(PowerContext(pct,charging,hot,usedPercent))
         val big=role=="conversation"
         val minimum=if(big) 2_500_000_000L else 450_000_000L
-        val permitted=info.availMem>minimum && !hot && (!big || pct>=25 || charging)
+        val permitted=remaining>0 && info.availMem>minimum && !hot &&
+            (!big || pct>=25 || charging)
         return ModelLease(permitted,when{
+            remaining==0->"Daily owner-selected local compute limit exhausted"
             hot->"Device too hot; heavy model paused"
             info.availMem<=minimum->"Not enough free RAM for requested model"
             big && pct<25 && !charging->"Battery too low for E2B; try router model"
             else->"Allowed by memory, battery and thermal gate"
-        },info.availMem,mode)
+        },info.availMem,mode,remaining)
     }
 }
