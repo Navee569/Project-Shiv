@@ -109,8 +109,8 @@ Do not use this app as a production financial automation or call recorder.
   jobs. Regression tests cover the scheduler recovery and deterministic routing.
 - Removing a model reference also removes its Shiv-owned staged copy; the
   owner's original picked file is preserved.
-- **Still incomplete:** dedicated persistent router plus idle large-model
-  eviction, actual performance/energy calibration, accessibility and broader
+- **Still incomplete:** dedicated simultaneous router/conversation residency, idle-eviction
+  hardware testing, actual performance/energy calibration, accessibility and broader
   integrations, passive routines, multilingual improvements and hardware QA.
 - This scope does not alter `ShivIntelligence.kt` or cloud/hybrid behavior.
 - See [feature audit](docs/FEATURE_AUDIT_2026-10-26.md) for requirement-level gaps.
