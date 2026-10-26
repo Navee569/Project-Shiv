@@ -48,7 +48,7 @@ class ShivSignalQueue(private val vault: ShivVault) {
             .filter { it.optString("state") == "pending" }
             .sortedWith(compareByDescending<JSONObject> { it.optInt("priority") }.thenBy { it.optLong("created") })
         val row = pending.firstOrNull() ?: return@synchronized null
-        return SignalItem(row.getString("id"), row.getString("source"), row.getString("title"),
+        return@synchronized SignalItem(row.getString("id"), row.getString("source"), row.getString("title"),
             row.getLong("created"), row.getInt("priority"), row.getBoolean("important"),
             row.getInt("attempts"))
     }
