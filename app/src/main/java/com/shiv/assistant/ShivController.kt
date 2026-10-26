@@ -78,6 +78,8 @@ class ShivController(private val context: Context) {
         private set
     var pending by mutableStateOf<ActionProposal?>(null)
         private set
+    var pendingNeuralTool by mutableStateOf<BrainTool.Proposed?>(null)
+        private set
     var visionCandidate by mutableStateOf<Uri?>(null)
         private set
     var working by mutableStateOf(false)
@@ -86,7 +88,6 @@ class ShivController(private val context: Context) {
         private set
     var notificationSummaries by mutableStateOf(false)
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
-        private set
         private set
     init {
         runCatching {
@@ -358,11 +359,11 @@ class ShivController(private val context: Context) {
                 val answer = localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
                 localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
                 energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
-                append("assistant", when (answer) {
-                    is BrainResult.Text -> answer.value
-                    is BrainResult.Unavailable -> answer.reason
-                    is BrainResult.Failed -> answer.reason
-                })
+                when (answer) {
+                    is BrainResult.Text -> handleLocalNeuralText(answer.value)
+                    is BrainResult.Unavailable -> append("assistant", answer.reason)
+                    is BrainResult.Failed -> append("assistant", answer.reason)
+                }
             } else {
                 val response = brain.respond(question, notes, config, apiKey)
                 append("assistant", response)
@@ -370,6 +371,97 @@ class ShivController(private val context: Context) {
         } catch (e: Exception) {
             append("assistant", "I could not process that request: " + (e.message ?: "unknown error"))
         } finally { working = false }
+    }
+    private fun handleLocalNeuralText(reply: String) {
+        val trimmed = reply.trim()
+        if (!trimmed.startsWith("{")) {
+            append("assistant", reply)
+            return
+        }
+        when (val response = StructuredActions.parse(trimmed)) {
+            is BrainTool.Quiet -> {
+                if (response.reason == "model chose silence") {
+                    notice = "Local model chose no action"
+                } else {
+                    append("assistant", "The local model returned an invalid action. No action was taken.")
+                }
+            }
+            is BrainTool.Proposed -> {
+                when (response.tool) {
+                    "ask_user" -> append("assistant", response.args.getValue("question"))
+                    "create_event", "update_event", "set_reminder", "save_memory", "save_rule" -> {
+                        pendingNeuralTool = response
+                        append("assistant", "Local model proposed " + response.tool +
+                            ". Review the exact arguments and approve or reject.")
+                    }
+                    else -> append("assistant", "Unsupported model-proposed tool '" +
+                        response.tool + "' was not executed.")
+                }
+            }
+        }
+    }
+    fun rejectNeuralTool() {
+        val tool = pendingNeuralTool ?: return
+        pendingNeuralTool = null
+        audit.add("AI_" + tool.tool.uppercase(), "Owner declined model proposal", "ASK_FIRST", false)
+        notice = "Model-proposed action rejected"
+    }
+    fun approveNeuralTool() {
+        val tool = pendingNeuralTool ?: return
+        pendingNeuralTool = null
+        val policy = AuthorityPolicy.authorize(tool.tool, AuthorityTier.ASK_FIRST,
+            hasPermission = true, explicitConfirmation = true)
+        if (policy.decision != ActionAuthority.EXECUTE) {
+            audit.add("AI_" + tool.tool.uppercase(), policy.reason, policy.tier.name, false)
+            notice = policy.reason
+            return
+        }
+        val outcome = runCatching {
+            when (tool.tool) {
+                "create_event" -> {
+                    agenda.add(tool.args.getValue("title"),
+                        tool.args.getValue("starts_at").replace('T', ' '), AgendaKind.EVENT)
+                    agendaItems.clear(); agendaItems.addAll(agenda.list())
+                    "Event saved to encrypted agenda"
+                }
+                "update_event" -> {
+                    agenda.rename(tool.args.getValue("event_id"), tool.args.getValue("title"))
+                    agendaItems.clear(); agendaItems.addAll(agenda.list())
+                    "Existing event title updated"
+                }
+                "set_reminder" -> {
+                    val id = ShivReminders.scheduleAt(context, tool.args.getValue("text"),
+                        tool.args.getValue("when")) ?: error("Invalid or past reminder time")
+                    vault.put("last_reminder_job", id.toString())
+                    "Reminder scheduled approximately by WorkManager"
+                }
+                "save_memory" -> {
+                    knowledge.save(tool.args.getValue("fact").take(2048),
+                        MemoryLayer.SEMANTIC, source = "owner approved model suggestion",
+                        explicit = true)
+                    "Owner-approved fact saved with provenance"
+                }
+                "save_rule" -> {
+                    when (val rule = ReminderRules.parse(tool.args.getValue("rule"))) {
+                        is ReminderRuleCommand.SilenceBefore ->
+                            vault.put("reminder_earliest_minute", rule.minuteOfDay.toString())
+                        ReminderRuleCommand.Clear -> vault.put("reminder_earliest_minute", "")
+                        null -> error("Unsupported or ambiguous rule")
+                    }
+                    "Owner-approved reminder rule saved"
+                }
+                else -> error("Tool not authorized for automatic execution")
+            }
+        }
+        outcome.onSuccess {
+            audit.add("AI_" + tool.tool.uppercase(),
+                "Owner approved deterministic execution: " + it, "ASK_FIRST", true)
+            notice = it
+        }.onFailure {
+            audit.add("AI_" + tool.tool.uppercase(),
+                "Validation or execution rejected", "ASK_FIRST", false)
+            notice = "Model proposal rejected: " + (it.message ?: "invalid arguments")
+        }
     }
     fun propose(action: ActionProposal) { pending = action }
     fun reject() {

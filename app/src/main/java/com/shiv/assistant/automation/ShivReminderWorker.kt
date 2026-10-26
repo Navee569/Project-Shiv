@@ -1,6 +1,7 @@
 package com.shiv.assistant.automation
 
 import com.shiv.assistant.data.ShivVault
+import com.shiv.assistant.data.AgendaDates
 import com.shiv.assistant.domain.ReminderRules
 import java.time.LocalTime
 import android.Manifest
@@ -51,6 +52,21 @@ object ShivReminders {
             'd' -> n * 86400
             else -> null
         }
+    }
+    /**
+     * Model-proposed absolute local reminder. Date/time is validated deterministically
+     * and the controller must obtain ASK_FIRST owner approval before calling.
+     * WorkManager is inexact; never promise exact alarm delivery.
+     */
+    fun scheduleAt(context: Context, text: String, localTime: String): UUID? {
+        val epoch = AgendaDates.parseLocal(localTime.replace('T', ' ')) ?: return null
+        val delayMs = epoch - System.currentTimeMillis()
+        if (delayMs < 5_000L || delayMs > 365L * 24L * 3_600_000L) return null
+        val task = OneTimeWorkRequestBuilder<ShivReminderWorker>()
+            .setInputData(Data.Builder().putString("text", text.take(240)).build())
+            .setInitialDelay(delayMs, TimeUnit.MILLISECONDS).build()
+        WorkManager.getInstance(context).enqueue(task)
+        return task.id
     }
     fun schedule(context: Context, text: String): UUID? {
         val secs = parseSeconds(text) ?: return null

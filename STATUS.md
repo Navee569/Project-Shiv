@@ -85,3 +85,13 @@ Do not use this app as a production financial automation or call recorder.
 - WorkManager ID is stored in encrypted vault; owner can request cancellation of latest scheduled reminder.
 - After repeated owner-approved reminders, Settings displays a suggestion only; Shiv never alters its own tier.
 - All external messaging, payments and privileged actions remain ASK_FIRST. Real-device cancellation race behavior is OWNER-VERIFY.
+
+## Local-model structured action gating
+- The local neural chat path now parses strict JSON proposals. Only supported tools
+  (create/update event, absolute reminder, saved fact, reminder rule, clarification)
+  proceed; unknown tools, malformed data and extra authority arguments fail closed.
+- Supported actions show an ASK_FIRST dialog with exact model-provided arguments.
+  Real agenda / reminder / memory writes occur only after owner approval and
+  deterministic validation. Structured tool outputs from cloud remain untouched.
+- WorkManager reminders are approximate; real timing, time-zone transitions and
+  permissions still need Galaxy S23 testing.

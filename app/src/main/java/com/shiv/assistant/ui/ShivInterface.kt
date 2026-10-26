@@ -54,6 +54,7 @@ fun ShivInterface(
     var editingFactId by remember { mutableStateOf<String?>(null) }
     var correctionText by remember { mutableStateOf("") }
     val pending = controller.pending
+    val neuralTool = controller.pendingNeuralTool
     val photo = controller.visionCandidate
     Column(
         Modifier.fillMaxSize()
@@ -434,6 +435,17 @@ fun ShivInterface(
             if (pending.kind == ActionKind.UPI) onApproveHighRisk() else controller.approve()
         }) { Text("CONTINUE") } },
         dismissButton = { TextButton(onClick = controller::reject) { Text("CANCEL") } }
+    )
+    if (neuralTool != null) AlertDialog(
+        onDismissRequest = controller::rejectNeuralTool,
+        title = { Text("LOCAL MODEL ACTION • ASK FIRST") },
+        text = {
+            Text("Proposed tool: " + neuralTool.tool + "\n\n" +
+                neuralTool.args.entries.joinToString("\n") { it.key + ": " + it.value } +
+                "\n\nOnly the deterministic app policy may execute this after your approval.")
+        },
+        confirmButton = { Button(onClick = controller::approveNeuralTool) { Text("APPROVE") } },
+        dismissButton = { TextButton(onClick = controller::rejectNeuralTool) { Text("REJECT") } }
     )
     if (photo != null) AlertDialog(
         onDismissRequest = controller::cancelImage,

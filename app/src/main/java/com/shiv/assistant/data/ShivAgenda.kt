@@ -49,6 +49,14 @@ class ShivAgenda(private val vault: ShivVault) {
         return item
     }
     @Synchronized
+    fun rename(id: String, newTitle: String) {
+        val title = newTitle.trim()
+        require(title.length in 1..300)
+        val existing = list()
+        require(existing.any { it.id == id }) { "Unknown event id" }
+        save(existing.map { if (it.id == id) it.copy(title = title) else it })
+    }
+    @Synchronized
     fun markCompleted(id: String, completed: Boolean) {
         save(list().map { if (it.id == id) it.copy(completed = completed) else it })
     }
