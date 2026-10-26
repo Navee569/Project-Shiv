@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent
 import com.shiv.assistant.data.ShivRepository
 import com.shiv.assistant.automation.SignalWorker
 import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.data.ShivVault
 import kotlinx.coroutines.*
 
 /**
@@ -20,6 +21,10 @@ class ShivAwareness : AccessibilityService() {
         if(event==null) return
         val name=event.packageName?.toString()?:return
         if(SensitiveAppDenylist.excluded(name))return
+        // Owner explicitly types the ONE package being inspected. Other apps are
+        // never traversed even when the Accessibility service is system-enabled.
+        val vault=try { ShivVault(applicationContext) } catch (_:Exception) { return }
+        if(!ScreenInspectionPolicy.permits(name, vault.get("screen_allowed_package")))return
         val prefs=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
         if(!prefs.getBoolean("owner_enabled",false) || prefs.getBoolean("paused",true))return
         // A capture token is issued only by an owner tap, expires after 15 seconds,
@@ -42,10 +47,10 @@ class ShivAwareness : AccessibilityService() {
         } finally { source.recycle() }
     }
     private fun extractFacts(node:AccessibilityNodeInfo,facts:MutableList<String>,depth:Int) {
-        if(depth>6 || facts.size>=5 || node.isPassword)return
+        if(depth>6 || facts.size>=5 || node.isPassword || !node.isVisibleToUser)return
         // Process *only* tightly-scoped date/time facts, never whole screen content.
         val text=node.text?.toString().orEmpty()
-        if(text.length in 4..100 && Regex("(?i)\\b(today|tomorrow|meeting|deadline|appointment|\\d{1,2}:\\d{2})\\b")
+        if(text.length in 4..100 && !Regex("\\b[0-9]{4,}\\b").containsMatchIn(text) && Regex("(?i)\\b(today|tomorrow|meeting|deadline|appointment|\\d{1,2}:\\d{2})\\b")
                 .containsMatchIn(text) && !Regex("(?i)\\b(otp|password|pin|cvv|card|account)\\b").containsMatchIn(text))
             facts.add(text.take(100))
         for(i in 0 until minOf(node.childCount,30)) {
@@ -55,4 +60,14 @@ class ShivAwareness : AccessibilityService() {
     }
     override fun onInterrupt() {}
     override fun onDestroy() { scope.cancel();super.onDestroy() }
+}
+
+/** Deterministic exact-match source policy. An unconfigured service cannot read screens. */
+object ScreenInspectionPolicy {
+    fun permits(source:String, ownerPackage:String?):Boolean {
+        val allowed=ownerPackage?.trim()?.lowercase() ?: return false
+        if(!allowed.matches(Regex("[a-z0-9_]+(?:\\.[a-z0-9_]+)+")))return false
+        return source.trim().lowercase()==allowed &&
+            !SensitiveAppDenylist.excluded(allowed)
+    }
 }
