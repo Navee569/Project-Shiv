@@ -15,6 +15,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     private val repository=ShivRepository(context)
     private val dao=EncryptedDatabase.open(context).dao()
     val models=mutableStateListOf<ModelRecord>()
+    val memories=mutableStateListOf<MemoryRecord>()
     val upcoming=mutableStateListOf<EventRecord>()
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
@@ -71,8 +72,10 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         val storedBeliefs=dao.beliefs()
         val traces=dao.traces(30)
         val count=dao.pendingCount()
+        val savedMemories=dao.recentMemories(System.currentTimeMillis(),100)
         withContext(Dispatchers.Main) {
             models.clear();models.addAll(stored)
+            memories.clear();memories.addAll(savedMemories)
             upcoming.clear();upcoming.addAll(events)
             beliefs.clear();beliefs.addAll(storedBeliefs)
             decisions.clear();decisions.addAll(traces)
@@ -117,6 +120,46 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         if(id!=null)SignalWorker.schedule(context)
         reload()
     }
+    suspend fun approveCommitment(trace:DecisionTraceRecord) {
+        try {
+            val current=dao.decision(trace.id)?:error("Decision no longer exists")
+            require(current.decision=="ASK") {"Already resolved"}
+            val incoming=dao.signal(trace.signalId?:error("Source signal missing"))
+                ?:error("Source signal missing")
+            require(incoming.status=="PROCESSED") {"Signal not safely processed"}
+            val proposal=com.shiv.assistant.automation.CommitmentParser.analyze(
+                incoming.fact,java.time.ZoneId.systemDefault())
+            require(proposal is com.shiv.assistant.automation.CommitmentProposal.Ready) {
+                "Commitment is ambiguous; provide day and time before approving."
+            }
+            val deadline=proposal.whenAt.toInstant().toEpochMilli()
+            require(deadline>System.currentTimeMillis()) {"Event time has passed"}
+            val event=EventRecord(incoming.id,proposal.title,deadline,null,incoming.source,
+                proposal.confidence)
+            val reminderId="event-"+incoming.id
+            val reminderAt=(deadline-15*60_000L).coerceAtLeast(System.currentTimeMillis()+1000L)
+            // The entire calendar/reminder decision is one encrypted transaction.
+            dao.confirmEvent(event,ReminderRecord(reminderId,
+                "Upcoming: "+proposal.title.take(180),reminderAt,event.id),
+                current.copy(decision="APPROVED",reason="Owner reviewed and approved event; "+
+                    "notification queued",policyTier="ASK_FIRST"))
+            com.shiv.assistant.automation.ShivReminders.scheduleApprovedEvent(context,reminderId,reminderAt)
+            progress="Approved event and scheduled reminder"
+            reload()
+        } catch(e:Exception) { issue=e.message?:"Approval failed" }
+    }
+    suspend fun declineCommitment(trace:DecisionTraceRecord) {
+        val current=dao.decision(trace.id)?:return
+        if(current.decision=="ASK") dao.trace(current.copy(decision="DECLINED",
+            reason="Owner declined the suggested commitment"))
+        reload()
+    }
+    suspend fun correctMemory(id:String,replacement:String) {
+        if(replacement.isBlank())return
+        repository.correct(id,replacement)
+        reload()
+    }
+    suspend fun deleteMemory(id:String) { repository.forget(id);reload() }
     suspend fun removeBelief(id:String) { repository.forgetBelief(id);reload() }
     fun modelStatus():String {
         val router=hub.router.status()

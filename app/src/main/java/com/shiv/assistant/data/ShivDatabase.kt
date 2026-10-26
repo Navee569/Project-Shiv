@@ -93,16 +93,23 @@ interface ShivDao {
     suspend fun claim(id: String): Int
     @Query("UPDATE signals SET status='PROCESSED', processedAt=:now, lastError=NULL WHERE id=:id")
     suspend fun markProcessed(id: String, now: Long)
-    @Query("UPDATE signals SET status='RETRY', lastError=:error WHERE id=:id")
+    @Query("UPDATE signals SET status=CASE WHEN attempts >= 8 THEN 'FAILED' ELSE 'RETRY' END, lastError=:error WHERE id=:id")
     suspend fun markRetry(id: String, error: String)
+    @Query("SELECT * FROM signals WHERE id=:id") suspend fun signal(id:String): SignalRecord?
     @Query("UPDATE signals SET status='RETRY' WHERE status='PROCESSING'")
     suspend fun recoverInFlight()
-    @Query("SELECT COUNT(*) FROM signals WHERE status IN ('PENDING','RETRY')") suspend fun pendingCount(): Int
+    @Query("SELECT COUNT(*) FROM signals WHERE status IN ('PENDING','RETRY') AND attempts < 8") suspend fun pendingCount(): Int
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putBelief(value: BeliefRecord)
     @Query("SELECT * FROM beliefs ORDER BY updatedAt DESC") suspend fun beliefs(): List<BeliefRecord>
     @Query("DELETE FROM beliefs WHERE id=:id") suspend fun deleteBelief(id: String)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun trace(value: DecisionTraceRecord)
+    @Query("SELECT * FROM decision_traces WHERE id=:id") suspend fun decision(id:String):DecisionTraceRecord?
     @Query("SELECT * FROM decision_traces ORDER BY createdAt DESC LIMIT :limit") suspend fun traces(limit: Int): List<DecisionTraceRecord>
+    @Transaction suspend fun confirmEvent(event:EventRecord, reminder:ReminderRecord, updated:DecisionTraceRecord) {
+        putEvent(event)
+        putReminder(reminder)
+        trace(updated)
+    }
 }
 
 @Database(

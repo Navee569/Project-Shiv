@@ -33,6 +33,9 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
                 return@withContext Result.retry()
             }
         }
+        // A single worker intentionally limits work to 30 items. Without
+        // rescheduling, high-volume input would stay pending indefinitely.
+        if(dao.pendingCount()>0) schedule(applicationContext)
         Result.success()
     }
     companion object {

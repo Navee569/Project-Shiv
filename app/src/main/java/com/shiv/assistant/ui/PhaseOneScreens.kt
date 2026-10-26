@@ -28,11 +28,15 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
         controller.enablePostCallCheckIn(granted)
     }
     var role by remember { mutableStateOf("router") }
+    var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
+    var revised by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement=Arrangement.spacedBy(14.dp)) {
         Text(page.uppercase(),style=MaterialTheme.typography.headlineSmall,color=accent)
+        controller.issue?.let { Text(it,color=Color(0xFFFF9191)) }
+        Text(controller.progress,color=Color.LightGray,fontSize=11.sp)
         when(page) {
             "Models" -> {
                 Text("Choose a .litertlm file in Files. LiteRT needs an app-private copy even if the original is in Downloads. Importing E2B may require about 4 GB extra free storage; no model is bundled.",
@@ -95,6 +99,25 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                 }
                 if(controller.beliefs.isEmpty())Text("No learned patterns recorded.",color=Color.LightGray)
             }
+            "Memories" -> {
+                Text("Encrypted facts, with explicit corrections and deletion.",color=Color.LightGray)
+                controller.memories.forEach { memory ->
+                    Surface(shape=MaterialTheme.shapes.medium) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                            Text(memory.text,color=Color.White)
+                            Text(memory.source+" • "+memory.category+
+                                " • confidence "+(memory.confidence*100).toInt()+"%",fontSize=11.sp)
+                            Row {
+                                TextButton(onClick={editing=memory;revised=memory.text}) { Text("CORRECT") }
+                                TextButton(onClick={scope.launch{controller.deleteMemory(memory.id)}}) {
+                                    Text("DELETE")
+                                }
+                            }
+                        }
+                    }
+                }
+                if(controller.memories.isEmpty()) Text("No stored facts yet",color=Color.LightGray)
+            }
             "Decisions" -> {
                 Text("Evidence traces from the durable signal queue. ASK requires owner confirmation and does not create a calendar entry automatically.",
                     color=Color.LightGray)
@@ -103,6 +126,18 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                         Column(Modifier.padding(10.dp)) {
                             Text(t.decision,color=accent)
                             Text(t.reason,color=Color.White)
+                            if(t.decision=="ASK") {
+                                Row {
+                                    if(t.reason.startsWith("Possible event:")) {
+                                        TextButton(onClick={scope.launch{controller.approveCommitment(t)}}) {
+                                            Text("APPROVE EVENT + REMINDER")
+                                        }
+                                    }
+                                    TextButton(onClick={scope.launch{controller.declineCommitment(t)}}) {
+                                        Text("DISMISS")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -134,4 +169,18 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
             }
         }
     }
+    if(editing!=null) AlertDialog(
+        onDismissRequest={editing=null},
+        title={Text("Correct memory")},
+        text={OutlinedTextField(value=revised,onValueChange={revised=it.take(8192)},
+            minLines=2,label={Text("Corrected fact")})},
+        confirmButton={
+            Button(enabled=revised.isNotBlank(),onClick={
+                val record=editing
+                editing=null
+                if(record!=null) scope.launch{controller.correctMemory(record.id,revised)}
+            }) {Text("SAVE CORRECTION")}
+        },
+        dismissButton={TextButton(onClick={editing=null}){Text("CANCEL")}}
+    )
 }

@@ -62,7 +62,7 @@ fun ShivInterface(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Core", "Chat", "Automate", "Memory", "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions", "Settings").forEach {
+                listOf("Core", "Chat", "Automate", "Memory", "Memories", "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions", "Settings").forEach {
                     val active = tab == it
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -217,7 +217,7 @@ fun ShivInterface(
                     color = Muted)
                 OutlinedButton(onClick = { controller.clearHistory() }) { Text("ERASE CHAT HISTORY") }
             }
-            "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions" ->
+            "Memories", "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions" ->
                 PhaseOneScreen(tab, controller.phase, onModelPick)
             "Settings" -> ShivSettings(controller, onNotificationPermission)
         }

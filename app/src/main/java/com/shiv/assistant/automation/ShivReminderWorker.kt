@@ -65,6 +65,15 @@ object ShivReminders {
             .setInitialDelay(delaySeconds,TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueue(task)
     }
+    fun scheduleApprovedEvent(context:Context,reminderId:String,dueAtMillis:Long) {
+        val delay=((dueAtMillis-System.currentTimeMillis())/1000L).coerceAtLeast(1L)
+        val task=OneTimeWorkRequestBuilder<ShivReminderWorker>()
+            .setInputData(Data.Builder().putString("reminder_id",reminderId).build())
+            .setInitialDelay(delay,TimeUnit.SECONDS).build()
+        // Keep is idempotent for repeated approval or a retried command.
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "shiv-approved-"+reminderId,ExistingWorkPolicy.KEEP,task)
+    }
     fun schedule(context:Context,text:String):UUID? {
         val secs=parseSeconds(text)?:return null
         val id=UUID.randomUUID()
