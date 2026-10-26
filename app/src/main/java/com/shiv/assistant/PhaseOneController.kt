@@ -21,6 +21,9 @@ import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
+import com.shiv.assistant.automation.ShivAgendaNudgeWorker
+import com.shiv.assistant.data.OwnerNudgeLedger
+import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +42,13 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
+    private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
+    var proactiveOptIn by mutableStateOf(ShivVault(context).get("proactive_opt_in")=="yes")
+        private set
+    var proactiveFeedback by mutableStateOf(nudgeLedger.report())
+        private set
+    var proactiveLastKey by mutableStateOf(nudgeLedger.lastKey())
+        private set
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -174,6 +184,27 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     fun stopOfflineMicSession() {
         context.stopService(Intent(context,ShivMicSessionService::class.java))
         progress="Offline microphone session stopped"
+    }
+    fun setProactiveOptIn(enabled:Boolean) {
+        ShivVault(context).put("proactive_opt_in",if(enabled)"yes" else "no")
+        proactiveOptIn=enabled
+        ShivAgendaNudgeWorker.updateRegistration(context,enabled)
+        progress=if(enabled) "Owner-enabled, quiet-hour-limited optional agenda notices"
+            else "Optional agenda notices disabled"
+    }
+    fun recordProactiveReaction(reaction:OwnerNudgeReaction) {
+        if(nudgeLedger.lastKey().isBlank()) {
+            issue="No optional agenda notification exists to review"
+            return
+        }
+        nudgeLedger.react(reaction)
+        proactiveLastKey=nudgeLedger.lastKey()
+        proactiveFeedback=nudgeLedger.report()
+        progress="Feedback saved encrypted. Only optional future interruption caps may decrease."
+    }
+    fun refreshProactiveFeedback() {
+        proactiveLastKey=nudgeLedger.lastKey()
+        proactiveFeedback=nudgeLedger.report()
     }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
