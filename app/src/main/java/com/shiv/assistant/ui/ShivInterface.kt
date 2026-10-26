@@ -43,6 +43,8 @@ fun ShivInterface(
     onBackupExport: (String) -> Unit,
     onBackupRestore: (String) -> Unit,
     onSpeak: (String) -> Unit,
+    onCalendarPreview: () -> Unit,
+    onContactLookup: (String) -> Unit,
     onNotificationPermission: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -53,6 +55,7 @@ fun ShivInterface(
     var selected by remember { mutableStateOf<Capability?>(null) }
     var editingFactId by remember { mutableStateOf<String?>(null) }
     var correctionText by remember { mutableStateOf("") }
+    var contactQuery by remember { mutableStateOf("") }
     val pending = controller.pending
     val neuralTool = controller.pendingNeuralTool
     val photo = controller.visionCandidate
@@ -219,6 +222,52 @@ fun ShivInterface(
                 }
             }
             "Automate" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+                Header("OWNER-CONTROLLED PROACTIVE ASSISTANT",
+                    "Optional deterministic agenda notices; no microphone, background AI or cloud calls.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Scheduled agenda nudges & briefs", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.proactiveOptIn,
+                        onCheckedChange = controller::updateProactiveOptIn)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Learn hypotheses from completed events", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.passiveLearningOptIn,
+                        onCheckedChange = controller::updatePassiveLearningOptIn)
+                }
+                Text("Quiet hours 10 PM–8 AM, daily notification cap 3. Repeated completions " +
+                    "create unconfirmed beliefs only; review or delete them under Memory.",
+                    color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(16.dp))
+                Header("ANDROID CALENDAR • OWNER PREVIEW",
+                    "Read next 14 days only when requested. Review the temporary list before encrypted import.")
+                Button(onClick = onCalendarPreview, enabled = !controller.guestMode &&
+                    !controller.sensingPaused && !controller.privacyZone) { Text("PREVIEW DEVICE CALENDAR") }
+                controller.calendarPreview.forEach { entry ->
+                    Text(entry.title + " • " + AgendaDates.formatLocal(entry.startMillis),
+                        color = Color.White, fontSize = 11.sp)
+                }
+                if (controller.calendarPreview.isNotEmpty()) {
+                    Row {
+                        Button(onClick = controller::importCalendarPreview) { Text("IMPORT PREVIEWED EVENTS") }
+                        TextButton(onClick = controller::clearCalendarPreview) { Text("DISCARD") }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Header("CONTACTS • ON-DEMAND NAME LOOKUP",
+                    "Only owner-search matching names. Numbers aren't copied or saved.")
+                OutlinedTextField(contactQuery, { contactQuery = it.take(60) },
+                    label = { Text("Contact name") }, modifier = Modifier.fillMaxWidth())
+                Button(onClick = { onContactLookup(contactQuery) },
+                    enabled = contactQuery.trim().length >= 2 && !controller.guestMode &&
+                        !controller.sensingPaused && !controller.privacyZone) { Text("LOOK UP CONTACT") }
+                controller.contactMatches.forEach { match ->
+                    Text(match, color = Color.White, fontSize = 12.sp)
+                }
+                if (controller.contactMatches.isNotEmpty())
+                    TextButton(onClick = controller::clearContactPreview) { Text("CLEAR RESULTS") }
+                Spacer(Modifier.height(16.dp))
                 Header("PLAN & EXECUTION", "Safe automation: review each step before an external action.")
                 Spacer(Modifier.height(15.dp))
                 OutlinedTextField(goal, { goal = it.take(1000) }, label = { Text("Your goal / macro") },
