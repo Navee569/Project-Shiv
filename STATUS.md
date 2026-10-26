@@ -79,3 +79,9 @@ Do not use this app as a production financial automation or call recorder.
 - Fixed casing in the India banking/UPI package denylist; protected-field/FLAG_SECURE guard for future screen extraction.
 - Queue cap now records each low-priority drop without copying personal content; times in allowed titles receive higher priority.
 - Still require device testing and remaining M/P2 gaps above. Cloud implementation unchanged.
+
+## Reminder authority and trust-ladder follow-up
+- Owner may choose ASK_FIRST (default) or ACT_THEN_TELL for explicitly requested local reminders.
+- WorkManager ID is stored in encrypted vault; owner can request cancellation of latest scheduled reminder.
+- After repeated owner-approved reminders, Settings displays a suggestion only; Shiv never alters its own tier.
+- All external messaging, payments and privileged actions remain ASK_FIRST. Real-device cancellation race behavior is OWNER-VERIFY.

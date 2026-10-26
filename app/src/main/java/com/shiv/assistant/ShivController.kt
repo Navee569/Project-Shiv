@@ -85,6 +85,8 @@ class ShivController(private val context: Context) {
     var notice by mutableStateOf("Local-first • Encrypted • You control every action")
         private set
     var notificationSummaries by mutableStateOf(false)
+    var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
+        private set
         private set
     init {
         runCatching {
@@ -96,6 +98,11 @@ class ShivController(private val context: Context) {
             )
             apiKey = vault.get("api_secret").orEmpty()
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            reminderTier = runCatching {
+                AuthorityTier.valueOf(vault.get("reminder_authority") ?: "ASK_FIRST")
+            }.getOrDefault(AuthorityTier.ASK_FIRST).let {
+                if (it == AuthorityTier.ACT_THEN_TELL) it else AuthorityTier.ASK_FIRST
+            }
             sensingPaused = vault.get("sensing_paused") == "yes"
             guestMode = vault.get("guest_mode") == "yes"
             privacyZone = vault.get("privacy_zone") == "yes"
@@ -112,6 +119,37 @@ class ShivController(private val context: Context) {
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
     }
+    fun updateReminderTier(requested: AuthorityTier) {
+        require(requested in setOf(AuthorityTier.ASK_FIRST, AuthorityTier.ACT_THEN_TELL)) {
+            "Only reviewed and reversible reminder authority is supported"
+        }
+        vault.put("reminder_authority", requested.name)
+        reminderTier = requested
+        audit.add("REMINDER_AUTHORITY", "Owner explicitly set " + requested.name,
+            "ASK_FIRST", true)
+        notice = if (requested == AuthorityTier.ASK_FIRST)
+            "Reminder confirmation enabled" else "Reminder auto-scheduling enabled; undo latest reminder is available"
+    }
+    fun maySuggestReminderAutonomy(): Boolean =
+        reminderTier == AuthorityTier.ASK_FIRST &&
+            AuthorityPolicy.maySuggestPromotion("REMINDER",
+                audit.recent().count { it.action == "REMINDER" && it.accepted })
+    fun undoLatestReminder() {
+        val saved = vault.get("last_reminder_job")?.takeIf { it.isNotBlank() } ?: run {
+            notice = "There is no previously scheduled reminder to cancel"
+            return
+        }
+        val id = runCatching { java.util.UUID.fromString(saved) }.getOrNull() ?: run {
+            notice = "Reminder cancellation reference invalid"
+            return
+        }
+        WorkManager.getInstance(context).cancelWorkById(id)
+        vault.put("last_reminder_job", "")
+        audit.add("REMINDER_UNDO", "Owner requested cancellation of latest reminder",
+            "ACT_THEN_TELL", true)
+        notice = "Cancellation requested. A reminder already delivered cannot be recalled."
+    }
+
     fun settings(mode: IntelligenceMode, endpoint: String, model: String, secret: String, consent: Boolean) {
         require(CloudSafety.endpointAllowed(endpoint)) { "Use an HTTPS endpoint or explicit local loopback address" }
         require(model.isNotBlank()) { "Model name cannot be empty" }
@@ -295,6 +333,19 @@ class ShivController(private val context: Context) {
             append("assistant", "Saved to encrypted Shiv memory.")
             return
         }
+        if (proposal.kind == ActionKind.REMINDER &&
+            reminderTier == AuthorityTier.ACT_THEN_TELL) {
+            val scheduled = ShivReminders.schedule(context, proposal.argument)
+            if (scheduled != null) vault.put("last_reminder_job", scheduled.toString())
+            audit.add("REMINDER",
+                if (scheduled == null) "Invalid reminder timing" else
+                    "Owner-authorized automatic reminder: " + proposal.argument.take(160),
+                "ACT_THEN_TELL", scheduled != null)
+            append("assistant", if (scheduled == null)
+                "I could not schedule that reminder. Use: remind me in 10 minutes to ..."
+                else "Reminder scheduled under your ACT_THEN_TELL setting. Use Settings > Undo latest reminder to cancel it.")
+            return
+        }
         if (proposal.kind != ActionKind.UNKNOWN) {
             pending = proposal
             append("assistant", proposal.explanation + ". Approve or cancel the proposed action below.")
@@ -344,7 +395,11 @@ class ShivController(private val context: Context) {
         }
         val accepted = when (action.kind) {
             ActionKind.NOTES -> { saveNote(action.argument); true }
-            ActionKind.REMINDER -> ShivReminders.schedule(context, action.argument) != null
+            ActionKind.REMINDER -> {
+                val job = ShivReminders.schedule(context, action.argument)
+                if (job != null) vault.put("last_reminder_job", job.toString())
+                job != null
+            }
             else -> ShivActions.launch(context, action)
         }
         audit.add(action.kind.name,

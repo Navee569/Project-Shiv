@@ -56,3 +56,10 @@
 - Notification denylist: OWNER-VERIFY
 - Accessibility/ADB/Shizuku: NOT IMPLEMENTED
 - Final functional acceptance: NOT COMPLETE
+
+## OWNER-VERIFY: reminder authority
+- Open Shiv > Settings > Reminder Authority. Choose ASK_FIRST: request a reminder and confirm review dialog.
+- Choose ACT_THEN_TELL: say "remind me in 10 minutes to drink water". Check automatic scheduling message.
+- Tap Undo latest reminder; verify cancellation in the device scheduler. A notification already delivered cannot be recalled.
+- Approve five ASK_FIRST reminders: a trust-ladder suggestion may appear, but the tier must not change without tapping its radio button.
+- Payment, messaging and permanent deletion must still require explicit confirmation; model text may not change policy.

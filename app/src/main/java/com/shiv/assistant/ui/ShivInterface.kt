@@ -543,6 +543,22 @@ fun ShivInterface(
         }, modifier = Modifier.fillMaxWidth()) { Text("SAVE INTELLIGENCE SETTINGS") }
         if (error.isNotBlank()) Text(error, color = Color(0xFFFF9B9B))
         Spacer(Modifier.height(4.dp))
+        Header("REMINDER AUTHORITY & UNDO", "Only the owner changes these tiers; external actions and payments always require confirmation.")
+        listOf(AuthorityTier.ASK_FIRST, AuthorityTier.ACT_THEN_TELL).forEach { tier ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = controller.reminderTier == tier,
+                    onClick = { controller.updateReminderTier(tier) })
+                Text(if (tier == AuthorityTier.ASK_FIRST) "Ask before scheduling reminders"
+                    else "Schedule explicit reminders, then tell me", color = Color.White)
+            }
+        }
+        if (controller.maySuggestReminderAutonomy()) {
+            Text("You've approved several reminders. You may choose ACT_THEN_TELL above; Shiv never changes your authority automatically.",
+                color = Violet, fontSize = 11.sp)
+        }
+        OutlinedButton(onClick = controller::undoLatestReminder) { Text("UNDO LATEST REMINDER") }
+        Text("Undo requests WorkManager cancellation. It cannot recall a notification that has already appeared.",
+            color = Muted, fontSize = 11.sp)
         Header("OFFLINE VOICE LANGUAGES", "Kannada, Telugu and English. Availability depends on language data installed on the phone.")
         listOf("en-IN", "kn-IN", "te-IN").forEach { tag ->
             Row(verticalAlignment = Alignment.CenterVertically) {
