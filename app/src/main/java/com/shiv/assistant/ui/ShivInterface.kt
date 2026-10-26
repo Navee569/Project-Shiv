@@ -59,6 +59,8 @@ fun ShivInterface(
     var correctionText by remember { mutableStateOf("") }
     var contactQuery by remember { mutableStateOf("") }
     var screenPackage by remember { mutableStateOf("") }
+    var ocrTaskTitle by remember { mutableStateOf("Review document due item") }
+    var ocrTaskTime by remember { mutableStateOf("") }
     val pending = controller.pending
     val neuralTool = controller.pendingNeuralTool
     val photo = controller.visionCandidate
@@ -574,6 +576,31 @@ fun ShivInterface(
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp))
     }
+    if (controller.ocrTaskCandidate != null) AlertDialog(
+        onDismissRequest = controller::clearOcrPreview,
+        title = { Text("Review offline OCR due-date task") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Possible due date: " + controller.ocrTaskCandidate!!.dueDate +
+                    ". Text recognition can be wrong. Confirm title and choose a time. " +
+                    "No source image or OCR text is saved.")
+                OutlinedTextField(ocrTaskTitle, { ocrTaskTitle = it.take(256) },
+                    label = { Text("Task title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(ocrTaskTime, { ocrTaskTime = it.take(5) },
+                    label = { Text("Time, 24-hour HH:mm") },
+                    modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { Button(onClick = {
+            controller.confirmOcrTask(ocrTaskTitle, ocrTaskTime)
+        }, enabled = ocrTaskTitle.isNotBlank() &&
+            ocrTaskTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+            Text("SAVE REVIEWED TASK")
+        } },
+        dismissButton = {
+            TextButton(onClick = controller::clearOcrPreview) { Text("DISCARD") }
+        }
+    )
     if (pending != null) AlertDialog(
         onDismissRequest = controller::reject,
         title = { Text("REVIEW ACTION • " + pending.kind.name) },
