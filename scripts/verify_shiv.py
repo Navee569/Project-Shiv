@@ -21,7 +21,8 @@ assert len(mic)==1 and mic[0].attrib.get(ns+"exported")=="false"
 assert mic[0].attrib.get(ns+"foregroundServiceType")=="microphone"
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
 assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.READ_CALENDAR","android.permission.READ_PHONE_STATE","android.permission.READ_CONTACTS",
-"android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MICROPHONE"},permissions
+"android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MICROPHONE",
+"android.permission.PACKAGE_USAGE_STATS"},permissions
 gradle=(app/"build.gradle").read_text()
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
 sources=list((app/"src/main/java").rglob("*.kt"))

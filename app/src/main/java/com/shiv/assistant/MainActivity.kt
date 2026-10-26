@@ -20,6 +20,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.shiv.assistant.automation.ShivRetentionWorker.schedule(applicationContext)
+        com.shiv.assistant.automation.ShivAgendaNudgeWorker.updateRegistration(
+            applicationContext,
+            com.shiv.assistant.data.ShivVault(applicationContext).get("proactive_opt_in")=="yes")
         setContent {
             val controller = remember { ShivController(applicationContext) }
             val scope = rememberCoroutineScope()

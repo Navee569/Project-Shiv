@@ -6,6 +6,8 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Conversation
 import com.shiv.assistant.domain.IntelligenceMode
+import com.shiv.assistant.data.LocalModelComputeLedger
+import com.shiv.assistant.data.ShivVault
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import java.io.File
@@ -183,6 +185,7 @@ class ShivBrainHub(private val context: Context) {
     val router: Brain = LiteRtBrain(context)
     val conversation: Brain = LiteRtBrain(context)
     private val lifecycle = Mutex()
+    private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var idleRelease: Job? = null
 
@@ -192,14 +195,33 @@ class ShivBrainHub(private val context: Context) {
         override suspend fun infer(prompt: String): String {
             val governor = ModelGovernor(context)
             val heavy = governor.lease("conversation")
-            if (conversation.status().ready && heavy.allowed)
-                return conversation.infer(prompt)
             val small = governor.lease("router")
-            if (router.status().ready && small.allowed)
-                return router.infer(prompt)
-            if (conversation.status().ready && !heavy.allowed)
-                throw IllegalStateException("Conversation model blocked by resource policy: " + heavy.reason)
-            throw IllegalStateException("Load a compatible local router model or check battery and temperature")
+            val selectedBrain:Brain
+            val maxSeconds:Int
+            when {
+                conversation.status().ready && heavy.allowed -> {
+                    selectedBrain=conversation
+                    maxSeconds=heavy.maxModelSeconds
+                }
+                router.status().ready && small.allowed -> {
+                    selectedBrain=router
+                    maxSeconds=small.maxModelSeconds
+                }
+                conversation.status().ready && !heavy.allowed ->
+                    throw IllegalStateException("Conversation model blocked: " + heavy.reason)
+                else -> throw IllegalStateException(
+                    "No local model admitted: "+small.reason)
+            }
+            val started=SystemClock.elapsedRealtime()
+            try {
+                // Only a best-effort coroutine limit; a native runtime may
+                // finish cancellation after this window.
+                return withTimeout(maxSeconds.toLong()*1000L) {
+                    selectedBrain.infer(prompt)
+                }
+            } finally {
+                computeLedger.record(SystemClock.elapsedRealtime()-started)
+            }
         }
         override suspend fun unload() {
             conversation.unload()
@@ -216,7 +238,9 @@ class ShivBrainHub(private val context: Context) {
         if (role=="conversation" && availableRam<4_000_000_000L) router.unload()
         if (role=="router" && availableRam<4_000_000_000L) conversation.unload()
         val target = if (role=="router") router else conversation
-        target.load(file)
+        val started=SystemClock.elapsedRealtime()
+        try { target.load(file) }
+        finally { computeLedger.record(SystemClock.elapsedRealtime()-started) }
         armIdleRelease()
     }
     suspend fun unloadForRemoval(role: String, filename: String) = lifecycle.withLock {

@@ -16,6 +16,7 @@ import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
 import com.shiv.assistant.data.PortableOwnerArchive
+import com.shiv.assistant.data.OwnerNudgeReaction
 import kotlinx.coroutines.launch
 
 /**
@@ -126,6 +127,19 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Text(controller.modelStatus(),color=Color.White)
                 Text("Observed on this device, where available. TTFT, tokens/s, battery cost, NPU delegate and thermal impact are not measured yet.",
                     color=Color.LightGray)
+                Text("OWNER LOCAL COMPUTE ALLOWANCE",color=accent)
+                Text(controller.localComputeReport(),color=Color.LightGray,fontSize=11.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(60,300,600,1800).forEach { seconds ->
+                        FilterChip(selected=controller.localBudgetSeconds==seconds,
+                            onClick={controller.setLocalComputeBudget(seconds)},
+                            label={Text((seconds/60).toString()+"m")})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Text("The budget is measured LiteRT wall time, not battery mAh; " +
+                    "native cancellation may be delayed. Owner-requested reminders do not consume it.",
+                    color=Color.LightGray,fontSize=11.sp)
                 Text("Pending encrypted signals: "+controller.notificationCount)
                 Button(onClick={scope.launch{controller.reload()}}){Text("REFRESH")}
             }
@@ -247,6 +261,26 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     TextButton(onClick={controller::discardCalendarPreview}) {
                         Text("DISCARD ALL PREVIEWS")
                     }
+                Text("APP USAGE • OWNER-REQUESTED PREVIEW",color=accent)
+                Text("Read only 24-hour foreground duration totals after manually granting " +
+                    "Android Usage Access. Sensitive apps are excluded. Results are temporary, " +
+                    "never entered into memory or an AI prompt.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedButton(onClick={controller::openUsageAccessSettings}) {
+                    Text("OPEN USAGE ACCESS SETTINGS")
+                }
+                OutlinedButton(onClick={scope.launch{controller.previewUsage()}}) {
+                    Text("PREVIEW APP USAGE")
+                }
+                controller.usagePreview.forEach { item ->
+                    Text(item.packageName+" • "+(item.foregroundMs/60_000L)+" min",
+                        color=Color.LightGray,fontSize=11.sp)
+                }
+                if(controller.usagePreview.isNotEmpty()) {
+                    OutlinedButton(onClick={controller::clearUsagePreview}) {
+                        Text("CLEAR USAGE PREVIEW")
+                    }
+                }
                 Text("CONTACTS — NAME SEARCH ONLY",color=accent)
                 OutlinedTextField(value=contactQuery,
                     onValueChange={contactQuery=it.take(60)},
@@ -281,6 +315,33 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
                     OutlinedButton(onClick={controller::stopOfflineMicSession}) { Text("STOP MIC") }
+                }
+                Text("OPT-IN PROACTIVE AGENDA",color=accent)
+                Text("Private, approximate hourly checks of events you approved. " +
+                    "Quiet hours 10 PM–9 AM; maximum three optional notices per day, " +
+                    "reduced if you repeatedly dismiss/correct them. " +
+                    "No background AI, microphone, cloud call or guessed commitments.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("Optional agenda nudges",Modifier.weight(1f),color=Color.White)
+                    Switch(checked=controller.proactiveOptIn,
+                        onCheckedChange={controller.changeProactiveOptIn(it)})
+                }
+                Text("Weekly self-review: "+controller.proactiveFeedback,
+                    color=Color.LightGray,fontSize=11.sp)
+                if(controller.proactiveLastKey.isNotBlank()) {
+                    Text("Review your last optional notification (owner feedback only):",
+                        color=Color.LightGray,fontSize=11.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        OwnerNudgeReaction.entries.forEach { reaction ->
+                            TextButton(onClick={controller.recordProactiveReaction(reaction)}) {
+                                Text(reaction.name,fontSize=10.sp)
+                            }
+                        }
+                    }
+                }
+                OutlinedButton(onClick={controller::refreshProactiveFeedback}) {
+                    Text("REFRESH OPTIONAL-NOTICE FEEDBACK")
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
                 Row {

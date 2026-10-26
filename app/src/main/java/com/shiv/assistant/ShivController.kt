@@ -285,6 +285,7 @@ class ShivController(private val context: Context) {
             }
             wm.cancelUniqueWork("shiv-durable-signals")
             wm.cancelUniqueWork("shiv-opt-in-pattern-learning")
+            wm.cancelUniqueWork("shiv-opt-in-agenda-nudges")
             phase.hub.clearSessions()
             (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
                 .cancelAll()
@@ -302,6 +303,7 @@ class ShivController(private val context: Context) {
             phase.discardCalendarPreview()
             phase.clearContactNames()
             phase.reload()
+            phase.refreshPrivacyAfterOwnerReset()
             notice="Owner data erased from Shiv's encrypted database; imported model files remain."
         } finally {
             working=false
@@ -316,6 +318,8 @@ class ShivController(private val context: Context) {
     suspend fun afterPortableRestore(count:Int) {
         context.stopService(android.content.Intent(
             context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
+        com.shiv.assistant.automation.ShivAgendaNudgeWorker
+            .updateRegistration(context,false)
         phase.hub.clearSessions()
         messages.clear()
         notes.clear()
@@ -331,6 +335,7 @@ class ShivController(private val context: Context) {
         phase.discardCalendarPreview()
         phase.clearContactNames()
         phase.reload()
+        phase.refreshPrivacyAfterOwnerReset()
         notice="Restored "+count+" encrypted records. Cloud and old reminders remain disabled; restart Shiv to review settings."
     }
 

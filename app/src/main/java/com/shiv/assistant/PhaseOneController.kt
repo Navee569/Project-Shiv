@@ -21,6 +21,12 @@ import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
+import com.shiv.assistant.automation.ShivAgendaNudgeWorker
+import com.shiv.assistant.data.OwnerNudgeLedger
+import com.shiv.assistant.data.OwnerNudgeReaction
+import com.shiv.assistant.data.LocalModelComputeLedger
+import com.shiv.assistant.integrations.UsageOverview
+import com.shiv.assistant.domain.UsageObservation
 import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +45,17 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
+    val usagePreview=mutableStateListOf<UsageObservation>()
+    private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
+    private val computeLedger=LocalModelComputeLedger(ShivVault(context))
+    var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
+        private set
+    var proactiveOptIn by mutableStateOf(ShivVault(context).get("proactive_opt_in")=="yes")
+        private set
+    var proactiveFeedback by mutableStateOf(nudgeLedger.report())
+        private set
+    var proactiveLastKey by mutableStateOf(nudgeLedger.lastKey())
+        private set
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -174,6 +191,58 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     fun stopOfflineMicSession() {
         context.stopService(Intent(context,ShivMicSessionService::class.java))
         progress="Offline microphone session stopped"
+    }
+    fun openUsageAccessSettings() {
+        context.startActivity(android.content.Intent(
+            android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    suspend fun previewUsage() {
+        usagePreview.clear()
+        val reader=UsageOverview(context)
+        if(!reader.hasOwnerGrant()) {
+            issue="Enable Shiv manually under Android Special app access → Usage access"
+            return
+        }
+        try {
+            usagePreview.addAll(reader.lastDay())
+            progress="Owner-requested 24h app usage preview; nothing was saved or sent to AI"
+        } catch (_:Exception) { issue="Unable to read Android app usage metadata" }
+    }
+    fun clearUsagePreview() { usagePreview.clear() }
+    fun setLocalComputeBudget(seconds:Int) {
+        require(seconds in 60..3600)
+        computeLedger.setBudgetSeconds(seconds)
+        localBudgetSeconds=seconds
+        progress="Local model daily compute allowance: "+(seconds/60)+" min. " +
+            "This is not a measured battery budget."
+    }
+    fun localComputeReport():String=computeLedger.report()
+    fun changeProactiveOptIn(enabled:Boolean) {
+        ShivVault(context).put("proactive_opt_in",if(enabled)"yes" else "no")
+        proactiveOptIn=enabled
+        ShivAgendaNudgeWorker.updateRegistration(context,enabled)
+        progress=if(enabled) "Owner-enabled, quiet-hour-limited optional agenda notices"
+            else "Optional agenda notices disabled"
+    }
+    fun recordProactiveReaction(reaction:OwnerNudgeReaction) {
+        if(nudgeLedger.lastKey().isBlank()) {
+            issue="No optional agenda notification exists to review"
+            return
+        }
+        nudgeLedger.react(reaction)
+        proactiveLastKey=nudgeLedger.lastKey()
+        proactiveFeedback=nudgeLedger.report()
+        progress="Feedback saved encrypted. Only optional future interruption caps may decrease."
+    }
+    fun refreshProactiveFeedback() {
+        proactiveLastKey=nudgeLedger.lastKey()
+        proactiveFeedback=nudgeLedger.report()
+    }
+    fun refreshPrivacyAfterOwnerReset() {
+        proactiveOptIn=ShivVault(context).get("proactive_opt_in")=="yes"
+        refreshProactiveFeedback()
+        clearUsagePreview()
     }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
@@ -334,7 +403,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     fun modelStatus():String {
         val router=hub.router.status()
         val chat=hub.conversation.status()
-        return "Router: "+(router.modelName?:"not loaded")+
+        return computeLedger.report()+" | Router: "+(router.modelName?:"not loaded")+
             " | Conversation: "+(chat.modelName?:"not loaded")+
             " | Queue: "+hub.inference.pendingCount()+
             " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
