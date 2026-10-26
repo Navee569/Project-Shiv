@@ -24,7 +24,7 @@ object ProactivePlanner {
                 when {
                     minutes in 0..90 -> ProactiveSuggestion("upcoming:" + e.id,
                         "Upcoming: " + e.title.take(100), "Owner's saved event due within 90 minutes",
-                        90, e.dueMillis)
+                        70, e.dueMillis)
                     day == localToday.plusDays(1) && minutes in 540..2160 ->
                         ProactiveSuggestion("prepare:" + e.id,
                             "Tomorrow: " + e.title.take(100),
