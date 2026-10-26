@@ -11,12 +11,17 @@ assert a is not None
 assert a.attrib.get(ns+"allowBackup")=="false"
 assert a.attrib.get(ns+"usesCleartextTraffic")=="false"
 services=a.findall("service")
-assert len(services)==2
-assert {s.attrib.get(ns+"permission") for s in services} == {
+assert len(services)==3
+privileged=[s for s in services if s.attrib.get(ns+"permission")]
+assert {s.attrib.get(ns+"permission") for s in privileged} == {
     "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
     "android.permission.BIND_ACCESSIBILITY_SERVICE"}
+mic=[s for s in services if s.attrib.get(ns+"name")==".voice.ShivMicSessionService"]
+assert len(mic)==1 and mic[0].attrib.get(ns+"exported")=="false"
+assert mic[0].attrib.get(ns+"foregroundServiceType")=="microphone"
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
-assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.READ_CALENDAR","android.permission.READ_PHONE_STATE","android.permission.READ_CONTACTS"},permissions
+assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.READ_CALENDAR","android.permission.READ_PHONE_STATE","android.permission.READ_CONTACTS",
+"android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MICROPHONE"},permissions
 gradle=(app/"build.gradle").read_text()
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
 sources=list((app/"src/main/java").rglob("*.kt"))
