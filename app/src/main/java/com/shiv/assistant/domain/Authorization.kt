@@ -52,8 +52,13 @@ object SensitiveAppDenylist {
         "lastpass", "otp", "secureid", "creditcard"
     )
     fun excluded(packageName: String, extraOwnerDenylist: Set<String> = emptySet()): Boolean {
-        val lower = packageName.lowercase()
-        return lower.isBlank() || lower in blocked || lower in extraOwnerDenylist ||
+        val lower = packageName.trim().lowercase(java.util.Locale.ROOT)
+        return lower.isBlank() ||
+            blocked.any { known ->
+                val denied=known.lowercase(java.util.Locale.ROOT)
+                lower==denied || lower.startsWith(denied+".")
+            } ||
+            extraOwnerDenylist.any { lower==it.trim().lowercase(java.util.Locale.ROOT) } ||
             criticalTokens.any { it in lower }
     }
 }
