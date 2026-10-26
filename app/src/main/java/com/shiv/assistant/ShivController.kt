@@ -264,6 +264,31 @@ class ShivController(private val context: Context) {
             })
             return
         }
+        val rule = ReminderRules.parse(question)
+        if (rule != null) {
+            when (rule) {
+                is ReminderRuleCommand.SilenceBefore -> {
+                    vault.put("reminder_earliest_minute", rule.minuteOfDay.toString())
+                    audit.add("REMINDER_RULE", "Owner asked to silence reminders before " +
+                        ReminderRules.format(rule.minuteOfDay), "FREE", true)
+                    append("assistant", "Rule saved: I will not notify you about reminders before " +
+                        ReminderRules.format(rule.minuteOfDay) + " local phone time.")
+                }
+                ReminderRuleCommand.Clear -> {
+                    vault.put("reminder_earliest_minute", "")
+                    audit.add("REMINDER_RULE", "Owner removed reminder restriction", "FREE", true)
+                    append("assistant", "Reminder restriction cleared.")
+                }
+            }
+            return
+        }
+        if (normalized.contains("what is my reminder rule") ||
+            normalized.contains("what's my reminder rule")) {
+            val minute = vault.get("reminder_earliest_minute")?.toIntOrNull()
+            append("assistant", if (minute == null) "No reminder time restriction is saved."
+                else "Reminders before " + ReminderRules.format(minute) + " are suppressed.")
+            return
+        }
         val proposal = ShivPlanner.parse(question)
         if (proposal.kind == ActionKind.NOTES) {
             saveNote(proposal.argument)

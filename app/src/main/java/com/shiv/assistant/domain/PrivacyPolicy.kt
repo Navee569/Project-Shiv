@@ -40,8 +40,9 @@ object PrivacyPolicy {
     fun isDeniedPackage(packageName: String, additionalDenied: Set<String> = emptySet()): Boolean {
         val name = packageName.trim().lowercase(Locale.ROOT)
         if (name.isBlank()) return true
-        if (name in blockedPackages || name in additionalDenied) return true
-        if (blockedPackages.any { name.startsWith(it + ".") }) return true
+        if (blockedPackages.any { name == it.lowercase(Locale.ROOT) } ||
+            additionalDenied.any { name == it.trim().lowercase(Locale.ROOT) }) return true
+        if (blockedPackages.any { name.startsWith(it.lowercase(Locale.ROOT) + ".") }) return true
         return name.split('.','_','-').any { segment ->
             sensitivePackageTerms.any { term -> segment.contains(term) }
         }
@@ -50,10 +51,15 @@ object PrivacyPolicy {
         packageName: String, title: String?, additionalDenied: Set<String> = emptySet()
     ): String? {
         if (isDeniedPackage(packageName, additionalDenied)) return null
-        val value = title?.trim()?.take(200) ?: return null
-        if (value.isBlank() || sensitiveText.any { it.containsMatchIn(value) }) return null
-        return value
+        val original = title?.trim() ?: return null
+        if (original.isBlank() || original.length > 5000 || sensitiveText.any { it.containsMatchIn(original) }) return null
+        return original.take(200)
     }
+    /** Future Accessibility / OCR providers must call before reading a field or saving any fact. */
+    fun mayReadScreen(packageName: String, passwordField: Boolean, flagSecure: Boolean,
+        additionalDenied: Set<String> = emptySet()): Boolean =
+        !passwordField && !flagSecure && !isDeniedPackage(packageName, additionalDenied)
+
     fun canSense(paused: Boolean, guestMode: Boolean, privacyZone: Boolean) =
         !paused && !guestMode && !privacyZone
 

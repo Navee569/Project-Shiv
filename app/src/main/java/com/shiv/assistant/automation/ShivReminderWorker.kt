@@ -1,5 +1,8 @@
 package com.shiv.assistant.automation
 
+import com.shiv.assistant.data.ShivVault
+import com.shiv.assistant.domain.ReminderRules
+import java.time.LocalTime
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,6 +22,10 @@ class ShivReminderWorker(context: Context, parameters: WorkerParameters) :
     CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val text = inputData.getString("text") ?: return Result.failure()
+        // Apply the owner's *current* encrypted rule at delivery, not only at scheduling.
+        val earliest = try { ShivVault(applicationContext).get("reminder_earliest_minute")?.toIntOrNull() }
+            catch (_: Exception) { return Result.retry() } // fail closed on encrypted storage failure
+        if (ReminderRules.shouldSuppress(LocalTime.now(), earliest)) return Result.success()
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(NotificationChannel("shiv_reminders", "Shiv reminders", NotificationManager.IMPORTANCE_DEFAULT))
         if (Build.VERSION.SDK_INT >= 33 &&

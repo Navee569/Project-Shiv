@@ -28,3 +28,7 @@
 - D-013 MEDIUM: queue is a JSON record inside SQLCipher's Room store rather
   than a normalized Room entity; 500-item low-priority cap requires drop log.
 - D-014 LOW: phase2 activity energy ledger is not OS battery accounting.
+
+- D-015 (fixed in follow-up): mixed-case bank package identifiers could bypass exact denylist checks; normalize both sides and unit-test.
+- D-016 (fixed in follow-up): reminder rule from scenario C was not retained or enforced; deterministic parser and delivery guard added.
+- D-017 (partial): queue cap drops now have an encrypted, content-free audit; unbounded audit retention and normalized queue tables remain open.

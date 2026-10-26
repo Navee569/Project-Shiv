@@ -31,8 +31,16 @@ class ShivSignalQueue(private val vault: ShivVault) {
                 row.optString("source") == source && row.optString("title") == safe &&
                     row.optString("state") != "done"
             }) return@synchronized null
-        val important = Regex("(?i)\\b(meet|meeting|deadline|due|appointment|tomorrow|today|remind)\\b").containsMatchIn(safe)
-        if (records.length() >= 500 && !important) return@synchronized null
+        val important = Regex("(?i)\\b(meet|meeting|deadline|due|appointment|tomorrow|today|remind|call|visit|interview)\\b|" +
+            "\\b[0-2]?[0-9]:[0-5][0-9]\\b|\\b[0-9]{1,2}\\s*(?:am|pm)\\b|ನಾಳೆ|రేపు").containsMatchIn(safe)
+        if (records.length() >= 500 && !important) {
+            // Each permitted low-priority duplicate/drop is recorded without message content.
+            val drops = JSONArray(vault.get("signal_drop_audit") ?: "[]")
+            drops.put(JSONObject().put("at", System.currentTimeMillis())
+                .put("reason", "low-priority queue cap"))
+            vault.put("signal_drop_audit", drops.toString())
+            return@synchronized null
+        }
         val id = UUID.randomUUID().toString()
         records.put(JSONObject()
             .put("id", id).put("source", source.take(150))

@@ -31,7 +31,7 @@ class ShivNotificationListener : NotificationListenerService() {
             val id = queue.enqueue(sbn.packageName, title, extras) ?: return
             vault.addNotificationSummary(sbn.packageName, title)
             WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
+                "shiv_encrypted_signal_worker", ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<ShivSignalWorker>().build()
             )
         } catch (_: Exception) {

@@ -72,3 +72,10 @@ Notification titles from non-denylisted sources are encrypted but remain persona
 data; avoid enabling notification access until satisfied with permissions.
 The denylist is conservative but cannot enumerate every Indian banking app.
 Do not use this app as a production financial automation or call recorder.
+
+## Focused follow-up (2026-10-26)
+- Structured JSON tool allowlist with exact-argument verification: malformed / unexpected fields fail to silence, never bypass permission tiers. This is a parser, not autonomous execution.
+- Owner rule "Ignore reminders before 9 AM" is stored encrypted, auditable and applied to later notification delivery. Earlier reminders are suppressed, not postponed.
+- Fixed casing in the India banking/UPI package denylist; protected-field/FLAG_SECURE guard for future screen extraction.
+- Queue cap now records each low-priority drop without copying personal content; times in allowed titles receive higher priority.
+- Still require device testing and remaining M/P2 gaps above. Cloud implementation unchanged.
