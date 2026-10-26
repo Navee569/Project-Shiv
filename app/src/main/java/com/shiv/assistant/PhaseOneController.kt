@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
+import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
@@ -27,6 +28,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
+    val contactNameMatches=mutableStateListOf<String>()
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -99,6 +101,17 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
     }
     fun discardCalendarPreview() { calendarCandidates.clear();progress="Calendar preview discarded" }
+    suspend fun lookupContactNames(query:String) {
+        contactNameMatches.clear()
+        try {
+            val found=ContactsAdapter(context).matchNames(query)
+            contactNameMatches.addAll(found)
+            progress=found.size.toString()+" matching display name(s); never saved or sent to AI"
+        } catch (_:Exception) {
+            issue="Contact lookup unavailable or permission denied"
+        }
+    }
+    fun clearContactNames() { contactNameMatches.clear() }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
