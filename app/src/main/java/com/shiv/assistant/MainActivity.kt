@@ -21,6 +21,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.shiv.assistant.automation.ShivSignalWorker
+import com.shiv.assistant.automation.ShivConsolidation
 import com.shiv.assistant.ui.ShivInterface
 import kotlinx.coroutines.launch
 
@@ -80,6 +81,7 @@ class MainActivity : ComponentActivity() {
         WorkManager.getInstance(this).enqueueUniqueWork(
             "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ShivSignalWorker>().build())
+        ShivConsolidation.schedule(this)
         setContent {
             val controller = remember { ShivController(applicationContext) }
             val scope = rememberCoroutineScope()

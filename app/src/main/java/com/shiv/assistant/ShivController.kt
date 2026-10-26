@@ -9,6 +9,10 @@ import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
+import com.shiv.assistant.automation.ShivSignalWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.shiv.assistant.data.*
 import com.shiv.assistant.diagnostics.*
 import com.shiv.assistant.domain.*
@@ -102,6 +106,9 @@ class ShivController(private val context: Context) {
     fun updateSensingPaused(value: Boolean) {
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
+        if (!value) WorkManager.getInstance(context).enqueueUniqueWork(
+            "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<ShivSignalWorker>().build())
         audit.add("SENSING", if (value) "Owner paused all optional sensing" else "Owner resumed sensing",
             "ASK_FIRST", true)
     }
