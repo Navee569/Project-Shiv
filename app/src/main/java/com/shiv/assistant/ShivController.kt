@@ -207,9 +207,25 @@ class ShivController(private val context: Context) {
         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+    fun allowScreenPackage(packageName: String) {
+        val value = packageName.trim().lowercase()
+        require(value.matches(Regex("[a-z0-9_]+(?:[.][a-z0-9_]+)+")))
+        require(!PrivacyPolicy.isDeniedPackage(value,
+            extraDeniedPackages().lineSequence().toSet())) { "Sensitive apps cannot be allowed" }
+        val old = vault.get("screen_allowed_packages").orEmpty().lineSequence()
+            .filter { it.isNotBlank() }.toSet()
+        require(old.size < 30 || value in old) { "Maximum screen allowlist size reached" }
+        vault.put("screen_allowed_packages", (old + value).sorted().joinToString("\n"))
+        notice = "Allowed only explicit 15-second inspection for " + value
+    }
+    fun screenAllowedPackages(): String = vault.get("screen_allowed_packages").orEmpty()
     fun armScreenInspection() {
         if (guestMode || sensingPaused || privacyZone) {
             notice = "Screen inspection unavailable while privacy protection is active"
+            return
+        }
+        if (screenAllowedPackages().isBlank()) {
+            notice = "Add at least one permitted app package before arming screen awareness"
             return
         }
         val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
@@ -415,7 +431,11 @@ class ShivController(private val context: Context) {
         require(name.matches(Regex("[a-z0-9_]+(?:[.][a-z0-9_]+)+"))) { "Enter a valid Android package identifier" }
         val old = vault.get("denied_packages").orEmpty().lineSequence().filter { it.isNotBlank() }.toSet()
         vault.put("denied_packages", (old + name).sorted().joinToString("\n"))
-        notice = "App added to the denylist; content from it is not stored"
+        val included = screenAllowedPackages().lineSequence().filter {
+            it.isNotBlank() && it != name
+        }.joinToString("\n")
+        vault.put("screen_allowed_packages", included)
+        notice = "App excluded; any former screen allowlist entry has been revoked"
     }
     fun extraDeniedPackages() = vault.get("denied_packages").orEmpty()
     fun onBiometricAuthenticated() {
