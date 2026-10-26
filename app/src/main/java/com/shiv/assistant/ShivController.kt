@@ -17,6 +17,8 @@ import com.shiv.assistant.ai.LocalInferenceMetrics
 import com.shiv.assistant.ai.LocalInferenceScheduler
 import com.shiv.assistant.ai.InferenceUrgency
 import com.shiv.assistant.vision.ShivOfflineOcr
+import com.shiv.assistant.vision.OcrTaskParser
+import com.shiv.assistant.vision.OcrTaskCandidate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,6 +121,8 @@ class ShivController(private val context: Context) {
     var sensingPaused by mutableStateOf(false)
         private set
     var ocrPreview by mutableStateOf("")
+    var ocrTaskCandidate by mutableStateOf<OcrTaskCandidate?>(null)
+        private set
         private set
     var guestMode by mutableStateOf(false)
         private set
@@ -981,14 +985,37 @@ class ShivController(private val context: Context) {
         vault.put("notification_opt_in", if (on) "yes" else "no")
         if (!on) vault.clearNotifications()
     }
-    fun clearOcrPreview() { ocrPreview = "" }
+    fun clearOcrPreview() { ocrPreview = ""; ocrTaskCandidate = null }
+    fun confirmOcrTask(title: String, localClock: String) {
+        val candidate = ocrTaskCandidate ?: return
+        if (sensingPaused || guestMode || privacyZone) {
+            clearOcrPreview()
+            notice = "Sensing is paused"
+            return
+        }
+        try {
+            require(localClock.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+                "Enter time as HH:mm"
+            }
+            require(title.trim().length in 1..256)
+            agenda.add(title, candidate.dueDate.toString() + " " + localClock, AgendaKind.TASK)
+            agendaItems.clear()
+            agendaItems.addAll(agenda.list())
+            audit.add("OCR_TASK", "Owner reviewed an offline OCR due date and supplied time",
+                "ASK_FIRST", true)
+            clearOcrPreview()
+            notice = "Owner-confirmed OCR task saved to encrypted agenda"
+        } catch (_: Exception) {
+            notice = "Could not create OCR task; check title, time and future date"
+        }
+    }
     suspend fun scanOfflineImage(uri: Uri) {
         if (working || sensingPaused || guestMode || privacyZone) {
             notice = "Sensing is paused; local OCR was not started"
             return
         }
         working = true
-        ocrPreview = ""
+        clearOcrPreview()
         try {
             val start = System.nanoTime()
             val original = ShivOfflineOcr.scan(context, uri)
@@ -1000,7 +1027,8 @@ class ShivController(private val context: Context) {
                 notice = "No safe Latin text found (or sensitive/OTP content rejected)"
             } else {
                 ocrPreview = safe
-                notice = "Temporary on-device Latin OCR preview; NOT stored, NOT sent"
+                ocrTaskCandidate = OcrTaskParser.parse(safe)
+                notice = "Temporary Latin OCR preview; any possible due date needs owner review"
             }
         } catch (e: Exception) {
             notice = "Offline OCR failed: " + (e.message ?: "unsupported image")
