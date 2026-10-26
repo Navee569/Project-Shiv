@@ -121,3 +121,41 @@ user-initiated service, complete third-party authenticated integrations,
 general-purpose reversible automation, on-device energy profiling, and all
 remaining gaps in FEATURE_BY_FEATURE_AUDIT.md. Phase 2 stays gated per
 docs/PHASE2_GATE.md. Do not claim complete implementation or S23 testing.
+
+
+## Final combined Phase 1 development pass — 26 October 2026
+
+**Correct source:** `development/shiv-feature-parity-audit`, descendant of
+the owner-verified `8e48ed0` test baseline. The separate `main` tree is not
+used. **Cloud API implementation `ShivIntelligence.kt` has not been edited.**
+
+New development implementations:
+- Portable password-derived, AES-256-GCM authenticated SQLCipher owner backup
+  and restore. Owners select the export/import document using Android SAF and
+  supply a 12+ character passphrase. Backup files contain ciphertext, not
+  plaintext. Restore verifies format/schema, bounds input and writes inside a
+  single transaction. Model binaries remain device-specific and are excluded.
+  Previously scheduled reminders/queued signals and sensitive permissions
+  remain disabled on restore. Import resets cloud permission to LOCAL/OFF.
+- Owner-initiated microphone foreground session, limited to 10 minutes or
+  earlier for battery below 25%, severe thermal state or repeated recognition
+  failures. Uses `SpeechRecognizer.createOnDeviceSpeechRecognizer` only on
+  supported Android versions, foreground notice with STOP action, and a
+  separate RECORD_AUDIO runtime grant. It does not record telephone audio,
+  bypass background access limits or provide a wake word. Recognized
+  non-sensitive utterances enter the encrypted ASK_FIRST signal workflow.
+- SQLite-transactional deduplication for background notifications by source
+  package and fact (10 minute window), plus short-window microphone retry
+  deduplication. Deliberately repeated user-entered commands are not collapsed.
+- Native and instrumentation regression tests for backup KDF, tampering,
+  wrong password, SQLCipher restore/rollback, source dedup, microphone
+  limits and speech privacy. All tests must pass at the final PR head SHA.
+
+**Still not achieved:** M11 Galaxy S23 physical acceptance, verified real
+1B/E2B LiteRT model files, actual Kannada/Telugu offline recognition quality,
+true always-ready battery-aware wake-word VAD, speaker identification, live
+offline multilingual OCR, end-to-end third-party OAuth/action contracts,
+portable binary model weights, independent provider action undo, measured
+delegate/energy benchmarks, all app UX/accessibility checks and M11 owner
+signoff. Android emulators cannot settle those facts. The source requirements
+explicitly gate **Phase 2** on M11 acceptance; no Phase 2 claim is made.
