@@ -2,6 +2,11 @@ package com.shiv.assistant
 
 import android.content.Context
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
+import com.shiv.assistant.integrations.CalendarAdapter
+import com.shiv.assistant.integrations.CalendarCandidate
+import com.shiv.assistant.integrations.CalendarImportPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
@@ -19,6 +24,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val upcoming=mutableStateListOf<EventRecord>()
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
+    val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -40,11 +46,42 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         progress="One-shot permission active for 15 seconds. Open the allowed screen."
     }
     suspend fun readPhoneCalendar() {
-        val events=com.shiv.assistant.integrations.CalendarAdapter(context).inspectNext48Hours()
-        val database=EncryptedDatabase.open(context).dao()
-        for(event in events)database.putEvent(event)
+        calendarCandidates.clear()
+        try {
+            val preview=CalendarAdapter(context).inspectNext48Hours()
+            calendarCandidates.addAll(preview)
+            progress=preview.size.toString()+" candidate(s) previewed. Nothing imported until you approve."
+        } catch(e:Exception) {
+            issue="Calendar preview unavailable; check permission"
+        }
+    }
+    suspend fun confirmCalendarImport(id:String) {
+        val candidate=calendarCandidates.firstOrNull { it.id==id } ?: run {
+            issue="Calendar selection expired; preview again"
+            return
+        }
+        if(context.checkSelfPermission(Manifest.permission.READ_CALENDAR)!=PackageManager.PERMISSION_GRANTED) {
+            issue="Calendar permission revoked; import stopped"
+            calendarCandidates.clear()
+            return
+        }
+        val approved=CalendarImportPolicy.accept(candidate,System.currentTimeMillis()) ?: run {
+            calendarCandidates.remove(candidate)
+            issue="Invalid or expired calendar candidate"
+            return
+        }
+        withContext(Dispatchers.IO) {
+            val database=EncryptedDatabase.open(context)
+            database.dao().putEvent(approved)
+            database.dao().logAction(ActionLogRecord("calendar-"+approved.id,
+                "IMPORT_CALENDAR","[REDACTED]","ASK_FIRST","OWNER_APPROVED",
+                true,"ENCRYPTED_EVENT_IMPORTED",null))
+        }
+        calendarCandidates.remove(candidate)
+        progress="Owner-approved calendar event saved in encrypted Shiv storage"
         reload()
     }
+    fun discardCalendarPreview() { calendarCandidates.clear();progress="Calendar preview discarded" }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
