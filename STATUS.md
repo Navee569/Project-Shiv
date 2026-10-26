@@ -166,3 +166,44 @@ explicitly gate **Phase 2** on M11 acceptance; no Phase 2 claim is made.
   due-date suggestions. The owner must provide a task title and exact 24-hour
   time before encrypted agenda creation. The selected image is not copied or
   transmitted. Kannada/Telugu OCR is still missing.
+
+
+## 26 October 2026 — Additional scoped Phase 1 software integration
+
+Source: development/shiv-feature-parity-audit; this is **not** the separate
+main implementation. The existing cloud AI source ShivIntelligence.kt remains
+untouched. No new unauthorized ADB, Shizuku, location, call recording or
+always-on microphone access was added.
+
+- Added optional hourly WorkManager agenda notices, visible only after an
+  explicit owner toggle. Notifications contain generic text, not private
+  event titles. Only encrypted owner-approved events are considered.
+  Quiet hours 10 PM–9 AM, max three optional notifications per day, repeat
+  suppression and battery-not-low constraints apply. Scheduling is inexact.
+- Owner can mark the last optional notice ACTED, SNOOZED, DISMISSED or CORRECTED.
+  Feedback history is encrypted, weekly report is displayed, and repeated
+  negative reactions reduce (never raise) future *optional* daily caps.
+  No model is allowed to fabricate a reaction or claim a task was completed.
+- Owner-triggered Android Usage Access summary returns at most ten apps with
+  more than five minutes foreground use in the prior day. Package denylist
+  filtering runs before showing results. Read data is never persisted,
+  included in AI context or exported. Special Usage Access remains OFF until
+  granted manually in Android system settings.
+- LiteRT local model load and inference now record actual elapsed wall-time
+  in the encrypted daily ledger. Owner can choose 1, 5, 10 or 30 minutes
+  per day; the governor reevaluates remaining allowance for each request.
+  Leases enforce best-effort bounded coroutine cancellation. The ledger is
+  not a battery mAh, GPU, NPU or tokens-per-second measurement.
+- The local neural proposed-action validator now requires the mandatory
+  fields and correct dates for every known tool, rejects extra/oversized
+  arguments, and otherwise fails closed to STAY_QUIET.
+- Tests added for proactive quiet-hours/dedup/cap, negative feedback policy,
+  blocked usage sources, local daily budget boundaries and strict per-tool
+  JSON contracts on Android emulators.
+
+**Unfinished:** real device M11, S23 on-device actual E2B/1B formats and model
+load/latency, Kannada/Telugu STT/OCR quality, always-ready wake word and
+speaker recognition, full provider integrations, calibrated energy benchmarking,
+continuous adaptive sensing, fully general reversible actions and several
+architecture/UX/security acceptance items. Phase 2 gate remains intact in
+docs/PHASE2_GATE.md. Do not report full feature completion.
