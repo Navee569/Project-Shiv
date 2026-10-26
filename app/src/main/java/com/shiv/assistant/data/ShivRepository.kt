@@ -2,6 +2,7 @@ package com.shiv.assistant.data
 
 import android.content.Context
 import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.domain.SourceExclusions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -9,13 +10,13 @@ import java.util.UUID
 import org.json.JSONArray
 import androidx.room.withTransaction
 
-class ShivRepository(context: Context) {
+class ShivRepository(private val context: Context) {
     private val database = EncryptedDatabase.open(context)
     private val dao = database.dao()
     suspend fun incoming(source: String, fact: String, priority: Int = 1, packageName: String? = null): String? =
         withContext(Dispatchers.IO) {
             // Critical: never persist or pass denylisted content to a model, including an audit log.
-            if (packageName != null && SensitiveAppDenylist.excluded(packageName)) return@withContext null
+            if (packageName != null && SourceExclusions.shouldBlock(context,packageName)) return@withContext null
             require(priority in 0..10)
             val compact = fact.trim().take(1500)
             if (compact.isBlank()) return@withContext null
