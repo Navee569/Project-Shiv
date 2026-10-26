@@ -14,6 +14,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.shiv.assistant.data.ShivAgenda
+import com.shiv.assistant.data.ShivFeedbackLedger
+import com.shiv.assistant.domain.SelfReviewPolicy
+import com.shiv.assistant.domain.ReviewReaction
 import com.shiv.assistant.data.ShivAuditTrail
 import com.shiv.assistant.data.ShivVault
 import com.shiv.assistant.domain.AgendaSignal
@@ -43,12 +46,15 @@ class ShivProactiveWorker(context: Context, params: WorkerParameters) :
             else org.json.JSONArray()
             val keys = (0 until delivered.length()).map { delivered.getString(it) }.toMutableSet()
             val agenda = ShivAgenda(vault).list()
+            val recent = ShivFeedbackLedger(vault).lastDays()
+                .map { ReviewReaction.valueOf(it.reaction.name) }
+            val dailyCap = SelfReviewPolicy.suggestedDailyCap(recent)
             val proposals = ProactivePlanner.suggestions(
                 agenda.map { AgendaSignal(it.id, it.title, it.dueEpochMs, it.completed) }, now)
             val local = ZonedDateTime.now()
             val brief = ProactivePlanner.briefKind(local)
             val selected = proposals.firstOrNull {
-                ProactivePlanner.shouldDeliver(it, now, keys, keys.size, 3).shouldNotify
+                ProactivePlanner.shouldDeliver(it, now, keys, keys.size, dailyCap).shouldNotify
             }
             val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
                 as NotificationManager
@@ -62,7 +68,7 @@ class ShivProactiveWorker(context: Context, params: WorkerParameters) :
                 identity = selected.id
                 title = "Shiv • Upcoming plan"
                 message = selected.title
-            } else if (brief != null && keys.size < 3 &&
+            } else if (brief != null && keys.size < dailyCap &&
                 local.hour !in 22..23 && local.hour >= 7 &&
                 !keys.contains("brief:" + brief)) {
                 identity = "brief:" + brief
