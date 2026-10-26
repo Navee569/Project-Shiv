@@ -20,6 +20,8 @@ class ShivNotificationListener:NotificationListenerService() {
         if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE)
                 .getBoolean("notifications_enabled",false))return
         scope.launch {
+            if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE)
+                    .getBoolean("notifications_enabled",false))return@launch
             if(SourceExclusions.shouldBlock(applicationContext,sbn.packageName))
                 return@launch
             val title=sbn.notification.extras.getCharSequence("android.title")?.toString()
