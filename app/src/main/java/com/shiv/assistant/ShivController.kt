@@ -263,6 +263,9 @@ class ShivController(private val context: Context) {
             dao.eraseOwnerRecords()
             pending
         }
+        phase.hub.clearSessions()
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+            .cancelAll()
         val wm=androidx.work.WorkManager.getInstance(context)
         for(id in ids) {
             wm.cancelAllWorkByTag("shiv-reminder-"+id)
