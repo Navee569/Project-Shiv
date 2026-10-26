@@ -127,6 +127,19 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Text(controller.modelStatus(),color=Color.White)
                 Text("Observed on this device, where available. TTFT, tokens/s, battery cost, NPU delegate and thermal impact are not measured yet.",
                     color=Color.LightGray)
+                Text("OWNER LOCAL COMPUTE ALLOWANCE",color=accent)
+                Text(controller.localComputeReport(),color=Color.LightGray,fontSize=11.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(60,300,600,1800).forEach { seconds ->
+                        FilterChip(selected=controller.localBudgetSeconds==seconds,
+                            onClick={controller.setLocalComputeBudget(seconds)},
+                            label={Text((seconds/60).toString()+"m")})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Text("The budget is measured LiteRT wall time, not battery mAh; " +
+                    "native cancellation may be delayed. Owner-requested reminders do not consume it.",
+                    color=Color.LightGray,fontSize=11.sp)
                 Text("Pending encrypted signals: "+controller.notificationCount)
                 Button(onClick={scope.launch{controller.reload()}}){Text("REFRESH")}
             }
