@@ -14,6 +14,7 @@ import com.shiv.assistant.vision.ShivOfflineOcr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withTimeoutOrNull
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.automation.ShivSignalWorker
@@ -64,6 +65,10 @@ class ShivController(private val context: Context) {
         private set
     var powerMode by mutableStateOf(PowerMode.BALANCED)
         private set
+    var dailyComputeBudgetSeconds by mutableIntStateOf(600)
+        private set
+    var lastResourceDecision by mutableStateOf("Not yet evaluated")
+        private set
     var sensingPaused by mutableStateOf(false)
         private set
     var ocrPreview by mutableStateOf("")
@@ -110,6 +115,8 @@ class ShivController(private val context: Context) {
             speechLocale = vault.get("speech_locale") ?: "en-IN"
             powerMode = runCatching { PowerMode.valueOf(vault.get("power_mode") ?: "BALANCED") }
                 .getOrDefault(PowerMode.BALANCED)
+            dailyComputeBudgetSeconds = vault.get("daily_compute_budget_seconds")?.toIntOrNull()
+                ?.takeIf { it in 60..3600 } ?: 600
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
             notes.addAll(vault.notes())
             val persisted = JSONArray(vault.get("macros") ?: "[]")
@@ -208,6 +215,12 @@ class ShivController(private val context: Context) {
         powerMode = mode
         vault.put("power_mode", mode.name)
     }
+    fun changeDailyComputeBudgetSeconds(seconds: Int) {
+        require(seconds in 60..3600) { "Daily model budget must be 1 to 60 minutes" }
+        vault.put("daily_compute_budget_seconds", seconds.toString())
+        dailyComputeBudgetSeconds = seconds
+        notice = "Daily local-model budget updated; urgent reminders are never blocked"
+    }
     fun refreshPermissions() {
         permissionReadings.clear()
         permissionReadings.addAll(ShivPermissionInspector.read(context))
@@ -216,7 +229,8 @@ class ShivController(private val context: Context) {
     fun refreshDeviceStats() { telemetry = ShivDeviceMonitor.read(context) }
     fun leaseForConversation(): ComputeLease? {
         val stats = telemetry?.asSnapshot(false) ?: return null
-        return ResourceGovernor.decide(stats, WorkClass.CONVERSATION, powerMode, 0, 600)
+        return ResourceGovernor.decide(stats, WorkClass.CONVERSATION, powerMode,
+            energy.modelSecondsToday(), dailyComputeBudgetSeconds)
     }
     suspend fun registerModel(uri: Uri) {
         working = true
@@ -235,9 +249,13 @@ class ShivController(private val context: Context) {
         try {
             refreshDeviceStats()
             val stats = telemetry?.asSnapshot(false)
-            if (item.sizeBytes > 2_000_000_000L && stats != null) {
-                val lease = ResourceGovernor.decide(stats, WorkClass.CONVERSATION,
-                    powerMode, 0, 600)
+            val lease = stats?.let {
+                ResourceGovernor.decide(it, WorkClass.CONVERSATION,
+                    powerMode, energy.modelSecondsToday(), dailyComputeBudgetSeconds)
+            } ?: error("Device resource readings unavailable; model loading stopped safely")
+            lastResourceDecision = lease.reason
+            require(lease.allowed) { lease.reason }
+            if (item.sizeBytes > 2_000_000_000L) {
                 require(lease.allowLargeModel) { "Device resources insufficient for large model. Try while charging." }
             }
             notice = "Preparing model (large files require a private copy) ..."
@@ -355,14 +373,44 @@ class ShivController(private val context: Context) {
         working = true
         try {
             if (config.mode == IntelligenceMode.LOCAL && localNeural.modelId != null) {
-                val start = System.nanoTime()
-                val answer = localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
-                localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
-                energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
-                when (answer) {
-                    is BrainResult.Text -> handleLocalNeuralText(answer.value)
-                    is BrainResult.Unavailable -> append("assistant", answer.reason)
-                    is BrainResult.Failed -> append("assistant", answer.reason)
+                // Never treat the displayed Status snapshot as a live permission to run.
+                // Re-measure immediately before inference, enforcing actual daily use.
+                refreshDeviceStats()
+                val lease = leaseForConversation()
+                lastResourceDecision = lease?.reason ?: "Device readings unavailable"
+                val loadedIsLarge = models.any { model ->
+                    model.sizeBytes > 2_000_000_000L &&
+                        localNeural.modelId?.endsWith("/" + model.id + ".litertlm") == true
+                }
+                if (lease == null || !lease.allowed || (loadedIsLarge && !lease.allowLargeModel)) {
+                    append("assistant", if (lease == null)
+                        "Local inference paused: device resource readings are unavailable."
+                    else if (!lease.allowed) "Local inference paused: " + lease.reason
+                    else "Large local model paused to protect device resources. Unload it and select a small model.")
+                } else {
+                    val start = System.nanoTime()
+                    val answer = try {
+                        // Bound wall time as well as output size; an unresponsive model
+                        // must never consume an unlimited discretionary compute lease.
+                        withTimeoutOrNull(lease.maxModelSeconds.toLong() * 1000L) {
+                            localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
+                        }
+                    } finally {
+                        energy.record("local_inference",
+                            (System.nanoTime() - start) / 1_000_000)
+                    }
+                    if (answer == null) {
+                        localScheduler.interrupt()
+                        append("assistant", "Local inference exceeded its " +
+                            lease.maxModelSeconds + "-second resource lease and was interrupted.")
+                    } else {
+                        localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
+                        when (answer) {
+                            is BrainResult.Text -> handleLocalNeuralText(answer.value)
+                            is BrainResult.Unavailable -> append("assistant", answer.reason)
+                            is BrainResult.Failed -> append("assistant", answer.reason)
+                        }
+                    }
                 }
             } else {
                 val response = brain.respond(question, notes, config, apiKey)
