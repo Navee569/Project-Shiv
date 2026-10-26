@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import com.shiv.assistant.PhaseOneController
+import com.shiv.assistant.domain.AuthorityTier
 import kotlinx.coroutines.launch
 
 /**
@@ -181,6 +182,21 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                     }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
+                }
+                Text("OWNER REMINDER AUTHORITY",color=accent)
+                Row {
+                    FilterChip(controller.reminderTier==AuthorityTier.ASK_FIRST,
+                        onClick={scope.launch{controller.changeReminderTier(AuthorityTier.ASK_FIRST)}},
+                        label={Text("Ask first")})
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(controller.reminderTier==AuthorityTier.ACT_THEN_TELL,
+                        onClick={scope.launch{controller.changeReminderTier(AuthorityTier.ACT_THEN_TELL)}},
+                        label={Text("Schedule, then tell")})
+                }
+                Text("Only explicit local reminders may use act-then-tell. Payments and messages still require review.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedButton(onClick={scope.launch{controller.undoLatestReminder()}}) {
+                    Text("UNDO LATEST PENDING REMINDER")
                 }
                 OutlinedButton(onClick={controller.setPatternLearning(true)}) {
                     Text("ENABLE CHARGING-ONLY PATTERN LEARNING")
