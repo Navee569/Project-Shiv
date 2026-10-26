@@ -268,6 +268,22 @@ fun ShivInterface(
                 if (controller.contactMatches.isNotEmpty())
                     TextButton(onClick = controller::clearContactPreview) { Text("CLEAR RESULTS") }
                 Spacer(Modifier.height(16.dp))
+                Header("APP USAGE • ON-DEMAND",
+                    "Only device-approved aggregate usage, with sensitive apps removed before display.")
+                OutlinedButton(onClick = controller::openUsageAccessSettings) {
+                    Text("OPEN USAGE ACCESS SETTINGS")
+                }
+                Button(onClick = controller::previewUsage, enabled = !controller.guestMode &&
+                    !controller.sensingPaused && !controller.privacyZone) {
+                    Text("PREVIEW LAST 24H APP USAGE")
+                }
+                controller.usagePreview.forEach { item ->
+                    Text(item.packageName + " • " + item.durationMs / 60000 + " min",
+                        color = Color.White, fontSize = 11.sp)
+                }
+                if (controller.usagePreview.isNotEmpty())
+                    TextButton(onClick = controller::clearUsagePreview) { Text("CLEAR USAGE PREVIEW") }
+                Spacer(Modifier.height(16.dp))
                 Header("PLAN & EXECUTION", "Safe automation: review each step before an external action.")
                 Spacer(Modifier.height(15.dp))
                 OutlinedTextField(goal, { goal = it.take(1000) }, label = { Text("Your goal / macro") },
