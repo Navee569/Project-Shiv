@@ -255,6 +255,8 @@ class ShivController(private val context: Context) {
      * public model files are intentionally retained; this is not a device wipe.
      */
     suspend fun eraseOwnerRecords() {
+        context.stopService(android.content.Intent(
+            context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
         require(!working) { "Finish the current action first" }
         working=true
         try {
@@ -307,6 +309,8 @@ class ShivController(private val context: Context) {
      * The imported cloud API secret remains encrypted but is NOT enabled.
      */
     suspend fun afterPortableRestore(count:Int) {
+        context.stopService(android.content.Intent(
+            context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
         phase.hub.clearSessions()
         messages.clear()
         notes.clear()
