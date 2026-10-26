@@ -3,6 +3,7 @@ package com.shiv.assistant.domain
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
+import com.shiv.assistant.integrations.ContactNamePolicy
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
@@ -32,6 +33,14 @@ class ParityCompletionSafetyTest {
         assertFalse(ScreenInspectionPolicy.permits("com.google.android.apps.authenticator2",
             "com.google.android.apps.authenticator2"))
         assertFalse(ScreenInspectionPolicy.permits("com.android.calendar","not a package"))
+    }
+    @Test fun contactsSearchIsNarrowAndDropsSensitiveFields() {
+        assertNull(ContactNamePolicy.safeQuery(" "))
+        assertNull(ContactNamePolicy.safeQuery("password"))
+        assertEquals("Raj",ContactNamePolicy.safeQuery("  Raj  "))
+        assertNull(ContactNamePolicy.safeName("Card 123456789012"))
+        assertNull(ContactNamePolicy.safeName("1234567890"))
+        assertEquals("Raj Kumar",ContactNamePolicy.safeName("Raj Kumar"))
     }
     @Test fun reminderPermissionNeverRelaxesExternalCommunication() {
         val reminder = ActionProposal(ActionKind.REMINDER,"remind me in 5 minutes",
