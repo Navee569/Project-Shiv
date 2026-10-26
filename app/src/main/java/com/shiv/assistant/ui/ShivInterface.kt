@@ -58,6 +58,7 @@ fun ShivInterface(
     var editingFactId by remember { mutableStateOf<String?>(null) }
     var correctionText by remember { mutableStateOf("") }
     var contactQuery by remember { mutableStateOf("") }
+    var screenPackage by remember { mutableStateOf("") }
     val pending = controller.pending
     val neuralTool = controller.pendingNeuralTool
     val photo = controller.visionCandidate
@@ -509,6 +510,15 @@ fun ShivInterface(
                     color = Muted, fontSize = 11.sp)
                 Header("ON-DEMAND ACCESSIBILITY",
                     "Enable manually in Android settings. Each inspection lasts at most 15 seconds.")
+                OutlinedTextField(screenPackage, { screenPackage = it.take(150) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Explicitly allowed screen-app package") })
+                OutlinedButton(onClick = {
+                    runCatching { controller.allowScreenPackage(screenPackage) }
+                    screenPackage = ""
+                }, enabled = screenPackage.isNotBlank()) { Text("ALLOW ONE APP") }
+                Text("Allowed packages: " + controller.screenAllowedPackages().ifBlank { "NONE" },
+                    color = Muted, fontSize = 11.sp)
                 OutlinedButton(onClick = controller::openAccessibilitySettings) {
                     Text("OPEN ACCESSIBILITY SETTINGS")
                 }
