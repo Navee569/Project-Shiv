@@ -141,3 +141,9 @@ Do not use this app as a production financial automation or call recorder.
   robust Kannada/Telugu OCR, Android 26–35 instrumentation matrix and physical QA.
   Optional PC/ADB/Shizuku/cloud flavors still require independent owner approval.
   None of these is being represented as production-complete.
+
+
+- Opt-in owner-selected Latin OCR now supports a **proposal-only** due-date parser for
+  ISO dates and an ASK_FIRST title/time review before creating a real encrypted
+  agenda task. It never guesses an hour or persists raw OCR/image bytes.
+  Kannada/Telugu script OCR and open-ended camera understanding remain missing.
