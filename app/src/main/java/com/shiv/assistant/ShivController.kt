@@ -235,6 +235,19 @@ class ShivController(private val context: Context) {
         if (question.isEmpty() || working) return
         append("user", question)
         val normalized = question.lowercase()
+        if (normalized.contains("why did you remind me") ||
+            normalized.contains("why was that reminder") ||
+            normalized.contains("why did you do that")) {
+            val kind = if (normalized.contains("remind")) "REMINDER" else null
+            val last = audit.recent().firstOrNull { kind == null || it.action == kind }
+            append("assistant", if (last == null)
+                "I don't have a stored decision trace for that action; I won't invent a reason."
+            else "Stored decision: " + last.action + "\nReason: " + last.reason +
+                "\nAuthority tier: " + last.tier + "\nResult: " +
+                if (last.accepted) "approved (external completion may be unverified)"
+                else "rejected or failed")
+            return
+        }
         if (normalized.contains("what's on tomorrow") ||
             normalized.contains("what is on tomorrow") ||
             normalized.contains("schedule tomorrow")) {
@@ -305,7 +318,9 @@ class ShivController(private val context: Context) {
             else -> ShivActions.launch(context, action)
         }
         audit.add(action.kind.name,
-            if (accepted) "Owner confirmed; action handed to Android (external completion unverified)"
+            if (accepted && action.kind == ActionKind.REMINDER)
+                "Owner explicitly approved reminder: " + action.argument.take(160)
+            else if (accepted) "Owner confirmed; action handed to Android (external completion unverified)"
             else "Owner confirmed; action failed or unsupported",
             decision.tier.name, accepted)
         notice = when {
