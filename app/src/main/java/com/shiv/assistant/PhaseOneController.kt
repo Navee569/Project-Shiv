@@ -3,6 +3,11 @@ package com.shiv.assistant
 import android.content.Context
 import android.net.Uri
 import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import com.shiv.assistant.voice.ShivMicSessionService
+import android.content.Intent
+import android.Manifest
 import android.content.pm.PackageManager
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
@@ -137,6 +142,35 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             (old-packageName.trim().lowercase(java.util.Locale.ROOT)).sorted().joinToString("\n"))
         reload()
         progress="Custom exclusion removed; built-in banking denylist remains enforced"
+    }
+    fun startOfflineMicSession(locale:String) {
+        if(Build.VERSION.SDK_INT<33 ||
+            !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            issue="Offline on-device speech service unavailable. No cloud recognizer was started."
+            return
+        }
+        if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=
+            PackageManager.PERMISSION_GRANTED) {
+            issue="Grant microphone permission before starting an owner-driven session"
+            return
+        }
+        if(locale !in setOf("en-IN","kn-IN","te-IN")) {
+            issue="Choose Kannada, Telugu or English"
+            return
+        }
+        try {
+            context.startForegroundService(Intent(context,ShivMicSessionService::class.java)
+                .setAction(ShivMicSessionService.ACTION_START)
+                .putExtra(ShivMicSessionService.EXTRA_LOCALE,locale))
+            issue=null
+            progress="Owner-started offline microphone session requested. Notification STOP available; expires within 10 minutes."
+        } catch (_:Exception) {
+            issue="Android blocked the microphone session. Start it with Shiv in foreground."
+        }
+    }
+    fun stopOfflineMicSession() {
+        context.stopService(Intent(context,ShivMicSessionService::class.java))
+        progress="Offline microphone session stopped"
     }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
