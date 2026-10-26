@@ -30,6 +30,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
     var role by remember { mutableStateOf("router") }
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
+    var allowedScreenPackage by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -148,7 +149,16 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                 Text("To enable optional Accessibility: Settings > Accessibility > Installed apps > Shiv. On some Galaxy phones, first open Settings > Apps > Shiv > three dots > Allow restricted settings.",
                     color=Color.White)
                 OutlinedButton(onClick={controller.openAccessibilitySettings()}) { Text("OPEN ACCESSIBILITY SETTINGS") }
-                Button(onClick={controller.requestOneShotAwareness()}) { Text("CAPTURE ONE ALLOWED SCREEN FACT (15s)") }
+                OutlinedTextField(value=allowedScreenPackage,
+                    onValueChange={allowedScreenPackage=it.take(150)},
+                    label={Text("Allowed app package (exact)")},singleLine=true)
+                Button(enabled=allowedScreenPackage.isNotBlank(),
+                    onClick={controller.requestOneShotAwareness(allowedScreenPackage)}) {
+                    Text("ARM ONLY THIS APP FOR 15 SECONDS")
+                }
+                OutlinedButton(onClick={controller.stopOneShotAwareness()}) {
+                    Text("STOP SCREEN AWARENESS")
+                }
                 OutlinedButton(onClick={
                     scope.launch { controller.readPhoneCalendar() }
                     permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
