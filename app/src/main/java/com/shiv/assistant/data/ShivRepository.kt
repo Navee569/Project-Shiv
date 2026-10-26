@@ -72,6 +72,8 @@ class ShivRepository(context: Context) {
             .filter{words.isEmpty()||it.second>=4}
             .sortedByDescending{it.second}.take(12).map{it.first}
     }
+    suspend fun purgeExpired(now:Long=System.currentTimeMillis()):Int =
+        database.withTransaction { dao.purgeExpiredMemories(now) }
     suspend fun forget(id:String) = database.withTransaction {
         val record=dao.memory(id)
         if(record!=null) {
