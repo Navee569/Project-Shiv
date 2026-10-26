@@ -9,6 +9,7 @@ import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
 import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.domain.SourceExclusions
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
@@ -29,6 +30,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val decisions=mutableStateListOf<DecisionTraceRecord>()
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     val contactNameMatches=mutableStateListOf<String>()
+    val deniedPackages=mutableStateListOf<String>()
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -112,6 +114,30 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         }
     }
     fun clearContactNames() { contactNameMatches.clear() }
+    suspend fun addDeniedPackage(packageName:String) = withContext(Dispatchers.IO) {
+        val value=packageName.trim().lowercase(java.util.Locale.ROOT)
+        require(SourceExclusions.validPackage(value)) { "Enter a full Android app package" }
+        val vault=ShivVault(context)
+        val old=SourceExclusions.fromString(vault.get("app_denied_packages"))
+        require(old.size < 100 || value in old) { "Denylist capacity reached" }
+        vault.put("app_denied_packages",(old+value).sorted().joinToString("\n"))
+        // Any currently armed window for this app is revoked immediately.
+        if(vault.get("screen_allowed_package")==value) {
+            vault.put("screen_allowed_package","")
+            context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
+                .edit().remove("capture_until").putBoolean("paused",true).commit()
+        }
+        reload()
+        progress="App source excluded before notification or screen capture"
+    }
+    suspend fun removeDeniedPackage(packageName:String) = withContext(Dispatchers.IO) {
+        val vault=ShivVault(context)
+        val old=SourceExclusions.fromString(vault.get("app_denied_packages"))
+        vault.put("app_denied_packages",
+            (old-packageName.trim().lowercase(java.util.Locale.ROOT)).sorted().joinToString("\n"))
+        reload()
+        progress="Custom exclusion removed; built-in banking denylist remains enforced"
+    }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
@@ -140,6 +166,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         val traces=dao.traces(30)
         val count=dao.pendingCount()
         val savedMemories=dao.recentMemories(System.currentTimeMillis(),100)
+        val excluded=SourceExclusions.fromString(ShivVault(context).get("app_denied_packages"))
         withContext(Dispatchers.Main) {
             models.clear();models.addAll(stored)
             memories.clear();memories.addAll(savedMemories)
@@ -147,6 +174,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             beliefs.clear();beliefs.addAll(storedBeliefs)
             decisions.clear();decisions.addAll(traces)
             notificationCount=count
+            deniedPackages.clear();deniedPackages.addAll(excluded.sorted())
         }
     }
     suspend fun importModel(role:String) {
