@@ -49,3 +49,22 @@
 - D-021 OPEN: native LiteRT cancellation may not halt CPU computation
   instantly. Wall-time timeout requests cancellation but is not proof of
   immediate engine termination; test on S23 before power claims.
+
+
+## New development-integrations test coverage
+- D-022 (fixed in code, OWNER-VERIFY): optional agenda nudges mistakenly used
+  an emergency priority that bypassed quiet hours and caps; corrected to
+  discretionary priority with deterministic regression coverage. Actual owner
+  reminders retain their independent delivery policy.
+- D-023 (fixed in CI): manifest static permission list had to include only
+  approved new Calendar, Contacts, Phone, special Usage Access and signed
+  Accessibility binding; manifest lint also required narrow special-access
+  declaration suppression.
+- D-024 (fixed in CI): Room 2.8 concrete database did not satisfy Kotlin
+  `Closeable.use` extension in instrumentation; switched to explicit close.
+- D-025 OPEN DEVICE SECURITY: Android accessibility events cannot prove
+  FLAG_SECURE visibility state for every third-party window; capture is default
+  deny, user-armed, app allowlisted, password/sensitive-filtered, and opt-out
+  until the owner validates secure-screen blocking.
+- D-026 OPEN DEVICE RELIABILITY: OEM background call-state broadcasts and
+  periodic WorkManager cadence remain best-effort.
