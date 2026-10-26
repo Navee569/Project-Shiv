@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
+import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
@@ -39,11 +41,26 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
-    fun requestOneShotAwareness() {
-        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
+    fun requestOneShotAwareness(packageName:String) {
+        val allowed=packageName.trim().lowercase()
+        if(!ScreenInspectionPolicy.permits(allowed, allowed)) {
+            issue="Enter one non-sensitive, fully qualified Android package"
+            return
+        }
+        // The exact allowed source is persisted encrypted; a broad Accessibility
+        // grant does not authorize Shiv to traverse other apps.
+        ShivVault(context).put("screen_allowed_package", allowed)
+        check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",true).putBoolean("paused",false)
-            .putLong("capture_until",System.currentTimeMillis()+15_000L).apply()
-        progress="One-shot permission active for 15 seconds. Open the allowed screen."
+            .putLong("capture_until",System.currentTimeMillis()+15_000L).commit())
+        issue=null
+        progress="One-shot capture armed for 15 seconds, ONLY for "+allowed
+    }
+    fun stopOneShotAwareness() {
+        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
+            .remove("capture_until").putBoolean("paused",true).commit()
+        ShivVault(context).put("screen_allowed_package","")
+        progress="One-shot screen inspection stopped"
     }
     suspend fun readPhoneCalendar() {
         calendarCandidates.clear()
