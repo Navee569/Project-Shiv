@@ -285,6 +285,7 @@ class ShivController(private val context: Context) {
             }
             wm.cancelUniqueWork("shiv-durable-signals")
             wm.cancelUniqueWork("shiv-opt-in-pattern-learning")
+            wm.cancelUniqueWork("shiv-opt-in-agenda-nudges")
             phase.hub.clearSessions()
             (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
                 .cancelAll()
@@ -316,6 +317,8 @@ class ShivController(private val context: Context) {
     suspend fun afterPortableRestore(count:Int) {
         context.stopService(android.content.Intent(
             context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
+        com.shiv.assistant.automation.ShivAgendaNudgeWorker
+            .updateRegistration(context,false)
         phase.hub.clearSessions()
         messages.clear()
         notes.clear()
