@@ -27,6 +27,9 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
     }
+    val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
+    }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         controller.enablePostCallCheckIn(granted)
     }
@@ -34,6 +37,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
+    var contactQuery by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -189,6 +193,22 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     TextButton(onClick={controller::discardCalendarPreview}) {
                         Text("DISCARD ALL PREVIEWS")
                     }
+                Text("CONTACTS — NAME SEARCH ONLY",color=accent)
+                OutlinedTextField(value=contactQuery,
+                    onValueChange={contactQuery=it.take(60)},
+                    label={Text("Contact name to search")},singleLine=true)
+                OutlinedButton(enabled=contactQuery.trim().length>=2,
+                    onClick={
+                        if(screenContext.checkSelfPermission(Manifest.permission.READ_CONTACTS)==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            scope.launch { controller.lookupContactNames(contactQuery) }
+                        else permissionContacts.launch(Manifest.permission.READ_CONTACTS)
+                    }) { Text("SEARCH ON DEVICE (NO NUMBERS SAVED)") }
+                controller.contactNameMatches.forEach { match ->
+                    Text(match,color=Color.White)
+                }
+                if(controller.contactNameMatches.isNotEmpty())
+                    TextButton(onClick={controller::clearContactNames}) { Text("CLEAR CONTACT RESULTS") }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
                 }
