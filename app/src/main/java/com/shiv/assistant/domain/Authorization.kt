@@ -94,7 +94,7 @@ object StructuredToolParser {
                 require(argsJson.get(it) is String)
                 val value=argsJson.getString(it)
                 require(value.length in 1..500 && value.isNotBlank() &&
-                    !value.any { char -> char=='\\u0000' })
+                    !value.any { char -> char.code==0 })
                 value
             }
             // Validate each operation's full contract. Returning STAY_QUIET on
