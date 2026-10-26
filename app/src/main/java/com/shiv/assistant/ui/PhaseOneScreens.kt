@@ -32,6 +32,11 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
     }
+    val permissionMicSession=rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted)controller.startOfflineMicSession(owner.speechLocale)
+        else owner.showNotice("Microphone access denied: offline session not started")
+    }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         controller.enablePostCallCheckIn(granted)
     }
@@ -251,6 +256,22 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     TextButton(onClick={controller::clearContactNames}) { Text("CLEAR CONTACT RESULTS") }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
+                }
+                Text("USER-STARTED OFFLINE MIC SESSION",color=accent)
+                Text("On-device recognition only; no cloud STT or wake-word listener. " +
+                    "Android shows a persistent microphone notification with STOP. " +
+                    "The session ends within 10 minutes or earlier if the device gets hot, " +
+                    "battery falls below 25%, or offline recognition is unavailable. " +
+                    "Only non-sensitive recognized commitments go to Shiv's encrypted ASK_FIRST queue.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Button(onClick={
+                        if(screenContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            controller.startOfflineMicSession(owner.speechLocale)
+                        else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
+                    }) { Text("START OFFLINE MIC") }
+                    OutlinedButton(onClick={controller::stopOfflineMicSession}) { Text("STOP MIC") }
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
                 Row {
