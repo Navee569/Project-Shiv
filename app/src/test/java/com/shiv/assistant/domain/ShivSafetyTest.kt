@@ -35,6 +35,22 @@ class ShivSafetyTest {
         assertTrue(poor.allowed)
         assertFalse(poor.allowLargeModel)
     }
+    @Test fun leasesNeverExceedRemainingDailyBudget() {
+        val state = ResourceSnapshot(95, true, 0, 4000, false, false)
+        val nearLimit = ResourceGovernor.decide(state, WorkClass.CONVERSATION,
+            PowerMode.FULL, 599, 600)
+        assertTrue(nearLimit.allowed)
+        assertEquals(1, nearLimit.maxModelSeconds)
+        val capped = ResourceGovernor.decide(state, WorkClass.CONVERSATION,
+            PowerMode.FULL, 600, 600)
+        assertFalse(capped.allowed)
+        assertEquals(0, capped.maxModelSeconds)
+        val urgent = ResourceGovernor.decide(state.copy(thermalStatus = 4),
+            WorkClass.URGENT, PowerMode.LIGHT, 1000, 600)
+        assertTrue(urgent.allowed)
+        assertFalse(urgent.allowLargeModel)
+    }
+
     @Test fun modelCannotAuthorizePaymentsOrPrivilegedCommands() {
         listOf("PAYMENT", "PERMANENT_DELETE", "PRIVILEGED", "SEND_MESSAGE").forEach {
             val policy = AuthorityPolicy.authorize(it, AuthorityTier.FREE, true, false)
