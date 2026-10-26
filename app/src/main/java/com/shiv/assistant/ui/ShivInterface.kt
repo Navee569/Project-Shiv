@@ -328,18 +328,20 @@ fun ShivInterface(
                             color = Muted, fontSize = 11.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { controller.assignModelRole(model.id, false) },
-                                enabled = model.sizeBytes <= 2_000_000_000L) {
+                                enabled = !controller.working && model.sizeBytes <= 2_000_000_000L) {
                                 Text(if (controller.routerModelId == model.id) "ROUTER ✓" else "SET ROUTER",
                                     fontSize = 11.sp)
                             }
-                            OutlinedButton(onClick = { controller.assignModelRole(model.id, true) }) {
+                            OutlinedButton(onClick = { controller.assignModelRole(model.id, true) },
+                                enabled = !controller.working) {
                                 Text(if (controller.conversationModelId == model.id) "CHAT ✓" else "SET CHAT",
                                     fontSize = 11.sp)
                             }
                         }
                         Button(onClick = { scope.launch { controller.loadModel(model.id) } },
                             enabled = !controller.working) { Text("LOAD OFFLINE MODEL") }
-                        TextButton(onClick = { controller.removeModel(model.id) }) { Text("REMOVE REFERENCE") }
+                        TextButton(onClick = { controller.removeModel(model.id) },
+                            enabled = !controller.working) { Text("REMOVE REFERENCE") }
                     }
                 }
                 Text("Roles load on demand: ROUTER is a model up to 2 GB; CHAT is the larger conversation model. " +
