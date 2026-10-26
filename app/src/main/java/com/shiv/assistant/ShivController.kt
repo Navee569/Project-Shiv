@@ -393,6 +393,7 @@ class ShivController(private val context: Context) {
     fun updateSensingPaused(value: Boolean) {
         if (value) {
             ocrPreview = ""
+            ocrTaskCandidate = null
             calendarPreview.clear()
             contactMatches.clear()
             usagePreview.clear()
@@ -411,6 +412,7 @@ class ShivController(private val context: Context) {
         if (value) {
             privateUnlocked = false
             ocrPreview = ""
+            ocrTaskCandidate = null
             calendarPreview.clear()
             contactMatches.clear()
             vault.put("screen_armed_until", "0")
@@ -423,6 +425,7 @@ class ShivController(private val context: Context) {
     fun updatePrivacyZone(value: Boolean) {
         if (value) {
             ocrPreview = ""
+            ocrTaskCandidate = null
             calendarPreview.clear()
             contactMatches.clear()
             vault.put("screen_armed_until", "0")
