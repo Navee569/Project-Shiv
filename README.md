@@ -53,3 +53,12 @@ The cloud and hybrid AI modes are intentionally preserved as the owner's excepti
 
 See STATUS.md, TESTING.md, DEFECT_LOG.md, ARCHITECTURE.md and
 docs/ENCRYPTED_MIGRATION.md. Feature presence is not release acceptance.
+
+
+## Offline OCR (Latin only)
+
+Chat > Offline OCR opens a user-selected image. The app uses the bundled
+ML Kit Latin text recognizer and displays a short ephemeral preview only;
+recognized text is not automatically saved to the encrypted database or sent
+to cloud AI. Kannada/Telugu-script OCR and secure identification of the source
+app are not supported. Do not enable broad screen scanning.

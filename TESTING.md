@@ -32,11 +32,16 @@
    Under Tasks, add an event tomorrow at 17:00, restart and ask "What's on tomorrow?".
    Verify the answer matches the actual encrypted agenda; test deleting the event.
    With Guest Mode active, verify Chat, Memory, Settings and Tasks are concealed.
-10. Keep the phone unplugged for a normal day, compare Samsung Settings > Battery >
+10. In Chat, use Offline OCR to select a harmless printed English/Latin-script
+    note. Verify a temporary preview appears with mobile data and Wi-Fi OFF;
+    use CLEAR PREVIEW. Restart Shiv and verify the text was NOT persisted.
+    Verify images containing OTP/password information are blocked. Do not
+    use this recognizer for Kannada/Telugu scripts; unsupported.
+11. Keep the phone unplugged for a normal day, compare Samsung Settings > Battery >
     Battery usage and note whether Shiv is a significant source of battery drain.
-11. Test notification permission denied, airplane mode, thermal throttling,
+12. Test notification permission denied, airplane mode, thermal throttling,
     low battery, reboot, duplicate signals, model cancellation and storage full.
-12. Never assert recording other people's calls; Android call audio capture is
+13. Never assert recording other people's calls; Android call audio capture is
     outside scope.
 
 ## Record actual results

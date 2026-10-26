@@ -8,7 +8,7 @@ Legend: **ACTIVE** has an actual bounded Shiv code path; **CONNECT** requires th
 | Intelligence | Deterministic local assistant; LiteRT-LM CPU on-device engine and SAF model staging (OWNER-VERIFY); existing OpenAI-compatible cloud/hybrid modes; bounded priority queue | Autonomous two-model routing, model downloader, full provider catalog |
 | Memory | Room + SQLCipher encryption with Keystore-wrapped key; explicit memory correction, provenance and encrypted facts (OWNER-VERIFY) | Full person/place graph and measured retention; encrypted backup/restore built (OWNER-VERIFY) |
 | Voice | On-device SpeechRecognizer API31+, selected en-IN/kn-IN/te-IN, Google TTS validation (OWNER-VERIFY) | Wake word, code-switching golden set, always-ready listening |
-| Vision | Explicitly selected image, explicit transmission consent to cloud vision endpoint | Offline OCR and live screen capture |
+| Vision | User-selected cloud image description with explicit consent; bundled offline Latin OCR temporary preview (not stored, OWNER-VERIFY) | Kannada/Telugu OCR, live screen capture, multimodal local image model |
 | Communication | Call dialer, SMS/email compose, Telegram/WhatsApp share | Contacts-based disambiguation and verified end-to-end delivery |
 | Productivity | Local encrypted Events/Tasks CRUD and tomorrow schedule answers; relative reminders with WorkManager, calendar/alarm/timer intents | Cross-account calendar reads and complex recurring routines |
 | Device | Wi-Fi/Bluetooth/settings, music/video/camera launch | Direct privileged control, accessibility app automation, playback verification |
