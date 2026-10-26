@@ -2,6 +2,14 @@
 
 ## Automated CI evidence — verified
 
+**Latest source commit: `8e48ed0`.**
+
+- Debug APK, static checks, JVM unit suite and Android lint: **PASS**, [run 40259210693](https://github.com/Navee569/Project-Shiv/actions/runs/40259210693).
+- Instrumented Android 8.0 (API26): **14/14 PASS** and Android 15 (API35): **14/14 PASS**, [run 40259210606](https://github.com/Navee569/Project-Shiv/actions/runs/40259210606).
+- Final `shiv-native-debug-apk` artifact verified (68,202,553 bytes); debug-only, not a release build.
+- New regressions include 37-signal backlog, owner approval and idempotence, chat-signal erasure, note correction, model hash checks, wrong DB key, rollback and concurrent writes.
+
+
 - Build / APK assembly, Kotlin JVM tests and lint: PASS — https://github.com/Navee569/Project-Shiv/actions/runs/40220199926
 - Android API 35 emulator: 4 tests PASS (SQLCipher file header and round-trip, encrypted vault, denylisted input, malformed tool checks) — https://github.com/Navee569/Project-Shiv/actions/runs/40220199919
 - App-launch and Activity recreation smoke test: PASS — full 5/5 API 35 suite, https://github.com/Navee569/Project-Shiv/actions/runs/40220610385
@@ -12,8 +20,8 @@
 
 ## Additional tests required before release
 
-1. Compile `assembleDebug`, `testDebugUnitTest`, `lintDebug`; run SQLCipher wrong key and raw SQLite-open checks.
-2. Run migration interruption, duplicate, correction, expiry, restart, concurrency, rollback and database integrity tests.
+1. Expand existing successful compile/unit/lint, SQLCipher wrong-key and encrypted-header checks to real device and additional failure modes.
+2. Add real legacy-data migration interruption, Keystore invalidation, reboot, expiry cleanup and WAL/integrity failure tests. Correction, concurrency and rollback are already covered.
 3. Fake Brain: malformed/unknown tools, rejected authority override, queue priority, cancellation, 64-size cap, restart/retry/once behavior.
 4. Unit scenarios: commitment -> confirm before calendar write, Kannada/Telugu missing voice, denylisted bank app zero stored data, quiet hours, duplicate proactive suppression, owner correction takes precedence.
 5. Emulator scenarios: no permissions, user-denied notifications, app data restore, process death, background limits, reboot WorkManager reschedule.

@@ -15,6 +15,14 @@ Shiv is his own Android app, built with Kotlin + Jetpack Compose. He keeps local
 7. To allow optional notification awareness, use **Shiv > Settings > notification switch** and manually grant access in Android settings. To allow one-shot screen facts, use **Shiv > Permissions > Open Accessibility Settings**, read the warning and turn on Shiv only if desired; use the 15-second one-shot button to capture an allowed app.
 8. For Samsung background reminders later: **Settings > Apps > Shiv > Battery > Unrestricted**, if you elect to allow reminders to run reliably. Device testing remains necessary.
 
+## Feature-by-feature evidence and tests
+
+Start with [FEATURE_BY_FEATURE_AUDIT.md](FEATURE_BY_FEATURE_AUDIT.md). It audits **every Phase 1 milestone, every binding owner decision, required scenarios, and Phase 2 prerequisites**. Green automated CI must not be mistaken for completed functionality.
+
+**Verified source commit `8e48ed0`:** [APK, JVM, lint](https://github.com/Navee569/Project-Shiv/actions/runs/40259210693) and [14 emulator tests each on API26/API35](https://github.com/Navee569/Project-Shiv/actions/runs/40259210606). The new APK artifact is available in the build run.
+
+Use **Shiv > Memories** to inspect, correct or delete encrypted facts. Use **Shiv > Decisions** to review candidate commitments; an unambiguous future date/time can be explicitly approved into an encrypted Shiv event and local reminder. This does **not** write to your external Google/Samsung calendar without a separate permission-backed integration.
+
 ## Core modules added in this development branch
 
 - Private Room + SQLCipher database with Android Keystore-wrapped random passphrase; one-way legacy encrypted-preferences migration (old records are deleted only after copying).
@@ -29,7 +37,7 @@ Shiv is his own Android app, built with Kotlin + Jetpack Compose. He keeps local
 
 ## Limitations
 
-Phase 1 Android compilation, JVM unit tests, Android lint and API 35 emulator encryption/privacy checks have run successfully on verified development commits. **Galaxy S23 device checks and broader acceptance tests remain pending.** This code must not be treated as an install-ready, verified APK. See [STATUS.md](STATUS.md), [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the owner requirements files attached to the project conversation.
+Phase 1 Android compilation, JVM unit tests and Android lint passed on the latest audited application source, along with API26/API35 emulator encryption/privacy/integration checks. **Galaxy S23 device checks and broader acceptance tests remain pending.** This code must not be treated as an install-ready, verified APK. See [STATUS.md](STATUS.md), [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the owner requirements files attached to the project conversation.
 
 A number of Phase 1 requirements remain incomplete, notably complete continuous mic duty cycling, wake-word support, per-source permissions/awareness, tested LiteRT formats and delegates, recovery/restore, full scenario suite, and a verified device battery/runtime baseline. They remain visible as incomplete in STATUS. **Phase 2 is not started until M11 is accepted.**
 

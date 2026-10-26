@@ -71,6 +71,6 @@
 ## Verified automated gates and limits
 
 - Pre-audit commit `713112f`: clean debug build + JUnit + lint + **5 Android API35 tests** previously passed, re-run independently passed October 26.
-- New feature branch requires its own clean build, tests, lint and emulator regression results, tracked in `DEFECT_LOG.md`.
+- Audited final source commit `8e48ed0` passed APK assembly/JVM tests/Android lint (run 40259210693) plus 14/14 instrumented tests on both API26 and API35 (run 40259210606). See `DEFECT_LOG.md`.
 - A passing Android emulator **does not** establish that a Gemma model file loads on an S23, Kannada or Telugu actually works offline, One UI allows the intended Accessibility access, nor that the battery/heat target is met.
 - The cloud exception has network permission in the current manifest. A private build with no INTERNET permission is **not** implemented; never claim offline network isolation merely because LOCAL mode is selected.
