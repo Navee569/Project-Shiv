@@ -19,6 +19,8 @@ class ShivAwareness : AccessibilityService() {
     private var lastCaptured=0L
     override fun onAccessibilityEvent(event:AccessibilityEvent?) {
         if(event==null) return
+        if(event.eventType!=AccessibilityEvent.TYPE_VIEW_CLICKED &&
+            event.eventType!=AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)return
         val name=event.packageName?.toString()?:return
         if(SensitiveAppDenylist.excluded(name))return
         // Owner explicitly types the ONE package being inspected. Other apps are
@@ -35,6 +37,11 @@ class ShivAwareness : AccessibilityService() {
         if(System.currentTimeMillis()-lastCaptured<30_000L)return
         val source=rootInActiveWindow?:return
         try {
+            // The current window can change after a permitted event fires.
+            // Verify the *actual* root belongs to the approved app as well.
+            if(!ScreenInspectionPolicy.permits(
+                source.packageName?.toString().orEmpty(),
+                vault.get("screen_allowed_package")))return
             val facts=mutableListOf<String>()
             extractFacts(source,facts,0)
             if(facts.isEmpty())return
