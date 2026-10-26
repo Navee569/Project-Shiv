@@ -7,6 +7,7 @@ import android.content.Intent
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import com.shiv.assistant.integrations.ShivAccessibilityReader
+import com.shiv.assistant.integrations.ShivUsageReader
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
@@ -141,6 +142,7 @@ class ShivController(private val context: Context) {
         private set
     val calendarPreview = mutableStateListOf<CalendarPreview>()
     val contactMatches = mutableStateListOf<String>()
+    val usagePreview = mutableStateListOf<AppUsageObservation>()
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
         private set
     init {
@@ -207,6 +209,29 @@ class ShivController(private val context: Context) {
         vault.put("screen_armed_until", "0")
         notice = "Screen awareness disarmed"
     }
+    fun openUsageAccessSettings() {
+        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    fun previewUsage() {
+        usagePreview.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Privacy protection is active"
+            return
+        }
+        val reader = ShivUsageReader(context)
+        if (!reader.hasGrant()) {
+            notice = "Usage Access is not granted; enable it manually in Android settings"
+            return
+        }
+        try {
+            val extra = extraDeniedPackages().lineSequence()
+                .map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+            usagePreview.addAll(reader.pastDay(extra))
+            notice = "On-demand package usage summary; not stored or sent to a model"
+        } catch (_: Exception) { notice = "Usage statistics are unavailable" }
+    }
+    fun clearUsagePreview() { usagePreview.clear() }
     fun updateProactiveOptIn(enabled: Boolean) {
         vault.put("proactive_opt_in", if (enabled) "yes" else "no")
         proactiveOptIn = enabled
@@ -319,6 +344,7 @@ class ShivController(private val context: Context) {
             ocrPreview = ""
             calendarPreview.clear()
             contactMatches.clear()
+            usagePreview.clear()
             vault.put("screen_armed_until", "0")
         }
         vault.put("sensing_paused", if (value) "yes" else "no")
