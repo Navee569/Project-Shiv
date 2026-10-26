@@ -143,6 +143,23 @@ class MainActivity : FragmentActivity() {
             val document = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 if (it != null) scope.launch { controller.importText(it) }
             }
+            var pendingBackupPhrase by remember { mutableStateOf("") }
+            val backupExport = rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+                if (uri != null) scope.launch {
+                    val phrase = pendingBackupPhrase
+                    pendingBackupPhrase = ""
+                    controller.exportEncryptedBackup(uri, phrase)
+                }
+            }
+            val backupRestore = rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) scope.launch {
+                    val phrase = pendingBackupPhrase
+                    pendingBackupPhrase = ""
+                    controller.restoreEncryptedBackup(uri, phrase)
+                }
+            }
             val model = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
                 if (it != null) scope.launch { controller.registerModel(it) }
             }
@@ -173,6 +190,14 @@ class MainActivity : FragmentActivity() {
                     onModel = { model.launch(arrayOf("application/octet-stream", "*/*")) },
                     onUnlockMemory = { authenticate { controller.onBiometricAuthenticated() } },
                     onApproveHighRisk = { authenticate { controller.approve() } },
+                    onBackupExport = { phrase ->
+                        pendingBackupPhrase = phrase
+                        backupExport.launch("Shiv-private.shivbak")
+                    },
+                    onBackupRestore = { phrase ->
+                        pendingBackupPhrase = phrase
+                        backupRestore.launch(arrayOf("application/octet-stream", "*/*"))
+                    },
                     onSpeak = { spoken ->
                         val locale = Locale.forLanguageTag(controller.speechLocale)
                         val available = tts.isLanguageAvailable(locale)

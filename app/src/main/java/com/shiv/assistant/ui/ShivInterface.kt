@@ -37,6 +37,8 @@ fun ShivInterface(
     onModel: () -> Unit,
     onUnlockMemory: () -> Unit,
     onApproveHighRisk: () -> Unit,
+    onBackupExport: (String) -> Unit,
+    onBackupRestore: (String) -> Unit,
     onSpeak: (String) -> Unit,
     onNotificationPermission: () -> Unit
 ) {
@@ -235,6 +237,20 @@ fun ShivInterface(
                         }
                     }
                 }
+                Header("ENCRYPTED BACKUP", "Export or merge-restore personal records through Android Files. Model weights are excluded.")
+                var backupPhrase by remember { mutableStateOf("") }
+                OutlinedTextField(backupPhrase, { backupPhrase = it.take(128) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    label = { Text("12+ character backup passphrase") },
+                    modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { onBackupExport(backupPhrase) },
+                        enabled = backupPhrase.length >= 12 && !controller.working) { Text("EXPORT") }
+                    OutlinedButton(onClick = { onBackupRestore(backupPhrase) },
+                        enabled = backupPhrase.length >= 12 && !controller.working) { Text("RESTORE") }
+                }
+                Text("Losing this passphrase makes the backup unrecoverable. Restore merges or overwrites matching entries only.",
+                    color = Muted, fontSize = 11.sp)
                 Text("LEGACY SAVED NOTES", color = Violet, fontSize = 12.sp)
                 controller.notes.asReversed().take(30).forEach { memory ->
                     GlassCard { Text(memory, color = Color.White, fontSize = 13.sp) }

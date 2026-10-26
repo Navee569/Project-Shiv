@@ -36,6 +36,7 @@ class ShivController(private val context: Context) {
     val knowledge = ShivKnowledge(vault)
     val audit = ShivAuditTrail(vault)
     val energy = ShivEnergyLedger(vault)
+    private val backup = ShivEncryptedBackup(context, vault)
     val signalQueue = ShivSignalQueue(vault)
     private val modelCatalog = ShivModelCatalog(context, vault)
     val messages = mutableStateListOf<ChatEntry>()
@@ -299,6 +300,35 @@ class ShivController(private val context: Context) {
         if (correction.isBlank()) return
         knowledge.correct(id, correction)
         notice = "Explicit correction saved; older belief superseded"
+    }
+    suspend fun exportEncryptedBackup(destination: Uri, passphrase: String) {
+        if (!privateUnlocked || guestMode) {
+            notice = "Unlock private memory before exporting"
+            return
+        }
+        working = true
+        try {
+            val count = backup.export(destination, passphrase)
+            audit.add("ENCRYPTED_EXPORT", "Owner exported " + count + " records", "ASK_FIRST", true)
+            notice = "Encrypted backup written: " + count + " records (model files are not included)"
+        } catch (e: Exception) {
+            notice = "Encrypted export failed: " + (e.message ?: "unknown error")
+        } finally { working = false }
+    }
+    suspend fun restoreEncryptedBackup(source: Uri, passphrase: String) {
+        if (!privateUnlocked || guestMode) {
+            notice = "Unlock private memory before restoring"
+            return
+        }
+        working = true
+        try {
+            val count = backup.restore(source, passphrase)
+            audit.add("ENCRYPTED_RESTORE", "Owner imported " + count + " encrypted records",
+                "ASK_FIRST", true)
+            notice = "Restored " + count + " records; restart Shiv to refresh all screens"
+        } catch (e: Exception) {
+            notice = "Encrypted restore rejected: " + (e.message ?: "unknown error")
+        } finally { working = false }
     }
     fun saveMacro(goal: String) {
         if (goal.isBlank()) return

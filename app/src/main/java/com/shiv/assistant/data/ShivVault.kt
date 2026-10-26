@@ -102,6 +102,15 @@ class ShivVault(context: Context) {
         if (preferences.contains(name))
             check(preferences.edit().remove(name).commit()) { "Legacy cleanup failed" }
     }
+    @Synchronized
+    fun backupRecords(): List<SecureEntry> = secureEntries.all()
+
+    @Synchronized
+    fun mergeBackupRecords(items: List<SecureEntry>) {
+        require(items.size <= 1000)
+        require(items.none { it.name == "__sqlcipher_passphrase_v1" })
+        secureEntries.writeAll(items)
+    }
     fun notes(): List<String> {
         val data = get("notes") ?: return emptyList()
         val json = JSONArray(data)

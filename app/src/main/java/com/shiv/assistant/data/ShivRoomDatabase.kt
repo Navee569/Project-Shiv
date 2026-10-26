@@ -20,6 +20,12 @@ interface SecureEntries {
     @Query("SELECT value FROM secure_entries WHERE name = :key LIMIT 1")
     fun read(key: String): String?
 
+    @Query("SELECT * FROM secure_entries ORDER BY name")
+    fun all(): List<SecureEntry>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun writeAll(records: List<SecureEntry>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun write(record: SecureEntry)
 }
