@@ -63,3 +63,33 @@
 - Tap Undo latest reminder; verify cancellation in the device scheduler. A notification already delivered cannot be recalled.
 - Approve five ASK_FIRST reminders: a trust-ladder suggestion may appear, but the tier must not change without tapping its radio button.
 - Payment, messaging and permanent deletion must still require explicit confirmation; model text may not change policy.
+
+## OWNER-VERIFY: two-role routing and daily local compute cap (PR #3)
+1. Install the matching **successful CI** APK on the S23. Turn Wi-Fi and
+   mobile data off so local routing cannot be confused with cloud responses.
+2. In Models, import the owner's small `.litertlm` file; select SET ROUTER.
+   Import the separate conversation `.litertlm` file; select SET CHAT.
+   These selections authorize app-private staging, which can consume additional GB.
+3. In Status select 10m as the daily limit and press MEASURE NOW. Record battery,
+   charging, thermal, free RAM, selected model names and measured model seconds.
+4. In Chat, ask a harmless open question. Observe which model loads. If charging
+   and adequate RAM, conversation model may be chosen; on a hot/low-RAM phone,
+   router should be chosen or model inference safely refused. Do not purposely
+   overheat the phone to force an edge case.
+5. In Status set the daily budget to 1m. Check that subsequent local inference
+   respects measured consumed time. The cap is approximate and not a battery
+   percentage; a one-time in-flight native cancellation may be delayed.
+6. Cancel a long-running local request, then ask a second question. Verify the
+   new request is not stuck and priority queue recovers.
+7. Unload a model before REMOVE REFERENCE. Confirm the original document still
+   exists in My Files and free storage reflects release of the Shiv staged copy.
+8. Confirm CLOUD/HYBRID settings and existing explicit consent path still work
+   as originally configured; do not enter credentials into shared logs.
+9. Record pass/fail and exact observed timings here; NONE of these tests has
+   been run on the S23 from CI.
+
+- Small router model loaded on S23: NOT TESTED
+- Conversation model loaded on S23: NOT TESTED
+- Resource-based automatic swap/fallback: NOT TESTED
+- Native cancellation/timeout on S23: NOT TESTED
+- Measured battery/thermal/real-world power use: NOT TESTED
