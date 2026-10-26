@@ -27,10 +27,11 @@ class SqlCipherStorageTest {
             .openHelperFactory(SupportOpenHelperFactory(key))
             .allowMainThreadQueries().build()
         try {
-            database(secret.copyOf()).use { encrypted ->
-                encrypted.entries().write(SecureEntry("test", "secret-not-plaintext"))
-                assertEquals("secret-not-plaintext", encrypted.entries().read("test"))
-            }
+            val initial = database(secret.copyOf())
+            try {
+                initial.entries().write(SecureEntry("test", "secret-not-plaintext"))
+                assertEquals("secret-not-plaintext", initial.entries().read("test"))
+            } finally { initial.close() }
             val file = context.getDatabasePath(name)
             assertTrue(file.exists())
             val raw = file.readBytes()
@@ -44,12 +45,15 @@ class SqlCipherStorageTest {
             }
             assertTrue("Plain SQLite must not decrypt SQLCipher file", plain.isFailure)
             val invalid = runCatching {
-                database(wrong).use { it.entries().read("test") }
+                val opened = database(wrong)
+                try { opened.entries().read("test") }
+                finally { opened.close() }
             }
             assertTrue("Wrong key must fail closed", invalid.isFailure)
-            database(secret.copyOf()).use {
-                assertEquals("secret-not-plaintext", it.entries().read("test"))
-            }
+            val reopened = database(secret.copyOf())
+            try {
+                assertEquals("secret-not-plaintext", reopened.entries().read("test"))
+            } finally { reopened.close() }
         } finally {
             context.deleteDatabase(name)
         }
