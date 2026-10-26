@@ -5,6 +5,8 @@ import android.os.SystemClock
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Backend
 import com.shiv.assistant.domain.IntelligenceMode
 import com.shiv.assistant.data.LocalModelComputeLedger
 import com.shiv.assistant.data.ShivVault
@@ -20,11 +22,32 @@ import kotlinx.coroutines.sync.withLock
 data class BrainStatus(
     val ready: Boolean, val modelName: String?, val queueLength: Int,
     val lastLoadMs: Long? = null, val lastReplyMs: Long? = null, val error: String? = null,
-    val firstFragmentMs: Long? = null, val lastOutputCharacters: Int? = null
+    val firstFragmentMs: Long? = null, val lastOutputCharacters: Int? = null,
+    val backend:String?=null, val maxOutputTokens:Int?=null
 )
+
+enum class LocalBackend { CPU, GPU, NPU }
+object LocalInferenceSettings {
+    const val BACKEND_KEY="local_backend_v1"
+    const val OUTPUT_TOKENS_KEY="local_output_tokens_v1"
+    fun backend(raw:String?):LocalBackend=runCatching {
+        LocalBackend.valueOf(raw ?: "CPU")
+    }.getOrDefault(LocalBackend.CPU)
+    fun outputTokens(raw:String?):Int=raw?.toIntOrNull()?.takeIf { it in 64..1024 } ?: 384
+    fun backendApi(choice:LocalBackend):Backend=when(choice) {
+        LocalBackend.CPU->Backend.CPU()
+        LocalBackend.GPU->Backend.GPU()
+        LocalBackend.NPU->Backend.NPU()
+    }
+}
 interface Brain {
     suspend fun load(model: File)
     suspend fun infer(prompt: String): String
+    suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
+        val result=infer(prompt)
+        onFragment(result)
+        return result
+    }
     suspend fun unload()
     fun status(): BrainStatus
 }
@@ -54,19 +77,28 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
     @Volatile private var error: String? = null
     @Volatile private var firstFragment: Long? = null
     @Volatile private var outputCharacters: Int? = null
+    @Volatile private var activeBackend:String?=null
+    @Volatile private var activeOutputTokens:Int?=null
 
     override suspend fun load(model: File) = withContext(dispatcher) {
         require(model.isFile && model.length() > 1024) { "Import a real LiteRT model before loading" }
         if (this@LiteRtBrain.model == model.absolutePath && engine != null) return@withContext
         release()
         val started = SystemClock.elapsedRealtime()
-        val candidate = Engine(EngineConfig(modelPath = model.absolutePath, cacheDir = context.cacheDir.absolutePath))
+        val vault=ShivVault(context)
+        val backend=LocalInferenceSettings.backend(vault.get(LocalInferenceSettings.BACKEND_KEY))
+        val outputLimit=LocalInferenceSettings.outputTokens(vault.get(LocalInferenceSettings.OUTPUT_TOKENS_KEY))
+        val candidate = Engine(EngineConfig(modelPath = model.absolutePath,
+            backend=LocalInferenceSettings.backendApi(backend),
+            cacheDir = context.cacheDir.absolutePath))
         try {
             candidate.initialize()
-            val session = candidate.createConversation()
+            val session = candidate.createConversation(ConversationConfig(maxOutputToken=outputLimit))
             engine = candidate
             conversation = session
             this@LiteRtBrain.model = model.absolutePath
+            activeBackend=backend.name
+            activeOutputTokens=outputLimit
             lastLoad = SystemClock.elapsedRealtime() - started
             error = null
         } catch (e: Exception) {
@@ -75,7 +107,8 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
             throw e
         }
     }
-    override suspend fun infer(prompt: String): String = withContext(dispatcher) {
+    override suspend fun infer(prompt: String): String = inferStreaming(prompt) {}
+    override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = withContext(dispatcher) {
         require(prompt.length <= 20_000)
         val session = conversation ?: throw IllegalStateException("No local model loaded")
         val started = SystemClock.elapsedRealtime()
@@ -83,8 +116,13 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
             val output = StringBuilder()
             firstFragment = null
             session.sendMessageAsync(prompt).collect { fragment ->
+                currentCoroutineContext().ensureActive()
                 if (firstFragment == null) firstFragment = SystemClock.elapsedRealtime() - started
-                if (output.length < 12_000) output.append(fragment.toString().take(12_000 - output.length))
+                val text=fragment.toString().take((12_000-output.length).coerceAtLeast(0))
+                if(text.isNotEmpty()) {
+                    output.append(text)
+                    onFragment(text)
+                }
             }
             lastReply = SystemClock.elapsedRealtime() - started
             outputCharacters = output.length
@@ -102,11 +140,14 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
         engine?.close()
         engine = null
         model = null
+        activeBackend=null
+        activeOutputTokens=null
     }
     override fun status(): BrainStatus = BrainStatus(
         ready = engine != null, modelName = model?.substringAfterLast('/'),
         queueLength = 0, lastLoadMs = lastLoad, lastReplyMs = lastReply, error = error,
-        firstFragmentMs = firstFragment, lastOutputCharacters = outputCharacters
+        firstFragmentMs = firstFragment, lastOutputCharacters = outputCharacters,
+        backend=activeBackend,maxOutputTokens=activeOutputTokens
     )
     override fun close() {
         // Close on owner dispatcher before shutting it down.
@@ -118,7 +159,8 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
 
 enum class InferencePriority(val value: Int) { BACKGROUND(1), INTERACTIVE(5), URGENT(10) }
 data class InferenceRequest(val id: String, val prompt: String,
-    val priority: InferencePriority, val createdAt: Long = System.currentTimeMillis())
+    val priority: InferencePriority, val createdAt: Long = System.currentTimeMillis(),
+    val onFragment:(suspend (String)->Unit)?=null)
 
 /**
  * Single active inference; no silent dropping of important requests.
@@ -171,7 +213,10 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
                 // Best-effort coroutine deadline. A native engine may not stop
                 // computation instantaneously; do not claim hard cancellation.
                 val task = workerScope.async(start = CoroutineStart.LAZY) {
-                    withTimeout(120_000L) { brain.infer(next.request.prompt) }
+                    withTimeout(120_000L) {
+                        if(next.request.onFragment==null) brain.infer(next.request.prompt)
+                        else brain.inferStreaming(next.request.prompt,next.request.onFragment)
+                    }
                 }
                 synchronized(lock) {
                     activeTask = task
@@ -222,11 +267,17 @@ class ShivBrainHub(private val context: Context) {
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var idleRelease: Job? = null
+    @Volatile var lastRoutingMs:Long?=null
+        private set
+    @Volatile var lastRoutedRole:String?=null
+        private set
 
     private val selected = object : Brain {
         override suspend fun load(model: File): Unit =
             throw UnsupportedOperationException("Import models through Model Manager")
-        override suspend fun infer(prompt: String): String {
+        override suspend fun infer(prompt: String): String = inferStreaming(prompt) {}
+        override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
+            val routingStarted=SystemClock.elapsedRealtime()
             val governor = ModelGovernor(context)
             val heavy = governor.lease("conversation")
             val small = governor.lease("router")
@@ -236,16 +287,19 @@ class ShivBrainHub(private val context: Context) {
                 conversation.status().ready && heavy.allowed -> {
                     selectedBrain=conversation
                     maxSeconds=heavy.maxModelSeconds
+                    lastRoutedRole="conversation"
                 }
                 router.status().ready && small.allowed -> {
                     selectedBrain=router
                     maxSeconds=small.maxModelSeconds
+                    lastRoutedRole="router"
                 }
                 conversation.status().ready && !heavy.allowed ->
                     throw IllegalStateException("Conversation model blocked: " + heavy.reason)
                 else -> throw IllegalStateException(
                     "No local model admitted: "+small.reason)
             }
+            lastRoutingMs=SystemClock.elapsedRealtime()-routingStarted
             val started=SystemClock.elapsedRealtime()
             try {
                 val localContext=ShivRepository(context).contextSnapshot().boundedSummary()
@@ -253,7 +307,7 @@ class ShivBrainHub(private val context: Context) {
                 // Only a best-effort coroutine limit; a native runtime may
                 // finish cancellation after this window.
                 return withTimeout(maxSeconds.toLong()*1000L) {
-                    selectedBrain.infer(localPrompt)
+                    selectedBrain.inferStreaming(localPrompt,onFragment)
                 }
             } finally {
                 computeLedger.record(SystemClock.elapsedRealtime()-started)
@@ -299,6 +353,13 @@ class ShivBrainHub(private val context: Context) {
         try {
             inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
                 prompt, InferencePriority.INTERACTIVE))
+        } finally { armIdleRelease() }
+    }
+    suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = lifecycle.withLock {
+        idleRelease?.cancel()
+        try {
+            inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
+                prompt,InferencePriority.INTERACTIVE,onFragment=onFragment))
         } finally { armIdleRelease() }
     }
     suspend fun clearSessions() = lifecycle.withLock {

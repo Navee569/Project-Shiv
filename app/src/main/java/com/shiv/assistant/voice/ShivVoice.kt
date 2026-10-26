@@ -59,7 +59,9 @@ class ShivVoice(private val context:Context) {
             onReady(ttsReady,ttsError)
         },"com.google.android.tts")
     }
-    fun speak(text:String,tag:String):String? {
+    fun speak(text:String,tag:String):String? = speakInternal(text,tag,TextToSpeech.QUEUE_FLUSH)
+    fun speakQueued(text:String,tag:String):String? = speakInternal(text,tag,TextToSpeech.QUEUE_ADD)
+    private fun speakInternal(text:String,tag:String,queueMode:Int):String? {
         if(!ttsReady)return "Google speech engine is not ready"
         val engine=tts?:return "Install Speech Services by Google"
         val locale=when(tag) {
@@ -72,7 +74,7 @@ class ShivVoice(private val context:Context) {
         if(available<TextToSpeech.LANG_AVAILABLE)
             return "Missing $tag voice. Settings > General management > Language > Text-to-speech > Preferred engine > Speech Services by Google > gear > Install voice data."
         engine.language=locale
-        engine.speak(text,TextToSpeech.QUEUE_FLUSH,null,"shiv-speech")
+        engine.speak(text,queueMode,null,"shiv-speech-"+System.nanoTime())
         return null
     }
     fun stopListening() { recognizer?.cancel();recognizer?.destroy();recognizer=null }

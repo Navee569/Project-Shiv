@@ -5,6 +5,16 @@ object MicrophoneSessionPolicy {
     const val MAX_SESSION_MS = 10 * 60 * 1000L
     const val LOW_BATTERY_PCT = 25
     const val MAX_ERRORS = 5
+    fun pocketed(proximityCm:Float?, proximityMaxCm:Float?, lux:Float?):Boolean =
+        proximityCm != null && proximityMaxCm != null && lux != null &&
+            proximityCm < proximityMaxCm && lux < 8f
+    fun sleepHours(hour:Int):Boolean=hour>=22 || hour<9
+    fun wakeCommand(value:String,required:Boolean):String? {
+        val cleaned=value.trim()
+        if(!required)return safeUtterance(cleaned)
+        val match=Regex("(?i)^shiv[,.!?\\s:;-]+(.+)$").matchEntire(cleaned) ?: return null
+        return safeUtterance(match.groupValues[1])
+    }
     fun mayContinue(startedAt: Long, now: Long, batteryPct: Int,
         thermalStatus: Int, recognizerAvailable: Boolean, errors: Int): Boolean =
         recognizerAvailable && now >= startedAt && now - startedAt < MAX_SESSION_MS &&

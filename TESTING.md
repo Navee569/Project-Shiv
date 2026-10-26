@@ -30,6 +30,17 @@
 
 ## OWNER-VERIFY — Galaxy S23 (none measured yet)
 
+Before Phase 1 acceptance, import the actual 1B and E2B model files, select
+CPU then GPU/NPU in AI Status one at a time, press LOAD after each change,
+and record which combinations load and respond. Check the displayed output
+token cap, first-text-fragment time and routing time. Tokens/s remains
+unavailable because LiteRT's response does not provide an exact token count.
+For voice, use the Chat mic with local mode and an installed offline speech
+pack; confirm partial text, sentence-by-sentence speech and STOP/barge-in.
+Then start a 10-minute offline mic session, test the optional “Shiv” phrase,
+cover both proximity and light sensors, and test sleep hours with and without
+the explicit override. Record failures rather than treating CI as phone proof.
+
 | Feature | How to check on phone | Result |
 | --- | --- | --- |
 | Router .litertlm import | Files > browse local model > Models > select router > confirm copy > LOAD | Not checked |

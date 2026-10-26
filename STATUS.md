@@ -279,3 +279,25 @@ the retry queue by the owner. Retrying resets the attempt counter and records
 no signal content in a plaintext log. An Android regression verifies retained
 failure state and retry; it does not prove that a repeatedly failing source
 will eventually process successfully.
+
+## Follow-up on five absent voice/model audit rows
+
+LiteRT backend choice (CPU/GPU/NPU) and output-token cap are now owner settings;
+changing either unloads models so the next explicit LOAD uses the saved choice.
+The runtime cache directory and loaded conversation are reused. A requested
+delegate may fail to load on a given phone/model; Shiv reports that failure
+without claiming acceleration. AI Status exposes observed first-fragment and
+routing times. LiteRT's current response type exposes no exact generated-token
+count, so tokens/s remains unavailable rather than estimated from characters.
+
+Push-to-talk now shows partial recognized text, can cancel an active reply when
+the owner starts speaking again, and feeds local LiteRT text fragments into
+sentence-sized TTS chunks. Deterministic and cloud responses still speak after
+completion; exact token-level TTS timing and speech quality remain unmeasured.
+The visible
+owner-started 10-minute microphone session now pauses recognition during
+10 PM–9 AM unless the owner overrides it, and when proximity plus darkness
+suggests the phone is pocketed. A session-only optional "Shiv" phrase gate
+filters recognized commands. This is not speaker recognition and does not
+create an autonomous always-on wake-word listener. Those capabilities still
+require separate on-device model, enrollment and Galaxy S23 evaluation.

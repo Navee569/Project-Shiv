@@ -33,6 +33,7 @@ private val Panel = Color(0xFF101C2C)
 fun ShivInterface(
     controller: ShivController,
     onVoice: () -> Unit,
+    onStopVoice: () -> Unit,
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
     onSpeak: (String) -> Unit,
@@ -119,6 +120,9 @@ fun ShivInterface(
                 }
             }
             "Chat" -> Column(Modifier.weight(1f)) {
+                if(controller.speechDraft.isNotBlank()) Text(
+                    "Hearing: "+controller.speechDraft,color=Violet,
+                    modifier=Modifier.padding(horizontal=16.dp))
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(controller.messages) { entry ->
@@ -148,13 +152,13 @@ fun ShivInterface(
                         enabled = !controller.working && draft.isNotBlank(),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)
                     ) { Text("SEND") }
-                    if(controller.working) TextButton(onClick = { chatJob?.cancel() }) {
+                    if(controller.working) TextButton(onClick = { chatJob?.cancel();onStopVoice() }) {
                         Text("STOP", color = Violet)
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onVoice) { Text("🎙 Voice", color = Neon) }
+                    TextButton(onClick = { chatJob?.cancel();onVoice() }) { Text("🎙 Voice", color = Neon) }
                     TextButton(onClick = onPhoto) { Text("◈ Vision", color = Neon) }
                     TextButton(onClick = { controller.messages.lastOrNull { it.role == "assistant" }?.let { onSpeak(it.text) } }) {
                         Text("◉ Speak", color = Neon)

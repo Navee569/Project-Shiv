@@ -18,6 +18,7 @@ import com.shiv.assistant.domain.AuthorityTier
 import com.shiv.assistant.data.PortableOwnerArchive
 import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.domain.AppSourceMode
+import com.shiv.assistant.ai.LocalBackend
 import kotlinx.coroutines.launch
 
 /**
@@ -28,6 +29,8 @@ import kotlinx.coroutines.launch
 fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
     var contactQuery by remember { mutableStateOf("") }
+    var micWakePhrase by remember { mutableStateOf(false) }
+    var micSleepOverride by remember { mutableStateOf(false) }
     val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
@@ -37,7 +40,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     }
     val permissionMicSession=rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()) { granted ->
-        if(granted)controller.startOfflineMicSession(owner.speechLocale)
+        if(granted)controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
         else owner.showNotice("Microphone access denied: offline session not started")
     }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -128,8 +131,28 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             }
             "AI Status" -> {
                 Text(controller.modelStatus(),color=Color.White)
-                Text("Observed on this device, where available. TTFT, tokens/s, battery cost, NPU delegate and thermal impact are not measured yet.",
+                Text("First text fragment is measured locally. The LiteRT response does not expose an exact generated-token count, so tokens/s is unavailable. Battery cost and NPU performance need owner-device measurements.",
                     color=Color.LightGray)
+                Text("LOCAL MODEL BACKEND",color=accent)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    LocalBackend.entries.forEach { backend ->
+                        FilterChip(selected=controller.localBackend==backend,
+                            onClick={scope.launch { controller.chooseLocalBackend(backend) }},
+                            label={Text(backend.name)})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Text("GPU/NPU only work when this phone, runtime and model support them. A failed load does not silently change backend. Reload each model after changing settings.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Text("MAX LOCAL OUTPUT TOKENS",color=accent)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(128,256,384,512,1024).forEach { count ->
+                        FilterChip(selected=controller.localOutputTokens==count,
+                            onClick={scope.launch { controller.chooseLocalOutputTokens(count) }},
+                            label={Text(count.toString())})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
                 Text("OWNER LOCAL COMPUTE ALLOWANCE",color=accent)
                 Text(controller.localComputeReport(),color=Color.LightGray,fontSize=11.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -311,17 +334,27 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Text("OPT INTO POST-CALL CHECK-INS")
                 }
                 Text("USER-STARTED OFFLINE MIC SESSION",color=accent)
-                Text("On-device recognition only; no cloud STT or wake-word listener. " +
+                Text("On-device recognition only; no cloud STT or autonomous wake-word listener. " +
                     "Android shows a persistent microphone notification with STOP. " +
                     "The session ends within 10 minutes or earlier if the device gets hot, " +
                     "battery falls below 25%, or offline recognition is unavailable. " +
                     "Only non-sensitive recognized commitments go to Shiv's encrypted ASK_FIRST queue.",
                     color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=micWakePhrase,onCheckedChange={micWakePhrase=it})
+                    Text("Require 'Shiv' before each recognized command",color=Color.LightGray,fontSize=11.sp)
+                }
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=micSleepOverride,onCheckedChange={micSleepOverride=it})
+                    Text("Allow this session during 10 PM–9 AM",color=Color.LightGray,fontSize=11.sp)
+                }
+                Text("Proximity plus darkness pauses recognition while pocketed. The phrase check is not speaker identification.",
+                    color=Color.LightGray,fontSize=11.sp)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Button(onClick={
                         if(screenContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==
                             android.content.pm.PackageManager.PERMISSION_GRANTED)
-                            controller.startOfflineMicSession(owner.speechLocale)
+                            controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
                     OutlinedButton(onClick=controller::stopOfflineMicSession) { Text("STOP MIC") }

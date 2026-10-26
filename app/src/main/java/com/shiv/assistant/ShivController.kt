@@ -58,7 +58,7 @@ class ShivController(private val context: Context) {
     var notificationSummaries by mutableStateOf(false)
         private set
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
-        private set
+    var speechDraft by mutableStateOf("")
     init {
         runCatching {
             config = AssistantConfiguration(
@@ -132,7 +132,7 @@ class ShivController(private val context: Context) {
                 com.shiv.assistant.data.ChatRecord(java.util.UUID.randomUUID().toString(), role, text.take(12000)))
         }
     }
-    suspend fun submit(message: String) {
+    suspend fun submit(message: String,onLocalFragment:(suspend (String)->Unit)?=null) {
         val question = message.trim()
         if (question.isEmpty() || working) return
         append("user", question)
@@ -200,7 +200,9 @@ class ShivController(private val context: Context) {
         }
         working = true
         try {
-            val response = brain.respond(question, notes, config, apiKey)
+            val response = if(onLocalFragment!=null && config.mode==IntelligenceMode.LOCAL)
+                brain.localBrain.inferStreaming(question,onLocalFragment)
+            else brain.respond(question, notes, config, apiKey)
             // A provider or runtime may return after coroutine cancellation;
             // never append that stale reply to the owner's encrypted history.
             currentCoroutineContext().ensureActive()

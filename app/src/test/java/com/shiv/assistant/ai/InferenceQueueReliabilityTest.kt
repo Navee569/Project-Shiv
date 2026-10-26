@@ -6,6 +6,27 @@ import org.junit.Test
 import java.io.File
 
 class InferenceQueueReliabilityTest {
+    @Test fun streamingFragmentsReachCallerInOrder() = runBlocking {
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String)="hello world"
+            override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
+                onFragment("hello ")
+                onFragment("world")
+                return "hello world"
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            val chunks=mutableListOf<String>()
+            val reply=queue.submit(InferenceRequest("stream","prompt",InferencePriority.INTERACTIVE,
+                onFragment={ synchronized(chunks) { chunks.add(it) } }))
+            assertEquals("hello world",reply)
+            assertEquals(listOf("hello ","world"),chunks)
+        } finally { queue.shutdown() }
+    }
     private class FakeBrain : Brain {
         val entered = CompletableDeferred<Unit>()
         val gate = CompletableDeferred<Unit>()

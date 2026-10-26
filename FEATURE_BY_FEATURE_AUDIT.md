@@ -204,6 +204,21 @@ outcomes, but not action arguments. The cloud implementation remains unchanged
 and does not receive this snapshot. Model output quality with real imported
 weights still requires Galaxy S23 owner verification.
 
+### Five-item source follow-up (IDs 18, 23, 34, 35, 36 in owner audit files)
+
+ID 18 now has owner-selected CPU/GPU/NPU loading, a LiteRT output-token cap,
+and reuse of the model cache/conversation while loaded. The chosen delegate
+is reported and never silently substituted; actual GPU/NPU compatibility is
+OWNER-VERIFY. ID 23 now reports measured first text fragment and routing
+latency. Exact tokens/s remains unavailable because the runtime response has
+no generated-token count. ID 34 has partial STT preview, local fragment-to-TTS
+sentence streaming, and barge-in cancellation; spoken timing and real-device
+behavior need verification. ID 35 now gates the bounded owner-started session
+by sleep hours and pocket sensors, but continuous VAD/always-ready operation
+remains absent. ID 36 has only an optional session-local “Shiv” command phrase;
+speaker identification and autonomous wake word remain absent. These are
+source distinctions, not five completed features.
+
 Failed encrypted signals now remain visible as a count in AI Status, with an
 owner-triggered retry that resets attempts. Android regression covers this
 recovery path. The final local debug build, JVM suite, lint, instrumentation

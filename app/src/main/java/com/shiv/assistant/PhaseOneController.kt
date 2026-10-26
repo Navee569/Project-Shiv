@@ -53,6 +53,25 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
         private set
+    var localBackend by mutableStateOf(LocalInferenceSettings.backend(
+        ShivVault(context).get(LocalInferenceSettings.BACKEND_KEY)))
+        private set
+    var localOutputTokens by mutableIntStateOf(LocalInferenceSettings.outputTokens(
+        ShivVault(context).get(LocalInferenceSettings.OUTPUT_TOKENS_KEY)))
+        private set
+    suspend fun chooseLocalBackend(value:LocalBackend) {
+        hub.clearSessions()
+        ShivVault(context).put(LocalInferenceSettings.BACKEND_KEY,value.name)
+        localBackend=value
+        progress="Backend saved; models unloaded. Press LOAD for each model. Unsupported delegates report a load error."
+    }
+    suspend fun chooseLocalOutputTokens(value:Int) {
+        require(value in 64..1024)
+        hub.clearSessions()
+        ShivVault(context).put(LocalInferenceSettings.OUTPUT_TOKENS_KEY,value.toString())
+        localOutputTokens=value
+        progress="Output limit saved; models unloaded. Press LOAD for each model."
+    }
     var proactiveOptIn by mutableStateOf(ShivVault(context).get("proactive_opt_in")=="yes")
         private set
     var proactiveFeedback by mutableStateOf(nudgeLedger.report())
@@ -185,7 +204,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
         progress="App returned to default policy; built-in and owner denylists still apply"
     }
-    fun startOfflineMicSession(locale:String) {
+    fun startOfflineMicSession(locale:String,requireWake:Boolean=false,allowSleep:Boolean=false) {
         if(Build.VERSION.SDK_INT<33 ||
             !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
             issue="Offline on-device speech service unavailable. No cloud recognizer was started."
@@ -203,7 +222,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         try {
             context.startForegroundService(Intent(context,ShivMicSessionService::class.java)
                 .setAction(ShivMicSessionService.ACTION_START)
-                .putExtra(ShivMicSessionService.EXTRA_LOCALE,locale))
+                .putExtra(ShivMicSessionService.EXTRA_LOCALE,locale)
+                .putExtra(ShivMicSessionService.EXTRA_REQUIRE_WAKE,requireWake)
+                .putExtra(ShivMicSessionService.EXTRA_ALLOW_SLEEP,allowSleep))
             issue=null
             progress="Owner-started offline microphone session requested. Notification STOP available; expires within 10 minutes."
         } catch (_:Exception) {
@@ -441,6 +462,10 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
             " | Reply ms: "+(chat.lastReplyMs?.toString()?:"not measured")+
             " | First text fragment ms: "+(chat.firstFragmentMs?.toString()?:"not measured")+
-            " | Output chars: "+(chat.lastOutputCharacters?.toString()?:"not measured")
+            " | Output chars: "+(chat.lastOutputCharacters?.toString()?:"not measured")+
+            " | Backend: "+(chat.backend?:"not loaded")+
+            " | Max output tokens: "+(chat.maxOutputTokens?.toString()?:"not loaded")+
+            " | Last route: "+(hub.lastRoutedRole?:"none")+
+            " in "+(hub.lastRoutingMs?.toString()?:"not measured")+" ms"
     }
 }

@@ -43,4 +43,14 @@ The audited baseline passed native build, JVM tests, Android lint and API26/API3
 
 A number of Phase 1 requirements remain incomplete, notably always-ready wake-word support, fully tested per-source awareness, verified LiteRT formats and delegates, full third-party integration and reversible automation, complete scenario coverage, and a verified device battery/runtime baseline. Portable encrypted backup/restore and a user-started bounded microphone session exist, but need owner/device acceptance. They remain visible in STATUS. **Phase 2 is not started until M11 is accepted.**
 
+AI Status lets the owner choose CPU, GPU or NPU for local model loading and a
+64–1024 output-token limit. Changing either unloads loaded models; press LOAD
+again in Model Manager. GPU/NPU compatibility is model/device dependent and
+must be checked on the Galaxy S23. The Chat microphone shows partial offline
+speech text and can speak local model sentences as they arrive; saying a new
+request stops the prior speech/reply. The owner-started 10-minute mic session
+can require the word “Shiv” before each command, pauses during sleep hours
+unless overridden, and pauses when proximity plus darkness indicates a pocket.
+This phrase gate does not identify the speaker and is not an always-on listener.
+
 Neither Shizuku nor root/kernel tooling is part of the current implementation. Shiv does not intercept cellular call audio.
