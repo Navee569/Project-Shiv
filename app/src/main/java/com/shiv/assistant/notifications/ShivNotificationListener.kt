@@ -4,6 +4,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.shiv.assistant.data.ShivRepository
 import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.domain.SourceExclusions
 import com.shiv.assistant.automation.SignalWorker
 import kotlinx.coroutines.*
 /**
@@ -13,7 +14,7 @@ import kotlinx.coroutines.*
 class ShivNotificationListener:NotificationListenerService() {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     override fun onNotificationPosted(sbn:StatusBarNotification?) {
-        if(sbn==null || SensitiveAppDenylist.excluded(sbn.packageName))return
+        if(sbn==null || SourceExclusions.shouldBlock(applicationContext,sbn.packageName))return
         if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE).getBoolean("notifications_enabled",false))return
         val title=sbn.notification.extras.getCharSequence("android.title")?.toString()?:return
         // Avoid OTPs, credential hints and personal raw message content.
