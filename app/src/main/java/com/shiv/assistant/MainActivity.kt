@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.shiv.assistant.automation.ShivRetentionWorker.schedule(applicationContext)
         setContent {
             val controller = remember { ShivController(applicationContext) }
             val scope = rememberCoroutineScope()
