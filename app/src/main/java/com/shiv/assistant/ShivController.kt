@@ -249,6 +249,49 @@ class ShivController(private val context: Context) {
         vault.put("macros", json.toString())
         notice = "Routine saved — execution always requires review"
     }
+    /**
+     * Irreversible owner-requested clearing of ALL private records, including
+     * consent and cloud secret, in a single SQLCipher transaction. Imported
+     * public model files are intentionally retained; this is not a device wipe.
+     */
+    suspend fun eraseOwnerRecords() {
+        require(!working) { "Finish the current action first" }
+        val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
+        val ids=withContext(Dispatchers.IO) {
+            val dao=database.dao()
+            val pending=dao.reminderIds()
+            dao.eraseOwnerRecords()
+            pending
+        }
+        val wm=androidx.work.WorkManager.getInstance(context)
+        for(id in ids) {
+            wm.cancelAllWorkByTag("shiv-reminder-"+id)
+            wm.cancelUniqueWork("shiv-approved-"+id)
+        }
+        wm.cancelUniqueWork("shiv-durable-signals")
+        wm.cancelUniqueWork("shiv-opt-in-pattern-learning")
+        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        messages.clear()
+        notes.clear()
+        macros.clear()
+        pending=null
+        visionCandidate=null
+        apiKey=""
+        config=AssistantConfiguration()
+        speechLocale="en-IN"
+        notificationSummaries=false
+        reminderTier=AuthorityTier.ASK_FIRST
+        phase.discardCalendarPreview()
+        phase.clearContactNames()
+        phase.reload()
+        notice="Owner data erased from Shiv's encrypted database; imported model files remain."
+    }
+
     fun clearHistory() {
         kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
             val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
