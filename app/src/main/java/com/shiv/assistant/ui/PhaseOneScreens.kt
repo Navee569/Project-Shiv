@@ -149,9 +149,26 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                     color=Color.White)
                 OutlinedButton(onClick={controller.openAccessibilitySettings()}) { Text("OPEN ACCESSIBILITY SETTINGS") }
                 Button(onClick={controller.requestOneShotAwareness()}) { Text("CAPTURE ONE ALLOWED SCREEN FACT (15s)") }
-                OutlinedButton(onClick={permissionCalendar.launch(Manifest.permission.READ_CALENDAR)}) {
-                    Text("ALLOW READ-ONLY CALENDAR SYNC")
+                OutlinedButton(onClick={
+                    scope.launch { controller.readPhoneCalendar() }
+                    permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
+                }) { Text("PREVIEW CALENDAR — DON'T IMPORT YET") }
+                controller.calendarCandidates.forEach { candidate ->
+                    Surface(shape=MaterialTheme.shapes.medium) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                            Text(candidate.title.take(180),color=Color.White)
+                            Text(java.time.Instant.ofEpochMilli(candidate.startAt).toString(),
+                                color=Color.LightGray,fontSize=11.sp)
+                            TextButton(onClick={scope.launch{controller.confirmCalendarImport(candidate.id)}}) {
+                                Text("APPROVE IMPORT")
+                            }
+                        }
+                    }
                 }
+                if(controller.calendarCandidates.isNotEmpty())
+                    TextButton(onClick={controller::discardCalendarPreview}) {
+                        Text("DISCARD ALL PREVIEWS")
+                    }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
                 }
