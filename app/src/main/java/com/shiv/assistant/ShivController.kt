@@ -14,6 +14,10 @@ import com.shiv.assistant.vision.ShivOfflineOcr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withTimeoutOrNull
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
@@ -36,8 +40,34 @@ class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
     private val localNeural: Brain = LiteRtBrain(context)
-    private val localScheduler = LocalInferenceScheduler(localNeural,
-        CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val localScheduler = LocalInferenceScheduler(localNeural, localScope)
+    private var largeIdleRelease: Job? = null
+    /**
+     * The conversation model must not occupy device RAM indefinitely. The local
+     * LiteRT engine serializes unloads against model inference and loading.
+     */
+    private fun armLargeIdleRelease() {
+        largeIdleRelease?.cancel()
+        if (activeModelId == null || activeModelId != conversationModelId) return
+        largeIdleRelease = localScope.launch {
+            delay(120_000L)
+            if (!working && activeModelId == conversationModelId) {
+                localNeural.unload()
+                neuralReady = false
+                activeModelId = null
+                lastResourceDecision = "Large conversation model released after two idle minutes"
+            }
+        }
+    }
+    /** Called by Activity destruction, preventing stale infer/idle tasks surviving recreation. */
+    fun dispose() {
+        largeIdleRelease?.cancel()
+        localScope.launch {
+            localScheduler.close()
+            localScope.cancel()
+        }
+    }
     val localQueueLength: Int get() = localScheduler.waitingCount
     var localMetrics by mutableStateOf<LocalInferenceMetrics?>(null)
         private set
@@ -275,6 +305,7 @@ class ShivController(private val context: Context) {
     }
     suspend fun loadModel(id: String) {
         if (working) return
+        largeIdleRelease?.cancel()
         val item = models.firstOrNull { it.id == id } ?: return
         working = true
         try {
@@ -300,7 +331,10 @@ class ShivController(private val context: Context) {
             neuralReady = false
             activeModelId = null
             notice = "Local model could not be loaded: " + (e.message ?: "unknown error")
-        } finally { working = false }
+        } finally {
+            working = false
+            armLargeIdleRelease()
+        }
     }
     /** Only run after resource admission. All local model swaps are serial to chat. */
     private suspend fun loadModelInternal(id: String): BrainResult {
@@ -317,6 +351,7 @@ class ShivController(private val context: Context) {
         return outcome
     }
     private suspend fun chooseChatModel(lease: ComputeLease): String? {
+        largeIdleRelease?.cancel()
         val chosen = LocalModelRouting.choose(lease, routerModelId, conversationModelId,
             models.map { it.id }.toSet())
         val targetId = chosen.modelId
@@ -353,6 +388,7 @@ class ShivController(private val context: Context) {
         localScheduler.interrupt()
     }
     suspend fun unloadModel() {
+        largeIdleRelease?.cancel()
         localNeural.unload()
         neuralReady = false
         activeModelId = null
@@ -519,7 +555,10 @@ class ShivController(private val context: Context) {
             }
         } catch (e: Exception) {
             append("assistant", "I could not process that request: " + (e.message ?: "unknown error"))
-        } finally { working = false }
+        } finally {
+            working = false
+            armLargeIdleRelease()
+        }
     }
     private fun handleLocalNeuralText(reply: String) {
         val trimmed = reply.trim()
