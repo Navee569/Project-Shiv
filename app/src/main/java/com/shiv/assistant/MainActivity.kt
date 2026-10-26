@@ -25,6 +25,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.shiv.assistant.automation.ShivSignalWorker
 import com.shiv.assistant.automation.ShivConsolidation
+import com.shiv.assistant.automation.ShivProactive
 import com.shiv.assistant.ui.ShivInterface
 import kotlinx.coroutines.launch
 
@@ -100,6 +101,7 @@ class MainActivity : FragmentActivity() {
             "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ShivSignalWorker>().build())
         ShivConsolidation.schedule(this)
+        ShivProactive.schedule(this)
         setContent {
             val controller = remember { ShivController(applicationContext) }
             ownerController = controller
@@ -182,6 +184,21 @@ class MainActivity : FragmentActivity() {
                 if (it != null) scope.launch { controller.registerModel(it) }
             }
             val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+            val calendarPermission = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) controller.previewDeviceCalendar()
+                else controller.speechMessage("Calendar read permission denied")
+            }
+            var pendingContactQuery by remember { mutableStateOf("") }
+            val phonePermission = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()) { granted ->
+                controller.updatePostCallOptIn(granted)
+            }
+            val contactsPermission = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) controller.searchDeviceContacts(pendingContactQuery)
+                else controller.speechMessage("Contacts read permission denied")
+            }
             MaterialTheme(colorScheme = darkColorScheme(
                 background = Color(0xFF070C18), surface = Color(0xFF111B2B),
                 primary = Color(0xFF65F5F0), secondary = Color(0xFFA693FF),
@@ -227,6 +244,22 @@ class MainActivity : FragmentActivity() {
                             "Voice data unavailable for " + controller.speechLocale +
                             ". Install Speech Services by Google voice data in Android Settings > General management > Text-to-speech."
                         )
+                    },
+                    onPostCallPermission = {
+                        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+                            PackageManager.PERMISSION_GRANTED) controller.updatePostCallOptIn(true)
+                        else phonePermission.launch(Manifest.permission.READ_PHONE_STATE)
+                    },
+                    onCalendarPreview = {
+                        if (checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
+                            PackageManager.PERMISSION_GRANTED) controller.previewDeviceCalendar()
+                        else calendarPermission.launch(Manifest.permission.READ_CALENDAR)
+                    },
+                    onContactLookup = { query ->
+                        pendingContactQuery = query
+                        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
+                            PackageManager.PERMISSION_GRANTED) controller.searchDeviceContacts(query)
+                        else contactsPermission.launch(Manifest.permission.READ_CONTACTS)
                     },
                     onNotificationPermission = {
                         if (android.os.Build.VERSION.SDK_INT >= 33)

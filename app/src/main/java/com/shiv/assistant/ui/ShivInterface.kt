@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.*
 import com.shiv.assistant.data.AgendaKind
+import com.shiv.assistant.data.OwnerReaction
 import com.shiv.assistant.data.AgendaDates
 import kotlinx.coroutines.launch
 
@@ -43,6 +44,9 @@ fun ShivInterface(
     onBackupExport: (String) -> Unit,
     onBackupRestore: (String) -> Unit,
     onSpeak: (String) -> Unit,
+    onPostCallPermission: () -> Unit,
+    onCalendarPreview: () -> Unit,
+    onContactLookup: (String) -> Unit,
     onNotificationPermission: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -53,6 +57,10 @@ fun ShivInterface(
     var selected by remember { mutableStateOf<Capability?>(null) }
     var editingFactId by remember { mutableStateOf<String?>(null) }
     var correctionText by remember { mutableStateOf("") }
+    var contactQuery by remember { mutableStateOf("") }
+    var screenPackage by remember { mutableStateOf("") }
+    var ocrTaskTitle by remember { mutableStateOf("Review document due item") }
+    var ocrTaskTime by remember { mutableStateOf("") }
     val pending = controller.pending
     val neuralTool = controller.pendingNeuralTool
     val photo = controller.visionCandidate
@@ -219,6 +227,81 @@ fun ShivInterface(
                 }
             }
             "Automate" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+                Header("OWNER-CONTROLLED PROACTIVE ASSISTANT",
+                    "Optional deterministic agenda notices; no microphone, background AI or cloud calls.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Scheduled agenda nudges & briefs", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.proactiveOptIn,
+                        onCheckedChange = controller::updateProactiveOptIn)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Learn hypotheses from completed events", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.passiveLearningOptIn,
+                        onCheckedChange = controller::updatePassiveLearningOptIn)
+                }
+                Text("Quiet hours 10 PM–8 AM, daily notification cap 3. Repeated completions " +
+                    "create unconfirmed beliefs only; review or delete them under Memory.",
+                    color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(16.dp))
+                Header("POST-CALL CHECK-IN",
+                    "Optional generic Android call-ended prompt; no caller details or audio.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ask whether a call produced a commitment", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.postCallOptIn, onCheckedChange = {
+                        if (it) onPostCallPermission() else controller.updatePostCallOptIn(false)
+                    })
+                }
+                Text("Android may delay or suppress background call-state broadcasts. " +
+                    "Shiv never records the other caller's audio.",
+                    color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(12.dp))
+                Header("ANDROID CALENDAR • OWNER PREVIEW",
+                    "Read next 14 days only when requested. Review the temporary list before encrypted import.")
+                Button(onClick = onCalendarPreview, enabled = !controller.guestMode &&
+                    !controller.sensingPaused && !controller.privacyZone) { Text("PREVIEW DEVICE CALENDAR") }
+                controller.calendarPreview.forEach { entry ->
+                    Text(entry.title + " • " + AgendaDates.formatLocal(entry.startMillis),
+                        color = Color.White, fontSize = 11.sp)
+                }
+                if (controller.calendarPreview.isNotEmpty()) {
+                    Row {
+                        Button(onClick = controller::importCalendarPreview) { Text("IMPORT PREVIEWED EVENTS") }
+                        TextButton(onClick = controller::clearCalendarPreview) { Text("DISCARD") }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Header("CONTACTS • ON-DEMAND NAME LOOKUP",
+                    "Only owner-search matching names. Numbers aren't copied or saved.")
+                OutlinedTextField(contactQuery, { contactQuery = it.take(60) },
+                    label = { Text("Contact name") }, modifier = Modifier.fillMaxWidth())
+                Button(onClick = { onContactLookup(contactQuery) },
+                    enabled = contactQuery.trim().length >= 2 && !controller.guestMode &&
+                        !controller.sensingPaused && !controller.privacyZone) { Text("LOOK UP CONTACT") }
+                controller.contactMatches.forEach { match ->
+                    Text(match, color = Color.White, fontSize = 12.sp)
+                }
+                if (controller.contactMatches.isNotEmpty())
+                    TextButton(onClick = controller::clearContactPreview) { Text("CLEAR RESULTS") }
+                Spacer(Modifier.height(16.dp))
+                Header("APP USAGE • ON-DEMAND",
+                    "Only device-approved aggregate usage, with sensitive apps removed before display.")
+                OutlinedButton(onClick = controller::openUsageAccessSettings) {
+                    Text("OPEN USAGE ACCESS SETTINGS")
+                }
+                Button(onClick = controller::previewUsage, enabled = !controller.guestMode &&
+                    !controller.sensingPaused && !controller.privacyZone) {
+                    Text("PREVIEW LAST 24H APP USAGE")
+                }
+                controller.usagePreview.forEach { item ->
+                    Text(item.packageName + " • " + item.durationMs / 60000 + " min",
+                        color = Color.White, fontSize = 11.sp)
+                }
+                if (controller.usagePreview.isNotEmpty())
+                    TextButton(onClick = controller::clearUsagePreview) { Text("CLEAR USAGE PREVIEW") }
+                Spacer(Modifier.height(16.dp))
                 Header("PLAN & EXECUTION", "Safe automation: review each step before an external action.")
                 Spacer(Modifier.height(15.dp))
                 OutlinedTextField(goal, { goal = it.take(1000) }, label = { Text("Your goal / macro") },
@@ -398,6 +481,8 @@ fun ShivInterface(
                     color = Muted, fontSize = 12.sp)
                 Text("Output characters: " + (inference?.outputCharacters?.toString() ?: "NOT MEASURED"),
                     color = Muted, fontSize = 12.sp)
+                Header("WEEKLY SELF-REVIEW", "Counts use owner-entered reactions, not guessed task outcomes.")
+                Text(controller.feedback.weeklyReport(), color = Muted, fontSize = 11.sp)
                 Header("ENERGY LEDGER", "Only recorded activity is shown; no invented battery usage numbers.")
                 Text(runCatching { controller.energy.report() }.getOrDefault("No measurements"), color = Muted, fontSize = 11.sp)
             }
@@ -425,6 +510,30 @@ fun ShivInterface(
                 }, enabled = denied.isNotBlank()) { Text("EXCLUDE APP") }
                 Text("Additional excluded apps: " + controller.extraDeniedPackages().ifBlank { "None" },
                     color = Muted, fontSize = 11.sp)
+                Header("ON-DEMAND ACCESSIBILITY",
+                    "Enable manually in Android settings. Each inspection lasts at most 15 seconds.")
+                OutlinedTextField(screenPackage, { screenPackage = it.take(150) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Explicitly allowed screen-app package") })
+                OutlinedButton(onClick = {
+                    runCatching { controller.allowScreenPackage(screenPackage) }
+                    screenPackage = ""
+                }, enabled = screenPackage.isNotBlank()) { Text("ALLOW ONE APP") }
+                Text("Allowed packages: " + controller.screenAllowedPackages().ifBlank { "NONE" },
+                    color = Muted, fontSize = 11.sp)
+                OutlinedButton(onClick = controller::openAccessibilitySettings) {
+                    Text("OPEN ACCESSIBILITY SETTINGS")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = controller::armScreenInspection,
+                        enabled = !controller.sensingPaused && !controller.guestMode &&
+                            !controller.privacyZone) { Text("ARM SCREEN LOOK • 15S") }
+                    OutlinedButton(onClick = controller::disarmScreenInspection) { Text("STOP") }
+                }
+                Text("Only extracted planning facts from allowed apps may be stored; " +
+                    "banking/OTP apps, password fields and sensitive text are rejected. " +
+                    "Android may block secure windows entirely.",
+                    color = Muted, fontSize = 11.sp)
                 Header("DECISION AUDIT LOG", "Why did Shiv perform or reject an action?")
                 if (!controller.guestMode && controller.privateUnlocked) controller.audit.recent().take(15).forEach { trace ->
                     GlassCard {
@@ -432,6 +541,15 @@ fun ShivInterface(
                             color = Color.White, fontWeight = FontWeight.Bold)
                         Text(trace.reason, color = Muted, fontSize = 12.sp)
                         Text("Authority: " + trace.tier, color = Violet, fontSize = 11.sp)
+                        if (trace.action == "PROACTIVE") {
+                            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                                OwnerReaction.entries.forEach { reaction ->
+                                    TextButton(onClick = {
+                                        controller.reactToTrace(trace.id, reaction)
+                                    }) { Text(reaction.name, fontSize = 10.sp) }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -458,6 +576,31 @@ fun ShivInterface(
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp))
     }
+    if (controller.ocrTaskCandidate != null) AlertDialog(
+        onDismissRequest = controller::clearOcrPreview,
+        title = { Text("Review offline OCR due-date task") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Possible due date: " + controller.ocrTaskCandidate!!.dueDate +
+                    ". Text recognition can be wrong. Confirm title and choose a time. " +
+                    "No source image or OCR text is saved.")
+                OutlinedTextField(ocrTaskTitle, { ocrTaskTitle = it.take(256) },
+                    label = { Text("Task title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(ocrTaskTime, { ocrTaskTime = it.take(5) },
+                    label = { Text("Time, 24-hour HH:mm") },
+                    modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { Button(onClick = {
+            controller.confirmOcrTask(ocrTaskTitle, ocrTaskTime)
+        }, enabled = ocrTaskTitle.isNotBlank() &&
+            ocrTaskTime.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+            Text("SAVE REVIEWED TASK")
+        } },
+        dismissButton = {
+            TextButton(onClick = controller::clearOcrPreview) { Text("DISCARD") }
+        }
+    )
     if (pending != null) AlertDialog(
         onDismissRequest = controller::reject,
         title = { Text("REVIEW ACTION • " + pending.kind.name) },

@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">Shiv</string></resources>
+<resources><string name="app_name">Shiv</string><string name="shiv_accessibility_description">Only when you arm a short inspection, Shiv extracts non-sensitive scheduling facts. Enable manually and revoke anytime.</string></resources>

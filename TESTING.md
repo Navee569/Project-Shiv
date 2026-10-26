@@ -54,7 +54,8 @@
 - Battery additional drain: OWNER-VERIFY
 - Local tokens/s and time to first token: OWNER-VERIFY
 - Notification denylist: OWNER-VERIFY
-- Accessibility/ADB/Shizuku: NOT IMPLEMENTED
+- Accessibility on-demand extraction: BUILT - OWNER-VERIFY
+- ADB/Shizuku: NOT IMPLEMENTED (requires separate owner approval)
 - Final functional acceptance: NOT COMPLETE
 
 ## OWNER-VERIFY: reminder authority
@@ -95,3 +96,60 @@
 - Resource-based automatic swap/fallback: NOT TESTED
 - Native cancellation/timeout on S23: NOT TESTED
 - Measured battery/thermal/real-world power use: NOT TESTED
+
+
+## OWNER-VERIFY: opt-in integrations and self-review (new)
+1. Install APK from a successful workflow for the exact SHA. In Automate, leave all
+   optional switches OFF initially. With the phone offline, verify existing manual
+   tasks, reminders and cloud settings (cloud sends only after opt-in).
+2. Calendar: tap PREVIEW DEVICE CALENDAR and approve Calendar permission. Confirm
+   preview is temporary. IMPORT PREVIEWED EVENTS, then import the same events again:
+   no duplicates. Turn the permission off via Galaxy Settings > Apps > Shiv >
+   Permissions > Calendar, then verify the preview cannot read anything.
+3. Contacts: tap LOOK UP CONTACT, grant Contacts permission. Enter part of one known
+   name. Only matching names, not phone numbers, should appear. Clear results and
+   revoke the permission via Galaxy Settings > Apps > Shiv > Permissions > Contacts.
+4. Usage: open Galaxy Settings > Apps > Special access > Usage data access > Shiv
+   and allow manually. Return to Shiv > Automate > PREVIEW LAST 24H APP USAGE.
+   Verify bank/UPI/password-manager apps and excluded packages never appear.
+   Turn usage access off and confirm preview no longer works.
+5. Accessibility: in Privacy add ONE harmless target app package such as your own
+   test calendar app. Enable Shiv in Galaxy Settings > Accessibility > Installed
+   apps (Samsung restricted-settings flow may first require Apps > Shiv >
+   upper-right menu > Allow restricted settings). ARM SCREEN LOOK • 15S and switch
+   to the permitted app. Observe only possible non-sensitive event facts, and
+   confirm a denied app or password field produces nothing. Tap STOP. Revoke
+   Accessibility and test again. FLAG_SECURE contents cannot be reliably verified
+   as exposed by Android; never test with banking/OTP information.
+6. Post-call: enable the opt-in switch in Automate, grant Phone permission, make
+   a harmless test call, end it while notifications are permitted and time is
+   between 9 AM–9 PM. Check whether a generic check-in appears. Record Android's
+   OEM/background restrictions if it does not. No call audio, identity, number or
+   transcript should be stored. Disable the switch and retest.
+7. Proactive: enable reminders/briefs for a harmless saved upcoming test event.
+   Check delivery near due time, no duplicate, no 10 PM–8 AM optional notification,
+   and the daily cap. WorkManager is inexact; do not claim clock-precise delivery.
+   Use Privacy > unlocked audit to label helpful or dismissed; Status displays
+   a seven-day self-review. Disable proactive and ensure no further nudges.
+8. Passive learning: opt in, record at least three completed events on independent
+   weeks in a safe test dataset, trigger charging/idle consolidation, then
+   inspect Memory for a *possible routine* with evidence. Verify owner correction
+   always outranks a hypothesis. Do not interpret CI synthetic timestamps as
+   observed habits on a phone.
+9. Encryption: on an isolated testing device, run Android instrumentation
+   `gradle :app:connectedDebugAndroidTest` with Android Studio/ADB. The SQLCipher
+   test creates and deletes a unique temporary database only. Record hardware
+   result separately; CI only compiles the instrumentation APK.
+10. Measure battery, standby overhead, Samsung foreground/background restrictions,
+    locale support, model speed and thermal state on the S23. All remain OWNER-VERIFY.
+
+
+## OWNER-VERIFY: offline OCR to confirmed task
+- In Chat choose Offline OCR and select a harmless image containing the exact
+  string `Due date: 2026-11-30`. With radios off, Shiv should propose a task
+  but never schedule it on its own.
+- Enter a safe title and a 24-hour clock time, approve, and verify Tasks lists
+  precisely that item. CANCEL must leave the encrypted agenda unchanged.
+- Test impossible and ambiguous dates, password/OTP images, guest/privacy mode,
+  and restart: source photo and raw OCR preview must not remain saved.
+- Kannada/Telugu OCR is still unsupported and must not be claimed to work.

@@ -114,3 +114,36 @@ Do not use this app as a production financial automation or call recorder.
   integrations, passive routines, multilingual improvements and hardware QA.
 - This scope does not alter `ShivIntelligence.kt` or cloud/hybrid behavior.
 - See [feature audit](docs/FEATURE_AUDIT_2026-10-26.md) for requirement-level gaps.
+
+
+## October 26 remaining-development integration pass (branch `development/shiv-complete-pending-20261026`)
+- **Development added (CI/device status must be tracked separately):** opt-in WorkManager
+  agenda nudges, morning/evening event briefs, quiet hours, daily interruption cap,
+  deduplication, owner feedback and deterministic seven-day self-review. No fabricated
+  action outcomes or model inference are used.
+- Passive routine learning is opt-in and consumes only completed, owner-stored agenda
+  events. Three independent days across at least two weeks are required; outputs
+  remain lower-confidence *hypotheses* and do not autonomously change behavior.
+- Owner-reviewed calendar import (bounded two-week preview, idempotent consented save),
+  on-demand contacts name lookup, on-demand aggregate app usage (system-special-access
+  plus source-app denylist), short-lived one-shot Accessibility event fact extraction
+  (must be separately owner-enabled and exact app allowlisted), and generic post-call
+  opt-in check-in without names, numbers, call recordings or call-log access.
+- Owner permissions can be revoked through the Grants screen's instructions.
+- Device-only SQLCipher instrumentation now checks that a disposable database rejects
+  plaintext SQLite and a wrong key; CI compiles the test APK but does **not** run it.
+- New code does not alter the cloud AI `ShivIntelligence.kt`, endpoints, or consent flow.
+- **Still development-incomplete:** full two-model simultaneous residency/independent
+  router, GPU/NPU calibration, automatic notification classification and app replies,
+  continuous always-ready offline speech, multilingual golden-set accuracy, wake word,
+  geofencing, full people/place graph, all third-party account APIs, verified outcome
+  feedback from Android, end-to-end multi-action undo, rich video/camera understanding,
+  robust Kannada/Telugu OCR, Android 26–35 instrumentation matrix and physical QA.
+  Optional PC/ADB/Shizuku/cloud flavors still require independent owner approval.
+  None of these is being represented as production-complete.
+
+
+- Opt-in owner-selected Latin OCR now supports a **proposal-only** due-date parser for
+  ISO dates and an ASK_FIRST title/time review before creating a real encrypted
+  agenda task. It never guesses an hour or persists raw OCR/image bytes.
+  Kannada/Telugu script OCR and open-ended camera understanding remain missing.

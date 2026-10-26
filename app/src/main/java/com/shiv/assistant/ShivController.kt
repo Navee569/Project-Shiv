@@ -4,6 +4,12 @@ import android.content.Context
 import android.net.Uri
 import android.provider.Settings
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+import com.shiv.assistant.integrations.ShivAccessibilityReader
+import com.shiv.assistant.integrations.ShivUsageReader
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
@@ -11,6 +17,8 @@ import com.shiv.assistant.ai.LocalInferenceMetrics
 import com.shiv.assistant.ai.LocalInferenceScheduler
 import com.shiv.assistant.ai.InferenceUrgency
 import com.shiv.assistant.vision.ShivOfflineOcr
+import com.shiv.assistant.vision.OcrTaskParser
+import com.shiv.assistant.vision.OcrTaskCandidate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +37,10 @@ import com.shiv.assistant.data.*
 import com.shiv.assistant.diagnostics.*
 import com.shiv.assistant.domain.*
 import com.shiv.assistant.model.*
+import com.shiv.assistant.integrations.ShivCalendarReader
+import com.shiv.assistant.integrations.ShivContactReader
+import com.shiv.assistant.integrations.CalendarPreview
+import com.shiv.assistant.automation.ShivProactive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.time.LocalDate
@@ -83,6 +95,7 @@ class ShivController(private val context: Context) {
     val agenda = ShivAgenda(vault)
     val agendaItems = mutableStateListOf<AgendaItem>()
     val audit = ShivAuditTrail(vault)
+    val feedback = ShivFeedbackLedger(vault)
     val energy = ShivEnergyLedger(vault)
     private val backup = ShivEncryptedBackup(context, vault)
     val signalQueue = ShivSignalQueue(vault)
@@ -109,6 +122,8 @@ class ShivController(private val context: Context) {
         private set
     var ocrPreview by mutableStateOf("")
         private set
+    var ocrTaskCandidate by mutableStateOf<OcrTaskCandidate?>(null)
+        private set
     var guestMode by mutableStateOf(false)
         private set
     var privacyZone by mutableStateOf(false)
@@ -128,6 +143,15 @@ class ShivController(private val context: Context) {
     var notice by mutableStateOf("Local-first • Encrypted • You control every action")
         private set
     var notificationSummaries by mutableStateOf(false)
+    var postCallOptIn by mutableStateOf(false)
+        private set
+    var proactiveOptIn by mutableStateOf(false)
+        private set
+    var passiveLearningOptIn by mutableStateOf(false)
+        private set
+    val calendarPreview = mutableStateListOf<CalendarPreview>()
+    val contactMatches = mutableStateListOf<String>()
+    val usagePreview = mutableStateListOf<AppUsageObservation>()
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
         private set
     init {
@@ -140,6 +164,9 @@ class ShivController(private val context: Context) {
             )
             apiKey = vault.get("api_secret").orEmpty()
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            postCallOptIn = vault.get("post_call_opt_in") == "yes"
+            proactiveOptIn = vault.get("proactive_opt_in") == "yes"
+            passiveLearningOptIn = vault.get("passive_learning_opt_in") == "yes"
             reminderTier = runCatching {
                 AuthorityTier.valueOf(vault.get("reminder_authority") ?: "ASK_FIRST")
             }.getOrDefault(AuthorityTier.ASK_FIRST).let {
@@ -166,6 +193,160 @@ class ShivController(private val context: Context) {
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
     }
+    fun updatePostCallOptIn(enabled: Boolean) {
+        if (enabled && context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED) {
+            notice = "Android phone-state permission is required first"
+            return
+        }
+        vault.put("post_call_opt_in", if (enabled) "yes" else "no")
+        postCallOptIn = enabled
+        if (!enabled) vault.put("call_phase", "IDLE")
+        audit.add("POST_CALL_CONSENT", if (enabled) "Owner enabled generic call-ended prompts"
+            else "Owner disabled call-ended prompts", "FREE", true)
+        notice = if (enabled) "Generic call-ended check-ins enabled; no audio or number is recorded"
+            else "Call-ended check-ins disabled"
+    }
+    fun openAccessibilitySettings() {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    fun allowScreenPackage(packageName: String) {
+        val value = packageName.trim().lowercase()
+        require(value.matches(Regex("[a-z0-9_]+(?:[.][a-z0-9_]+)+")))
+        require(!PrivacyPolicy.isDeniedPackage(value,
+            extraDeniedPackages().lineSequence().toSet())) { "Sensitive apps cannot be allowed" }
+        val old = vault.get("screen_allowed_packages").orEmpty().lineSequence()
+            .filter { it.isNotBlank() }.toSet()
+        require(old.size < 30 || value in old) { "Maximum screen allowlist size reached" }
+        vault.put("screen_allowed_packages", (old + value).sorted().joinToString("\n"))
+        notice = "Allowed only explicit 15-second inspection for " + value
+    }
+    fun screenAllowedPackages(): String = vault.get("screen_allowed_packages").orEmpty()
+    fun armScreenInspection() {
+        if (guestMode || sensingPaused || privacyZone) {
+            notice = "Screen inspection unavailable while privacy protection is active"
+            return
+        }
+        if (screenAllowedPackages().isBlank()) {
+            notice = "Add at least one permitted app package before arming screen awareness"
+            return
+        }
+        val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabled = manager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK).any {
+            it.resolveInfo.serviceInfo.packageName == context.packageName &&
+                it.resolveInfo.serviceInfo.name == ShivAccessibilityReader::class.java.name
+        }
+        if (!enabled) {
+            notice = "Enable Shiv one-shot screen awareness manually in Android Accessibility settings"
+            return
+        }
+        vault.put("screen_armed_until", (System.currentTimeMillis() + 15_000).toString())
+        notice = "Screen awareness armed for 15 seconds. Open a permitted app now."
+    }
+    fun disarmScreenInspection() {
+        vault.put("screen_armed_until", "0")
+        notice = "Screen awareness disarmed"
+    }
+    fun openUsageAccessSettings() {
+        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    fun previewUsage() {
+        usagePreview.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Privacy protection is active"
+            return
+        }
+        val reader = ShivUsageReader(context)
+        if (!reader.hasGrant()) {
+            notice = "Usage Access is not granted; enable it manually in Android settings"
+            return
+        }
+        try {
+            val extra = extraDeniedPackages().lineSequence()
+                .map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+            usagePreview.addAll(reader.pastDay(extra))
+            notice = "On-demand package usage summary; not stored or sent to a model"
+        } catch (_: Exception) { notice = "Usage statistics are unavailable" }
+    }
+    fun clearUsagePreview() { usagePreview.clear() }
+    fun reactToTrace(traceId: String, reaction: OwnerReaction) {
+        if (guestMode || !privateUnlocked) {
+            notice = "Unlock private memory before recording feedback"
+            return
+        }
+        try {
+            require(audit.recent().any { it.id == traceId && it.action == "PROACTIVE" })
+            feedback.record(traceId, reaction)
+            notice = "Your feedback was saved encrypted; only deterministic nudge caps may adapt"
+        } catch (_: Exception) { notice = "Feedback could not be saved" }
+    }
+    fun updateProactiveOptIn(enabled: Boolean) {
+        vault.put("proactive_opt_in", if (enabled) "yes" else "no")
+        proactiveOptIn = enabled
+        ShivProactive.schedule(context)
+        audit.add("PROACTIVE_CONSENT", if (enabled) "Owner enabled scheduled agenda nudges"
+            else "Owner disabled scheduled agenda nudges", "FREE", true)
+        notice = if (enabled) "Private agenda reminders and daily briefs enabled"
+            else "Proactive agenda nudges disabled"
+    }
+    fun updatePassiveLearningOptIn(enabled: Boolean) {
+        vault.put("passive_learning_opt_in", if (enabled) "yes" else "no")
+        passiveLearningOptIn = enabled
+        audit.add("LEARNING_CONSENT", if (enabled) "Owner enabled learning from completed agenda items"
+            else "Owner disabled routine learning", "FREE", true)
+        notice = if (enabled) "Repeated completed events may form evidence-based hypotheses"
+            else "Passive routine learning paused"
+    }
+    fun previewDeviceCalendar() {
+        calendarPreview.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Private sensing is paused"
+            return
+        }
+        try {
+            calendarPreview.addAll(ShivCalendarReader(context).upcoming())
+            notice = calendarPreview.size.toString() +
+                " calendar entries previewed. Nothing saved until you confirm import."
+        } catch (_: SecurityException) { notice = "Grant Calendar permission first" }
+        catch (_: Exception) { notice = "Calendar preview unavailable" }
+    }
+    fun importCalendarPreview() {
+        if (sensingPaused || guestMode || privacyZone) {
+            calendarPreview.clear()
+            notice = "Private sensing is paused"
+            return
+        }
+        var count = 0
+        try {
+            for (event in calendarPreview) {
+                if (agenda.importCalendar(event.eventId, event.title, event.startMillis)) count++
+            }
+            agendaItems.clear()
+            agendaItems.addAll(agenda.list())
+            audit.add("CALENDAR_IMPORT", "Owner confirmed " + count + " local calendar event(s)",
+                "ASK_FIRST", true)
+            notice = count.toString() + " new calendar events saved to encrypted Shiv agenda"
+        } catch (_: Exception) { notice = "Calendar import incomplete; saved entries are deduplicated" }
+        finally { calendarPreview.clear() }
+    }
+    fun clearCalendarPreview() { calendarPreview.clear() }
+    fun searchDeviceContacts(name: String) {
+        contactMatches.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Private sensing is paused"
+            return
+        }
+        try {
+            contactMatches.addAll(ShivContactReader(context).searchByName(name))
+            notice = "Read-only contact-name lookup. Nothing is saved."
+        } catch (_: SecurityException) { notice = "Grant Contacts permission first" }
+        catch (_: Exception) { notice = "Contact lookup unavailable" }
+    }
+    fun clearContactPreview() { contactMatches.clear() }
+
     fun updateReminderTier(requested: AuthorityTier) {
         require(requested in setOf(AuthorityTier.ASK_FIRST, AuthorityTier.ACT_THEN_TELL)) {
             "Only reviewed and reversible reminder authority is supported"
@@ -210,9 +391,17 @@ class ShivController(private val context: Context) {
         notice = "Intelligence configuration saved securely"
     }
     fun updateSensingPaused(value: Boolean) {
-        if (value) ocrPreview = ""
+        if (value) {
+            ocrPreview = ""
+            ocrTaskCandidate = null
+            calendarPreview.clear()
+            contactMatches.clear()
+            usagePreview.clear()
+            vault.put("screen_armed_until", "0")
+        }
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
+        ShivProactive.schedule(context)
         if (!value) WorkManager.getInstance(context).enqueueUniqueWork(
             "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ShivSignalWorker>().build())
@@ -220,15 +409,30 @@ class ShivController(private val context: Context) {
             "ASK_FIRST", true)
     }
     fun updateGuestMode(value: Boolean) {
-        if (value) { privateUnlocked = false; ocrPreview = "" }
+        if (value) {
+            privateUnlocked = false
+            ocrPreview = ""
+            ocrTaskCandidate = null
+            calendarPreview.clear()
+            contactMatches.clear()
+            vault.put("screen_armed_until", "0")
+        }
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
+        ShivProactive.schedule(context)
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
     }
     fun updatePrivacyZone(value: Boolean) {
-        if (value) ocrPreview = ""
+        if (value) {
+            ocrPreview = ""
+            ocrTaskCandidate = null
+            calendarPreview.clear()
+            contactMatches.clear()
+            vault.put("screen_armed_until", "0")
+        }
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
+        ShivProactive.schedule(context)
         audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
             "FREE", true)
     }
@@ -237,7 +441,11 @@ class ShivController(private val context: Context) {
         require(name.matches(Regex("[a-z0-9_]+(?:[.][a-z0-9_]+)+"))) { "Enter a valid Android package identifier" }
         val old = vault.get("denied_packages").orEmpty().lineSequence().filter { it.isNotBlank() }.toSet()
         vault.put("denied_packages", (old + name).sorted().joinToString("\n"))
-        notice = "App added to the denylist; content from it is not stored"
+        val included = screenAllowedPackages().lineSequence().filter {
+            it.isNotBlank() && it != name
+        }.joinToString("\n")
+        vault.put("screen_allowed_packages", included)
+        notice = "App excluded; any former screen allowlist entry has been revoked"
     }
     fun extraDeniedPackages() = vault.get("denied_packages").orEmpty()
     fun onBiometricAuthenticated() {
@@ -780,14 +988,37 @@ class ShivController(private val context: Context) {
         vault.put("notification_opt_in", if (on) "yes" else "no")
         if (!on) vault.clearNotifications()
     }
-    fun clearOcrPreview() { ocrPreview = "" }
+    fun clearOcrPreview() { ocrPreview = ""; ocrTaskCandidate = null }
+    fun confirmOcrTask(title: String, localClock: String) {
+        val candidate = ocrTaskCandidate ?: return
+        if (sensingPaused || guestMode || privacyZone) {
+            clearOcrPreview()
+            notice = "Sensing is paused"
+            return
+        }
+        try {
+            require(localClock.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+                "Enter time as HH:mm"
+            }
+            require(title.trim().length in 1..256)
+            agenda.add(title, candidate.dueDate.toString() + " " + localClock, AgendaKind.TASK)
+            agendaItems.clear()
+            agendaItems.addAll(agenda.list())
+            audit.add("OCR_TASK", "Owner reviewed an offline OCR due date and supplied time",
+                "ASK_FIRST", true)
+            clearOcrPreview()
+            notice = "Owner-confirmed OCR task saved to encrypted agenda"
+        } catch (_: Exception) {
+            notice = "Could not create OCR task; check title, time and future date"
+        }
+    }
     suspend fun scanOfflineImage(uri: Uri) {
         if (working || sensingPaused || guestMode || privacyZone) {
             notice = "Sensing is paused; local OCR was not started"
             return
         }
         working = true
-        ocrPreview = ""
+        clearOcrPreview()
         try {
             val start = System.nanoTime()
             val original = ShivOfflineOcr.scan(context, uri)
@@ -799,7 +1030,8 @@ class ShivController(private val context: Context) {
                 notice = "No safe Latin text found (or sensitive/OTP content rejected)"
             } else {
                 ocrPreview = safe
-                notice = "Temporary on-device Latin OCR preview; NOT stored, NOT sent"
+                ocrTaskCandidate = OcrTaskParser.parse(safe)
+                notice = "Temporary Latin OCR preview; any possible due date needs owner review"
             }
         } catch (e: Exception) {
             notice = "Offline OCR failed: " + (e.message ?: "unsupported image")

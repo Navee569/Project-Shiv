@@ -72,3 +72,29 @@ app are not supported. Do not enable broad screen scanning.
 For a feature-by-feature audit, including unimplemented families and real-phone
 release blockers, see [docs/FEATURE_AUDIT_2026-10-26.md](docs/FEATURE_AUDIT_2026-10-26.md).
 Existing cloud/hybrid AI integration remains unchanged.
+
+
+## Permissioned anticipation and Android awareness (new development path)
+
+Automate includes optional quiet-hour/cap-limited agenda nudges, morning/evening briefs,
+evidence-based routine hypotheses, a temporary preview of Android calendar items,
+on-demand Contacts name lookup, aggregate Usage Access preview, and generic
+after-call check-ins. These features are disabled until the owner grants the
+corresponding permission or opts in. Calendar events are stored only after clicking
+IMPORT PREVIEWED EVENTS; Contacts and Usage previews are never retained.
+
+Privacy provides one-shot Accessibility inspection. The owner must explicitly
+enable the service in Android settings AND add a specific source-package allowlist;
+arming lasts at most 15 seconds. The feature extracts only possible scheduling
+facts and never persists raw screen text. An opt-out/kill switch is present. Android
+may suppress or redact secure windows; do not rely on this for financial apps.
+
+The weekly report uses the owner's own reactions, not assumed real-world success.
+All collected persistent records remain encrypted. Optional features and actual
+runtime operation still require Galaxy S23 testing. See TESTING.md. The cloud
+AI API, including the previously configured hybrid mode, is unchanged.
+
+
+Offline Latin OCR can now propose a task when the selected document contains an
+explicit ISO due date. The owner must supply the title and clock time, and
+accept the proposal; Shiv does not persist the source image or OCR text.
