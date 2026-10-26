@@ -34,7 +34,11 @@ class ShivAccessibilityReader : AccessibilityService() {
             val exclusions = vault.get("denied_packages").orEmpty().lineSequence()
                 .map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
             // Source package is checked BEFORE touching any node or event text.
-            if (PrivacyPolicy.isDeniedPackage(source, exclusions) ||
+            val allowlist = vault.get("screen_allowed_packages").orEmpty().lineSequence()
+                .map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+            // Fail closed unless the owner allowed this precise package beforehand.
+            if (source.lowercase() !in allowlist ||
+                PrivacyPolicy.isDeniedPackage(source, exclusions) ||
                 event.isPassword || event.source?.isPassword == true) return
             val candidate = event.text.firstOrNull()?.toString() ?: return
             // Fail closed on account numbers or OTP-like digits even without labels.
