@@ -128,3 +128,9 @@ resolved: model quality/energy, provider integrations, foreground speech
 behavior, encrypted data import from legacy interrupted upgrades, complete
 undo, and physical M11 acceptance remain open. Phase 2 remains deferred per
 the mandatory entry gate. Cloud AI API implementation remains untouched.
+
+
+- M8/N4: one selected-image **Latin-only** offline OCR path and owner-approved
+  strict future due-date task creation. Does not supply Kannada/Telugu OCR,
+  continuous screen monitoring, general document reasoning or verified S23
+  recognition quality.
