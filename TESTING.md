@@ -141,3 +141,14 @@
    result separately; CI only compiles the instrumentation APK.
 10. Measure battery, standby overhead, Samsung foreground/background restrictions,
     locale support, model speed and thermal state on the S23. All remain OWNER-VERIFY.
+
+
+## OWNER-VERIFY: offline OCR to confirmed task
+- In Chat choose Offline OCR and select a harmless image containing the exact
+  string `Due date: 2026-11-30`. With radios off, Shiv should propose a task
+  but never schedule it on its own.
+- Enter a safe title and a 24-hour clock time, approve, and verify Tasks lists
+  precisely that item. CANCEL must leave the encrypted agenda unchanged.
+- Test impossible and ambiguous dates, password/OTP images, guest/privacy mode,
+  and restart: source photo and raw OCR preview must not remain saved.
+- Kannada/Telugu OCR is still unsupported and must not be claimed to work.
