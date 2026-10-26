@@ -261,6 +261,26 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     TextButton(onClick={controller::discardCalendarPreview}) {
                         Text("DISCARD ALL PREVIEWS")
                     }
+                Text("APP USAGE • OWNER-REQUESTED PREVIEW",color=accent)
+                Text("Read only 24-hour foreground duration totals after manually granting " +
+                    "Android Usage Access. Sensitive apps are excluded. Results are temporary, " +
+                    "never entered into memory or an AI prompt.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedButton(onClick={controller::openUsageAccessSettings}) {
+                    Text("OPEN USAGE ACCESS SETTINGS")
+                }
+                OutlinedButton(onClick={scope.launch{controller.previewUsage()}}) {
+                    Text("PREVIEW APP USAGE")
+                }
+                controller.usagePreview.forEach { item ->
+                    Text(item.packageName+" • "+(item.foregroundMs/60_000L)+" min",
+                        color=Color.LightGray,fontSize=11.sp)
+                }
+                if(controller.usagePreview.isNotEmpty()) {
+                    OutlinedButton(onClick={controller::clearUsagePreview}) {
+                        Text("CLEAR USAGE PREVIEW")
+                    }
+                }
                 Text("CONTACTS — NAME SEARCH ONLY",color=accent)
                 OutlinedTextField(value=contactQuery,
                     onValueChange={contactQuery=it.take(60)},
