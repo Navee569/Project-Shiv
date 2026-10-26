@@ -51,3 +51,8 @@ newly implemented code paths and their actual remaining verification status.
 
 A feature with a working entrypoint is still not automatically a completed Phase
 1/Phase 2 milestone. Major missing work remains as listed in STATUS.md.
+
+
+- **Offline OCR to agenda (code path):** ISO due-date extraction from temporary
+  Latin OCR preview, explicit owner time and title confirmation. Not a fully
+  multilingual receipt or bill understanding feature; OWNER-VERIFY.
