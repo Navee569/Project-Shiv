@@ -474,6 +474,21 @@ fun ShivInterface(
                 }, enabled = denied.isNotBlank()) { Text("EXCLUDE APP") }
                 Text("Additional excluded apps: " + controller.extraDeniedPackages().ifBlank { "None" },
                     color = Muted, fontSize = 11.sp)
+                Header("ON-DEMAND ACCESSIBILITY",
+                    "Enable manually in Android settings. Each inspection lasts at most 15 seconds.")
+                OutlinedButton(onClick = controller::openAccessibilitySettings) {
+                    Text("OPEN ACCESSIBILITY SETTINGS")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = controller::armScreenInspection,
+                        enabled = !controller.sensingPaused && !controller.guestMode &&
+                            !controller.privacyZone) { Text("ARM SCREEN LOOK • 15S") }
+                    OutlinedButton(onClick = controller::disarmScreenInspection) { Text("STOP") }
+                }
+                Text("Only extracted planning facts from allowed apps may be stored; " +
+                    "banking/OTP apps, password fields and sensitive text are rejected. " +
+                    "Android may block secure windows entirely.",
+                    color = Muted, fontSize = 11.sp)
                 Header("DECISION AUDIT LOG", "Why did Shiv perform or reject an action?")
                 if (!controller.guestMode && controller.privateUnlocked) controller.audit.recent().take(15).forEach { trace ->
                     GlassCard {
