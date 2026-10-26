@@ -140,3 +140,34 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
    task appears in Events. Test invalid past/ambiguous dates, DISCARD, app
    restart and images containing OTP or long account numbers. Kannada/Telugu
    OCR must not be claimed from the Latin-only model.
+
+
+## Owner acceptance for optional agenda, daily compute and Usage Access
+
+1. Install APK from successful latest code-commit CI (not a stale artifact).
+   Leave optional agenda notifications OFF, save a harmless event, and check
+   no unsolicited agenda notification appears.
+2. Enable optional agenda notices in Permissions; grant POST_NOTIFICATIONS
+   only if desired. On an owner-approved imminent event, verify Android
+   may show one generic optional notice and never repeats it; quiet hours
+   10 PM–9 AM and daily cap three apply. WorkManager is not clock-precise.
+3. Submit ACTED/SNOOZED/DISMISSED/CORRECTED for the last optional notice
+   and inspect the weekly owner-feedback summary. Three negative entries
+   should lower only the discretionary cap, not block explicit reminders.
+4. In AI Status set local model compute budgets (1m/5m/10m/30m).
+   Compare the *measured elapsed model time* before and after a real local
+   inference. Once the cap is used, additional nonurgent model inference
+   should fail safely while owner reminders continue independently.
+   A native engine may take additional time to honor cancellation.
+5. Usage Access: open Android Settings > Apps > Special app access > Usage
+   data access and grant Shiv manually. Run PREVIEW APP USAGE. Sensitive
+   banking, OTP, wallet and excluded app packages must not appear.
+   Clear results, revoke the grant, and confirm subsequent previews fail.
+   No package usage data should be retained in encrypted memory or the
+   portable archive.
+6. Run unit tests plus API26/35 instrumentation against the same head SHA;
+   include malformed AI JSON proposals, quiet-hour boundaries and
+   budget exhaustion regressions.
+7. The Galaxy S23 speech, battery, model compatibility, Android permissions,
+   activity restoration, protected windows and other outstanding M11 criteria
+   require owner-phone verification. CI cannot establish this release gate.
