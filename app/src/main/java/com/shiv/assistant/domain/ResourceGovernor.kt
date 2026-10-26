@@ -60,7 +60,14 @@ object ResourceGovernor {
             PowerMode.BALANCED -> 20
             PowerMode.LIGHT -> 5
         }
-        return ComputeLease(true, mode, "Within resource budget", seconds,
+        // A lease cannot grant more discretionary model time than remains today.
+        // The executor must also enforce maxModelSeconds during the actual inference.
+        val remaining = (dailyBudgetSeconds.toLong() - usedSecondsToday.toLong())
+            .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        if (remaining == 0) return ComputeLease(false, PowerMode.LIGHT,
+            "Daily compute budget exhausted", 0, false)
+        return ComputeLease(true, mode, "Within resource budget",
+            minOf(seconds, remaining),
             requested == WorkClass.CONVERSATION && largeAllowed)
     }
 }
