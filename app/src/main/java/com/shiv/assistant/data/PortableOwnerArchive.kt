@@ -144,6 +144,14 @@ class PortableOwnerArchive(
         // The currently running WorkManager jobs remain owned by the previous
         // database state; obtain their IDs before replacing its private records.
         val oldReminderIds=database.dao().reminderIds()
+        // Revoke producers before the destructive transaction. This keeps
+        // queued callbacks from reintroducing data as the restore completes.
+        check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
+            .edit().clear().commit()) { "Unable to disable notification/screen sensing" }
+        check(context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE)
+            .edit().clear().commit()) { "Unable to disable passive learning" }
+        check(context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE)
+            .edit().clear().commit()) { "Unable to disable call check-ins" }
         database.runInTransaction {
             val sql=database.openHelper.writableDatabase
             for(table in tables.asReversed())sql.execSQL("DELETE FROM "+table)
@@ -155,13 +163,12 @@ class PortableOwnerArchive(
         // Invalidate previous background delivery after commit. Restored
         // reminders and approvals remain inert by design.
         val work=androidx.work.WorkManager.getInstance(context)
-        for(id in oldReminderIds)work.cancelAllWorkByTag("shiv-reminder-"+id)
+        for(id in oldReminderIds) {
+            work.cancelAllWorkByTag("shiv-reminder-"+id)
+            work.cancelUniqueWork("shiv-approved-"+id)
+        }
         work.cancelUniqueWork("shiv-durable-signals")
         work.cancelUniqueWork("shiv-opt-in-pattern-learning")
-        val prefs=context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
-        prefs.edit().clear().commit()
-        context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit().clear().commit()
-        context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE).edit().clear().commit()
         snapshot.values.sumOf { it.size }
     }
 
