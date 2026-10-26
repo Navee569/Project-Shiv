@@ -7,8 +7,6 @@ import android.os.Build
 import android.content.pm.PackageManager
 import com.shiv.assistant.voice.ShivMicSessionService
 import android.content.Intent
-import android.Manifest
-import android.content.pm.PackageManager
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
