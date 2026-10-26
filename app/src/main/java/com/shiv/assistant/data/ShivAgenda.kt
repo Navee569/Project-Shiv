@@ -48,6 +48,24 @@ class ShivAgenda(private val vault: ShivVault) {
         save(list() + item)
         return item
     }
+    /**
+     * Called only after the owner confirms previewing an Android calendar instance.
+     * Importing the same event twice cannot create duplicates.
+     */
+    @Synchronized
+    fun importCalendar(eventId: Long, title: String, startMillis: Long): Boolean {
+        val safeTitle = title.trim()
+        require(eventId > 0 && safeTitle.length in 1..256)
+        require(startMillis > System.currentTimeMillis() - 60000L)
+        require(startMillis < System.currentTimeMillis() + 365L * 86400000L)
+        val provenance = "calendar:" + eventId
+        val records = list()
+        if (records.any { it.source == provenance && it.dueEpochMs == startMillis }) return false
+        require(records.size < 1500) { "Agenda capacity reached" }
+        save(records + AgendaItem(UUID.randomUUID().toString(), safeTitle,
+            startMillis, AgendaKind.EVENT, false, provenance))
+        return true
+    }
     @Synchronized
     fun rename(id: String, newTitle: String) {
         val title = newTitle.trim()
