@@ -167,23 +167,18 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         try {
             val lease=ModelGovernor(context).lease(record.role)
             require(lease.allowed) { lease.reason }
-            // E2B and 1B cannot coexist when RAM pressure is high.
-            if(record.role=="conversation" && lease.freeRamBytes<4_000_000_000L)
-                hub.router.unload()
             require(withContext(Dispatchers.IO) {
                 com.shiv.assistant.ai.ModelIntegrity.valid(File(record.uri),record.bytes,record.sha256)
             }) {
                 "Imported model checksum or size changed. Reimport a trusted model file."
             }
-            val brain=if(record.role=="router")hub.router else hub.conversation
-            brain.load(File(record.uri))
+            hub.load(record.role, File(record.uri), lease.freeRamBytes)
             progress="Model loaded: "+record.name
         } catch(e:Exception) { issue=e.message?:"LiteRT failed to load model" }
         finally { loading=false }
     }
     suspend fun removeModel(record:ModelRecord) {
-        if(hub.router.status().modelName==File(record.uri).name)hub.router.unload()
-        if(hub.conversation.status().modelName==File(record.uri).name)hub.conversation.unload()
+        hub.unloadForRemoval(record.role, File(record.uri).name)
         ModelImporter(context).remove(record)
         reload()
     }
@@ -255,6 +250,8 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             " | Conversation: "+(chat.modelName?:"not loaded")+
             " | Queue: "+hub.inference.pendingCount()+
             " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
-            " | Reply ms: "+(chat.lastReplyMs?.toString()?:"not measured")
+            " | Reply ms: "+(chat.lastReplyMs?.toString()?:"not measured")+
+            " | First text fragment ms: "+(chat.firstFragmentMs?.toString()?:"not measured")+
+            " | Output chars: "+(chat.lastOutputCharacters?.toString()?:"not measured")
     }
 }
