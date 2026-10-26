@@ -218,7 +218,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             "This is not a measured battery budget."
     }
     fun localComputeReport():String=computeLedger.report()
-    fun setProactiveOptIn(enabled:Boolean) {
+    fun changeProactiveOptIn(enabled:Boolean) {
         ShivVault(context).put("proactive_opt_in",if(enabled)"yes" else "no")
         proactiveOptIn=enabled
         ShivAgendaNudgeWorker.updateRegistration(context,enabled)
