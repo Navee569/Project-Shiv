@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Runtime granted ONLY for explicit owner contact-name searches. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -47,5 +49,8 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <service android:name=".voice.ShivMicSessionService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>

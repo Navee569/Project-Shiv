@@ -3,13 +3,20 @@ package com.shiv.assistant
 import android.content.Context
 import android.net.Uri
 import android.Manifest
+import android.os.Build
 import android.content.pm.PackageManager
+import com.shiv.assistant.voice.ShivMicSessionService
+import android.content.Intent
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
 import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.DueDateProposal
+import java.time.LocalTime
+import java.time.ZoneId
+import java.util.UUID
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
@@ -26,6 +33,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val models=mutableStateListOf<ModelRecord>()
     val memories=mutableStateListOf<MemoryRecord>()
     val upcoming=mutableStateListOf<EventRecord>()
+    val upcomingTasks=mutableStateListOf<TaskRecord>()
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
@@ -138,6 +146,35 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
         progress="Custom exclusion removed; built-in banking denylist remains enforced"
     }
+    fun startOfflineMicSession(locale:String) {
+        if(Build.VERSION.SDK_INT<33 ||
+            !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            issue="Offline on-device speech service unavailable. No cloud recognizer was started."
+            return
+        }
+        if(context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=
+            PackageManager.PERMISSION_GRANTED) {
+            issue="Grant microphone permission before starting an owner-driven session"
+            return
+        }
+        if(locale !in setOf("en-IN","kn-IN","te-IN")) {
+            issue="Choose Kannada, Telugu or English"
+            return
+        }
+        try {
+            context.startForegroundService(Intent(context,ShivMicSessionService::class.java)
+                .setAction(ShivMicSessionService.ACTION_START)
+                .putExtra(ShivMicSessionService.EXTRA_LOCALE,locale))
+            issue=null
+            progress="Owner-started offline microphone session requested. Notification STOP available; expires within 10 minutes."
+        } catch (_:Exception) {
+            issue="Android blocked the microphone session. Start it with Shiv in foreground."
+        }
+    }
+    fun stopOfflineMicSession() {
+        context.stopService(Intent(context,ShivMicSessionService::class.java))
+        progress="Offline microphone session stopped"
+    }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
@@ -159,9 +196,31 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         }
     }
     fun cancelModel() { candidate=null }
+    suspend fun saveOwnerReviewedOcrTask(
+        proposal:DueDateProposal, title:String,clock:String
+    ) {
+        require(title.trim().length in 3..180) { "Task title must contain 3–180 characters" }
+        require(clock.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+            "Choose an explicit 24-hour time"
+        }
+        val time=LocalTime.parse(clock)
+        val dueAt=proposal.date.atTime(time).atZone(ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
+        require(dueAt>System.currentTimeMillis()) { "Task time must be in the future" }
+        withContext(Dispatchers.IO) {
+            val id=UUID.randomUUID().toString()
+            dao.putTask(TaskRecord(id,title.trim(),"OPEN",dueAt))
+            dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),
+                "OCR_TASK","[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,
+                "ENCRYPTED_TASK_SAVED",null))
+        }
+        progress="Owner-confirmed offline OCR task saved to encrypted Shiv agenda"
+        reload()
+    }
     suspend fun reload() = withContext(Dispatchers.IO) {
         val stored=dao.models()
         val events=repository.upcoming(System.currentTimeMillis(),System.currentTimeMillis()+48*3600_000L)
+        val tasks=dao.pendingTasks()
         val storedBeliefs=dao.beliefs()
         val traces=dao.traces(30)
         val count=dao.pendingCount()
@@ -171,6 +230,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             models.clear();models.addAll(stored)
             memories.clear();memories.addAll(savedMemories)
             upcoming.clear();upcoming.addAll(events)
+            upcomingTasks.clear();upcomingTasks.addAll(tasks)
             beliefs.clear();beliefs.addAll(storedBeliefs)
             decisions.clear();decisions.addAll(traces)
             notificationCount=count

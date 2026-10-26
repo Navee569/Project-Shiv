@@ -124,6 +124,13 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putModel(value: ModelRecord)
     @Query("SELECT * FROM models ORDER BY importedAt DESC") suspend fun models(): List<ModelRecord>
     @Query("DELETE FROM models WHERE id=:id") suspend fun deleteModel(id: String)
+    @Query("SELECT id FROM signals WHERE source=:source AND fact=:fact AND receivedAt >= :since AND status != 'FAILED' ORDER BY receivedAt DESC LIMIT 1")
+    suspend fun recentMatchingSignal(source:String,fact:String,since:Long):String?
+    @Transaction suspend fun enqueueIfNew(value:SignalRecord,since:Long):Boolean {
+        if(recentMatchingSignal(value.source,value.fact,since)!=null)return false
+        enqueue(value)
+        return true
+    }
     @Insert(onConflict=OnConflictStrategy.ABORT) suspend fun enqueue(value: SignalRecord)
     @Query("SELECT * FROM signals WHERE status IN ('PENDING','RETRY') AND attempts < 8 ORDER BY priority DESC, receivedAt ASC LIMIT 1")
     suspend fun nextSignal(): SignalRecord?

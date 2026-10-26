@@ -44,6 +44,10 @@ class ShivController(private val context: Context) {
         private set
     var visionCandidate by mutableStateOf<Uri?>(null)
         private set
+    var ocrPreview by mutableStateOf("")
+        private set
+    var ocrDueDate by mutableStateOf<com.shiv.assistant.domain.DueDateProposal?>(null)
+        private set
     var working by mutableStateOf(false)
         private set
     var notice by mutableStateOf("Local-first • Encrypted • You control every action")
@@ -255,6 +259,8 @@ class ShivController(private val context: Context) {
      * public model files are intentionally retained; this is not a device wipe.
      */
     suspend fun eraseOwnerRecords() {
+        context.stopService(android.content.Intent(
+            context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
         require(!working) { "Finish the current action first" }
         working=true
         try {
@@ -287,6 +293,7 @@ class ShivController(private val context: Context) {
             macros.clear()
             pending=null
             visionCandidate=null
+            clearOcrPreview()
             apiKey=""
             config=AssistantConfiguration()
             speechLocale="en-IN"
@@ -299,6 +306,32 @@ class ShivController(private val context: Context) {
         } finally {
             working=false
         }
+    }
+
+    /**
+     * UI refresh after owner-initiated portable restore. Existing sessions and
+     * cloud grants must not survive import of another device's encrypted data.
+     * The imported cloud API secret remains encrypted but is NOT enabled.
+     */
+    suspend fun afterPortableRestore(count:Int) {
+        context.stopService(android.content.Intent(
+            context,com.shiv.assistant.voice.ShivMicSessionService::class.java))
+        phase.hub.clearSessions()
+        messages.clear()
+        notes.clear()
+        macros.clear()
+        pending=null
+        visionCandidate=null
+        clearOcrPreview()
+        apiKey=""
+        config=AssistantConfiguration()
+        reminderTier=AuthorityTier.ASK_FIRST
+        notificationSummaries=false
+        speechLocale="en-IN"
+        phase.discardCalendarPreview()
+        phase.clearContactNames()
+        phase.reload()
+        notice="Restored "+count+" encrypted records. Cloud and old reminders remain disabled; restart Shiv to review settings."
     }
 
     fun clearHistory() {
@@ -321,8 +354,49 @@ class ShivController(private val context: Context) {
             .putBoolean("notifications_enabled", on).apply()
         if (!on) vault.clearNotifications()
     }
-    fun chooseImage(uri: Uri?) { visionCandidate = uri }
+    fun chooseImage(uri: Uri?) {
+        visionCandidate = uri
+        clearOcrPreview()
+    }
     fun cancelImage() { visionCandidate = null }
+    fun clearOcrPreview() {
+        ocrPreview=""
+        ocrDueDate=null
+    }
+    suspend fun recognizeImageTextOffline() {
+        val selected=visionCandidate ?: return
+        visionCandidate=null
+        working=true
+        try {
+            val found=com.shiv.assistant.ai.OfflineLatinOcr(context).extract(selected)
+            // Deliberately reject possible credentials before storing even
+            // a transient Compose/UI state. The selected image is not copied.
+            if(Regex("(?i)\\b(otp|password|passcode|pin|cvv|verification code)\\b")
+                .containsMatchIn(found) || Regex("\\b[0-9]{8,}\\b").containsMatchIn(found)) {
+                clearOcrPreview()
+                notice="OCR content may contain credentials; preview suppressed"
+            } else {
+                ocrPreview=found.take(2000).ifBlank { "No readable Latin text detected" }
+                ocrDueDate=com.shiv.assistant.domain.OcrDueDatePolicy.propose(found)
+                notice="Offline OCR preview only; no text saved or sent to cloud"
+            }
+        } catch (_:Exception) {
+            clearOcrPreview()
+            notice="Offline Latin OCR unavailable for the selected image"
+        } finally {working=false}
+    }
+    suspend fun approveOcrDueTask(title:String,clock:String) {
+        val candidate=ocrDueDate ?: return
+        if(working)return
+        working=true
+        try {
+            phase.saveOwnerReviewedOcrTask(candidate,title,clock)
+            clearOcrPreview()
+            notice="Owner-confirmed OCR task saved in encrypted agenda"
+        } catch (_:Exception) {
+            notice="Task not saved. Check title, future date and 24-hour time."
+        } finally {working=false}
+    }
     suspend fun labelImageLocally() {
         val uri=visionCandidate?:return
         visionCandidate=null

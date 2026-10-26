@@ -43,6 +43,8 @@ fun ShivInterface(
     var draft by remember { mutableStateOf("") }
     var goal by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var ocrTaskTitle by remember { mutableStateOf("Review document commitment") }
+    var ocrTaskClock by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Capability?>(null) }
     val pending = controller.pending
     val photo = controller.visionCandidate
@@ -238,12 +240,53 @@ fun ShivInterface(
         text = { Text("This sends the selected image to your configured cloud endpoint. Only proceed if you trust that provider. Images stay local otherwise.") },
         confirmButton = {
             Row {
-                TextButton(onClick={scope.launch{controller.labelImageLocally()}}) { Text("LOCAL LABELS") }
+                TextButton(onClick={scope.launch{controller.labelImageLocally()}}) {
+                    Text("LOCAL LABELS")
+                }
+                TextButton(onClick={scope.launch{controller.recognizeImageTextOffline()}}) {
+                    Text("LOCAL OCR")
+                }
                 Button(onClick={scope.launch{controller.approveVision()}},
                     enabled=CloudSafety.maySend(controller.config)) { Text("SEND TO API") }
             }
         },
         dismissButton = { TextButton(onClick = controller::cancelImage) { Text("KEEP PRIVATE") } }
+    )
+    if (controller.ocrPreview.isNotBlank()) AlertDialog(
+        onDismissRequest=controller::clearOcrPreview,
+        title={Text("OFFLINE LATIN OCR • OWNER REVIEW")},
+        text={
+            Column(Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("Only temporary on-device text. No raw photo, recognized text or prediction is saved.",
+                    color=Muted,fontSize=11.sp)
+                Text(controller.ocrPreview.take(1500),color=Color.White,fontSize=12.sp)
+                controller.ocrDueDate?.let {due ->
+                    Text("POSSIBLE DUE DATE: "+due.date+" (unconfirmed)",
+                        color=Neon,fontSize=12.sp)
+                    OutlinedTextField(value=ocrTaskTitle,
+                        onValueChange={ocrTaskTitle=it.take(180)},
+                        label={Text("Owner-confirmed task title")})
+                    OutlinedTextField(value=ocrTaskClock,
+                        onValueChange={ocrTaskClock=it.take(5)},
+                        label={Text("Task time: 24-hour HH:mm")},singleLine=true)
+                }
+            }
+        },
+        confirmButton={
+            val due=controller.ocrDueDate
+            if(due!=null)
+                Button(enabled=ocrTaskTitle.trim().length>=3 &&
+                    ocrTaskClock.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")),
+                    onClick={scope.launch {
+                        controller.approveOcrDueTask(ocrTaskTitle,ocrTaskClock)
+                        ocrTaskClock=""
+                    }}) {Text("SAVE REVIEWED TASK")}
+            else TextButton(onClick=controller::clearOcrPreview) {Text("OK")}
+        },
+        dismissButton={
+            TextButton(onClick=controller::clearOcrPreview) {Text("DISCARD")}
+        }
     )
     if (selected != null) AlertDialog(
         onDismissRequest = { selected = null },
