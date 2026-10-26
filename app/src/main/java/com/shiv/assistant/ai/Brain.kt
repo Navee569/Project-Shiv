@@ -11,10 +11,13 @@ import kotlinx.coroutines.flow.collect
 import java.io.File
 import java.io.Closeable
 import java.util.concurrent.Executors
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class BrainStatus(
     val ready: Boolean, val modelName: String?, val queueLength: Int,
-    val lastLoadMs: Long? = null, val lastReplyMs: Long? = null, val error: String? = null
+    val lastLoadMs: Long? = null, val lastReplyMs: Long? = null, val error: String? = null,
+    val firstFragmentMs: Long? = null, val lastOutputCharacters: Int? = null
 )
 interface Brain {
     suspend fun load(model: File)
@@ -36,6 +39,8 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
     @Volatile private var lastReply: Long? = null
     @Volatile private var model: String? = null
     @Volatile private var error: String? = null
+    @Volatile private var firstFragment: Long? = null
+    @Volatile private var outputCharacters: Int? = null
 
     override suspend fun load(model: File) = withContext(dispatcher) {
         require(model.isFile && model.length() > 1024) { "Import a real LiteRT model before loading" }
@@ -63,10 +68,13 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
         val started = SystemClock.elapsedRealtime()
         try {
             val output = StringBuilder()
+            firstFragment = null
             session.sendMessageAsync(prompt).collect { fragment ->
+                if (firstFragment == null) firstFragment = SystemClock.elapsedRealtime() - started
                 if (output.length < 12_000) output.append(fragment.toString().take(12_000 - output.length))
             }
             lastReply = SystemClock.elapsedRealtime() - started
+            outputCharacters = output.length
             error = null
             output.toString().ifBlank { throw IllegalStateException("Model returned empty text") }
         } catch (e: Exception) {
@@ -84,7 +92,8 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
     }
     override fun status(): BrainStatus = BrainStatus(
         ready = engine != null, modelName = model?.substringAfterLast('/'),
-        queueLength = 0, lastLoadMs = lastLoad, lastReplyMs = lastReply, error = error
+        queueLength = 0, lastLoadMs = lastLoad, lastReplyMs = lastReply, error = error,
+        firstFragmentMs = firstFragment, lastOutputCharacters = outputCharacters
     )
     override fun close() {
         // Close on owner dispatcher before shutting it down.
@@ -111,6 +120,9 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     init { workerScope.launch { for (ignored in signal) drain() } }
     suspend fun submit(request: InferenceRequest): String {
+        require(request.prompt.isNotBlank() && request.prompt.length <= 20_000) {
+            "Invalid or oversized inference request"
+        }
         val promise = CompletableDeferred<Result<String>>()
         synchronized(lock) {
             if (waiting.size >= maxSize) {
@@ -119,14 +131,33 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
             waiting.add(Pending(request, promise))
         }
         signal.trySend(Unit)
-        return promise.await().getOrThrow()
+        return try {
+            promise.await().getOrThrow()
+        } catch (cancelled: CancellationException) {
+            // Cancellation of a caller must never leave a queued prompt behind.
+            synchronized(lock) {
+                val outstanding = waiting.firstOrNull { it.result === promise }
+                if (outstanding != null) waiting.remove(outstanding)
+            }
+            throw cancelled
+        }
     }
     private suspend fun drain() {
         while (true) {
             val next = synchronized(lock) { waiting.poll() } ?: break
             if (!next.result.isActive) continue
-            try { next.result.complete(Result.success(brain.infer(next.request.prompt))) }
-            catch (e: Exception) { next.result.complete(Result.failure(e)) }
+            try {
+                // Best-effort coroutine deadline. A native engine may not stop
+                // computation instantaneously; do not claim hard cancellation.
+                val response = withTimeout(120_000L) { brain.infer(next.request.prompt) }
+                next.result.complete(Result.success(response))
+            } catch (e: CancellationException) {
+                next.result.complete(Result.failure(e))
+                if (!workerScope.isActive) return
+                // One canceled request must not strand later priority entries.
+            } catch (e: Exception) {
+                next.result.complete(Result.failure(e))
+            }
         }
     }
     fun pendingCount() = synchronized(lock) { waiting.size }
@@ -143,18 +174,32 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
     }
 }
 
-class ShivBrainHub(context: Context) {
+/**
+ * Local-only two-role coordinator. A single lifecycle mutex prevents loading or
+ * releasing a model while its native inference is active. Battery, temperature
+ * and RAM are rechecked for every request, not merely when loading weights.
+ */
+class ShivBrainHub(private val context: Context) {
     val router: Brain = LiteRtBrain(context)
     val conversation: Brain = LiteRtBrain(context)
-    // All inference, from either layer, passes through exactly one queue.
+    private val lifecycle = Mutex()
+    private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var idleRelease: Job? = null
+
     private val selected = object : Brain {
-        override suspend fun load(model: File) {
-            throw UnsupportedOperationException("Select the model through the model manager")
-        }
-        override suspend fun infer(prompt: String): String = when {
-            conversation.status().ready -> conversation.infer(prompt)
-            router.status().ready -> router.infer(prompt)
-            else -> throw IllegalStateException("No local model loaded")
+        override suspend fun load(model: File): Unit =
+            throw UnsupportedOperationException("Import models through Model Manager")
+        override suspend fun infer(prompt: String): String {
+            val governor = ModelGovernor(context)
+            val heavy = governor.lease("conversation")
+            if (conversation.status().ready && heavy.allowed)
+                return conversation.infer(prompt)
+            val small = governor.lease("router")
+            if (router.status().ready && small.allowed)
+                return router.infer(prompt)
+            if (conversation.status().ready && !heavy.allowed)
+                throw IllegalStateException("Conversation model blocked by resource policy: " + heavy.reason)
+            throw IllegalStateException("Load a compatible local router model or check battery and temperature")
         }
         override suspend fun unload() {
             conversation.unload()
@@ -162,8 +207,45 @@ class ShivBrainHub(context: Context) {
         }
         override fun status() = conversation.status()
     }
+
     val inference = InferenceQueue(selected)
-    suspend fun infer(prompt: String): String =
-        inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
-            prompt, InferencePriority.INTERACTIVE))
+    suspend fun load(role: String, file: File, availableRam: Long) = lifecycle.withLock {
+        require(role in setOf("router","conversation"))
+        idleRelease?.cancel()
+        // A small router and large conversation should not coexist under pressure.
+        if (role=="conversation" && availableRam<4_000_000_000L) router.unload()
+        if (role=="router" && availableRam<4_000_000_000L) conversation.unload()
+        val target = if (role=="router") router else conversation
+        target.load(file)
+        armIdleRelease()
+    }
+    suspend fun unloadForRemoval(role: String, filename: String) = lifecycle.withLock {
+        if (role=="router" && router.status().modelName==filename) router.unload()
+        if (role=="conversation" && conversation.status().modelName==filename) conversation.unload()
+    }
+    private fun armIdleRelease() {
+        idleRelease?.cancel()
+        if (!conversation.status().ready) return
+        idleRelease = idleScope.launch {
+            delay(120_000L)
+            lifecycle.withLock {
+                // This is best-effort idle eviction, not a measured energy saving.
+                if (conversation.status().ready) conversation.unload()
+            }
+        }
+    }
+    suspend fun infer(prompt: String): String = lifecycle.withLock {
+        idleRelease?.cancel()
+        try {
+            inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
+                prompt, InferencePriority.INTERACTIVE))
+        } finally { armIdleRelease() }
+    }
+    suspend fun shutdown() = lifecycle.withLock {
+        idleRelease?.cancel()
+        inference.shutdown()
+        conversation.unload()
+        router.unload()
+        idleScope.cancel()
+    }
 }
