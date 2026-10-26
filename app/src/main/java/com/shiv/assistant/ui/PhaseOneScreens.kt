@@ -14,6 +14,7 @@ import android.Manifest
 import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
+import com.shiv.assistant.data.PortableOwnerArchive
 import kotlinx.coroutines.launch
 
 /**
@@ -41,6 +42,42 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var newDeniedPackage by remember { mutableStateOf("") }
     var confirmErase by remember { mutableStateOf(false) }
     var erasePhrase by remember { mutableStateOf("") }
+    var portableDialog by remember { mutableStateOf<String?>(null) }
+    var portablePassphrase by remember { mutableStateOf("") }
+    var portableConfirm by remember { mutableStateOf("") }
+    var portableBusy by remember { mutableStateOf(false) }
+    var portableResult by remember { mutableStateOf("") }
+    val archiveExportPicker=rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val secret=portablePassphrase.toCharArray()
+        portablePassphrase=""
+        if(uri==null) {secret.fill('\u0000');portableResult="Export canceled"}
+        else scope.launch {
+            portableBusy=true
+            try {
+                val size=PortableOwnerArchive(screenContext).exportTo(uri,secret)
+                portableResult="Encrypted backup saved ("+size+" bytes). Keep its passphrase safe."
+            } catch (_:Exception) {
+                portableResult="Backup export failed. No personal data was sent online."
+            } finally {secret.fill('\u0000');portableBusy=false}
+        }
+    }
+    val archiveImportPicker=rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()) { uri ->
+        val secret=portablePassphrase.toCharArray()
+        portablePassphrase=""
+        if(uri==null) {secret.fill('\u0000');portableResult="Restore canceled"}
+        else scope.launch {
+            portableBusy=true
+            try {
+                val count=PortableOwnerArchive(screenContext).restoreFrom(uri,secret)
+                owner.afterPortableRestore(count)
+                portableResult="Archive restored. Old reminders, permissions and cloud transmission remain off."
+            } catch (_:Exception) {
+                portableResult="Restore refused (wrong passphrase, unsupported archive or invalid records). Existing data remains unchanged."
+            } finally {secret.fill('\u0000');portableBusy=false}
+        }
+    }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -260,6 +297,23 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     color=accent)
                 Text("Shiv does not record telephone call audio or read other apps' private files.",color=Color.LightGray)
                 HorizontalDivider()
+                Text("PORTABLE ENCRYPTED BACKUP / RESTORE",color=accent)
+                Text("Owner-selected file, 12–256 character passphrase, AES-256-GCM. " +
+                    "No internet and no plaintext backup files. Imported model weights are excluded. " +
+                    "Restore replaces stored owner records and leaves imported reminders inactive. " +
+                    "Store your passphrase separately: Shiv cannot recover it.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled=!portableBusy,onClick={
+                        portableDialog="export";portableResult=""
+                    }) { Text("EXPORT ENCRYPTED") }
+                    OutlinedButton(enabled=!portableBusy,onClick={
+                        portableDialog="restore";portableResult=""
+                    }) { Text("RESTORE ARCHIVE") }
+                }
+                if(portableResult.isNotBlank())
+                    Text(portableResult,color=Color.LightGray,fontSize=11.sp)
+                HorizontalDivider()
                 Text("OWNER DATA ERASURE",color=Color(0xFFFF9191))
                 Text("Permanently removes private Shiv records and cloud credentials. " +
                     "Retains imported .litertlm model files. This cannot be undone.",
@@ -270,6 +324,47 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             }
         }
     }
+    if(portableDialog!=null) AlertDialog(
+        onDismissRequest={
+            portableDialog=null
+            portablePassphrase=""
+            portableConfirm=""
+        },
+        title={ Text(if(portableDialog=="export") "Encrypted owner backup" else "Restore encrypted owner data") },
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text(if(portableDialog=="export")
+                    "Choose a 12+ character passphrase. You will save an authenticated, portable backup. No model binaries are exported."
+                else "WARNING: replaces Shiv personal records from the chosen archive. Prior pending reminders and approvals will not execute. Cloud consent is disabled after restore.")
+                OutlinedTextField(value=portablePassphrase,
+                    onValueChange={portablePassphrase=it.take(256)},singleLine=true,
+                    label={Text("Archive passphrase")})
+                if(portableDialog=="export")
+                    OutlinedTextField(value=portableConfirm,
+                        onValueChange={portableConfirm=it.take(256)},singleLine=true,
+                        label={Text("Confirm passphrase")})
+                else
+                    OutlinedTextField(value=portableConfirm,
+                        onValueChange={portableConfirm=it.take(20)},singleLine=true,
+                        label={Text("Type RESTORE SHIV")})
+            }
+        },
+        confirmButton={
+            val canProceed=portablePassphrase.length in 12..256 &&
+                (if(portableDialog=="export")portablePassphrase==portableConfirm
+                 else portableConfirm=="RESTORE SHIV")
+            Button(enabled=canProceed && !portableBusy,onClick={
+                val mode=portableDialog
+                portableDialog=null
+                portableConfirm=""
+                if(mode=="export")archiveExportPicker.launch("shiv-owner-backup.shiv")
+                else archiveImportPicker.launch(arrayOf("application/octet-stream","*/*"))
+            }) { Text("CHOOSE "+if(portableDialog=="export")"BACKUP DESTINATION" else "ARCHIVE FILE") }
+        },
+        dismissButton={TextButton(onClick={
+            portableDialog=null;portablePassphrase="";portableConfirm=""
+        }) { Text("CANCEL") }}
+    )
     if(confirmErase) AlertDialog(
         onDismissRequest={confirmErase=false;erasePhrase=""},
         title={Text("Permanently erase personal Shiv data?")},
