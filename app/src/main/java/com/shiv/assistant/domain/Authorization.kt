@@ -10,7 +10,8 @@ object ActionAuthorization {
     private val irreversible = setOf(ActionKind.UPI,ActionKind.SMS,ActionKind.EMAIL,
         ActionKind.TELEGRAM,ActionKind.WHATSAPP,ActionKind.SHARE)
     private val ownerOnlyOverrides = setOf(ActionKind.DIAL, ActionKind.MAPS,
-        ActionKind.SETTINGS, ActionKind.CAMERA, ActionKind.CALENDAR, ActionKind.ALARM, ActionKind.TIMER)
+        ActionKind.SETTINGS, ActionKind.CAMERA, ActionKind.CALENDAR, ActionKind.ALARM, ActionKind.TIMER,
+        ActionKind.REMINDER)
     /**
      * No model tool can set authority; only independently persisted owner preference
      * is accepted. Financial actions have a hard ASK_FIRST floor.
