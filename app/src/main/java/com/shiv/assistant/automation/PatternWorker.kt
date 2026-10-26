@@ -21,6 +21,8 @@ class PatternWorker(context:Context,params:WorkerParameters):CoroutineWorker(con
             val strongest=group.maxByOrNull{it.updatedAt}?:continue
             val digest=MessageDigest.getInstance("SHA-256").digest(strongest.text.toByteArray())
                 .take(8).joinToString(""){"%02x".format(it)}
+            if(!applicationContext.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE)
+                .getBoolean("owner_enabled",false))return@withContext Result.success()
             dao.putBelief(BeliefRecord("pattern-$digest",strongest.text,
                 (0.45+group.size*0.07).coerceAtMost(0.85),
                 "Observed "+group.size+" times",strongest.source,null,System.currentTimeMillis()))
