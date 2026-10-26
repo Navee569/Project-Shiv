@@ -32,5 +32,15 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <service android:name=".integrations.ShivAccessibilityReader"
+            android:exported="true"
+            android:label="Shiv one-shot screen awareness"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                android:resource="@xml/shiv_accessibility" />
+        </service>
     </application>
 </manifest>
