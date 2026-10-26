@@ -1,7 +1,13 @@
 package com.shiv.assistant
 
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.SpeechRecognizer
+import java.util.Locale
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
@@ -19,6 +25,55 @@ import com.shiv.assistant.ui.ShivInterface
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var recognizer: SpeechRecognizer? = null
+
+    private fun startOnDeviceRecognition(locale: String, onText: (String) -> Unit,
+        onError: (String) -> Unit) {
+        if (Build.VERSION.SDK_INT < 31 ||
+            !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            onError("On-device speech recognition unavailable. Install the language pack in Speech Services by Google.")
+            return
+        }
+        recognizer?.destroy()
+        recognizer = try { SpeechRecognizer.createOnDeviceSpeechRecognizer(this) }
+        catch (_: Exception) {
+            onError("Offline recognizer unavailable")
+            return
+        }
+        val service = recognizer ?: return
+        service.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onError(error: Int) {
+                onError("Offline STT failed (code " + error + "). Verify the " + locale + " offline language pack.")
+                recognizer?.destroy(); recognizer = null
+            }
+            override fun onResults(results: Bundle?) {
+                val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val sentence = words?.firstOrNull()
+                recognizer?.destroy(); recognizer = null
+                if (sentence.isNullOrBlank()) onError("No speech recognized")
+                else onText(sentence)
+            }
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        service.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true))
+    }
+
+    override fun onDestroy() {
+        recognizer?.destroy()
+        recognizer = null
+        super.onDestroy()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Resume encrypted pending signals after process death; no silent background sensing.
@@ -30,10 +85,11 @@ class MainActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             val tts = remember { TextToSpeech(applicationContext, null, "com.google.android.tts") }
             DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
-            val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                val words = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                val heard = words?.firstOrNull()
-                if (!heard.isNullOrBlank()) scope.launch { controller.submit(heard) }
+            val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+                if (allowed) startOnDeviceRecognition(controller.speechLocale,
+                    onText = { scope.launch { controller.submit(it) } },
+                    onError = { controller.speechMessage(it) })
+                else controller.speechMessage("Microphone permission denied. Voice input was not started.")
             }
             val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 controller.chooseImage(it)
@@ -53,15 +109,27 @@ class MainActivity : ComponentActivity() {
                 ShivInterface(
                     controller = controller,
                     onVoice = {
-                        try {
-                            voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
-                        } catch (_: Exception) { /* recognizer availability is owner-verify */ }
+                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED) {
+                            startOnDeviceRecognition(controller.speechLocale,
+                                onText = { scope.launch { controller.submit(it) } },
+                                onError = { controller.speechMessage(it) })
+                        } else micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     },
                     onPhoto = { photo.launch("image/*") },
                     onDocument = { document.launch("text/*") },
                     onModel = { model.launch(arrayOf("application/octet-stream", "*/*")) },
-                    onSpeak = { spoken -> tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "shiv_response") },
+                    onSpeak = { spoken ->
+                        val locale = Locale.forLanguageTag(controller.speechLocale)
+                        val available = tts.isLanguageAvailable(locale)
+                        if (available >= TextToSpeech.LANG_AVAILABLE) {
+                            tts.language = locale
+                            tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "shiv_response")
+                        } else controller.speechMessage(
+                            "Voice data unavailable for " + controller.speechLocale +
+                            ". Install Speech Services by Google voice data in Android Settings > General management > Text-to-speech."
+                        )
+                    },
                     onNotificationPermission = {
                         if (android.os.Build.VERSION.SDK_INT >= 33)
                             permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)

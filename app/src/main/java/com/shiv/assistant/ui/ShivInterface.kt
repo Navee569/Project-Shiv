@@ -410,6 +410,19 @@ fun ShivInterface(
         }, modifier = Modifier.fillMaxWidth()) { Text("SAVE INTELLIGENCE SETTINGS") }
         if (error.isNotBlank()) Text(error, color = Color(0xFFFF9B9B))
         Spacer(Modifier.height(4.dp))
+        Header("OFFLINE VOICE LANGUAGES", "Kannada, Telugu and English. Availability depends on language data installed on the phone.")
+        listOf("en-IN", "kn-IN", "te-IN").forEach { tag ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = controller.speechLocale == tag,
+                    onClick = { controller.changeSpeechLocale(tag) })
+                Text(tag, color = Color.White)
+            }
+        }
+        Text("For missing voices: Galaxy Settings > General management > Language > Text-to-speech > " +
+            "Preferred engine > Speech Services by Google > Settings > Install voice data. " +
+            "For offline recognition, install the matching offline speech language pack. " +
+            "Do not assume Telugu/Kannada is offline until verified on the Galaxy S23.",
+            color = Muted, fontSize = 11.sp)
         Header("NOTIFICATION INTELLIGENCE", "Off by default. Stores only app identifiers and notification titles, never bodies.")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Save notification summaries", modifier = Modifier.weight(1f), color = Color.White)

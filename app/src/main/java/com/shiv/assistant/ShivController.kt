@@ -38,6 +38,8 @@ class ShivController(private val context: Context) {
         private set
     var telemetry by mutableStateOf<DeviceStats?>(null)
         private set
+    var speechLocale by mutableStateOf("en-IN")
+        private set
     var powerMode by mutableStateOf(PowerMode.BALANCED)
         private set
     var sensingPaused by mutableStateOf(false)
@@ -73,6 +75,7 @@ class ShivController(private val context: Context) {
             sensingPaused = vault.get("sensing_paused") == "yes"
             guestMode = vault.get("guest_mode") == "yes"
             privacyZone = vault.get("privacy_zone") == "yes"
+            speechLocale = vault.get("speech_locale") ?: "en-IN"
             powerMode = runCatching { PowerMode.valueOf(vault.get("power_mode") ?: "BALANCED") }
                 .getOrDefault(PowerMode.BALANCED)
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
@@ -121,6 +124,12 @@ class ShivController(private val context: Context) {
         notice = "App added to the denylist; content from it is not stored"
     }
     fun extraDeniedPackages() = vault.get("denied_packages").orEmpty()
+    fun changeSpeechLocale(tag: String) {
+        require(tag in setOf("en-IN", "kn-IN", "te-IN")) { "Unsupported speech locale" }
+        speechLocale = tag
+        vault.put("speech_locale", tag)
+    }
+    fun speechMessage(value: String) { notice = value.take(300) }
     fun changePowerMode(mode: PowerMode) {
         powerMode = mode
         vault.put("power_mode", mode.name)
