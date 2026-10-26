@@ -38,6 +38,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
+    var newDeniedPackage by remember { mutableStateOf("") }
     var confirmErase by remember { mutableStateOf(false) }
     var erasePhrase by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
@@ -234,6 +235,26 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
                 OutlinedButton(onClick={controller.setPatternLearning(false)}) {
                     Text("DISABLE PATTERN LEARNING")
+                }
+                Text("OWNER APP SOURCE EXCLUSIONS",color=accent)
+                Text("Block additional apps before Shiv reads notification or screen details. " +
+                    "Built-in banking/OTP exclusions cannot be removed.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedTextField(value=newDeniedPackage,
+                    onValueChange={newDeniedPackage=it.take(160)},
+                    label={Text("Android package name to deny")},singleLine=true)
+                Button(enabled=newDeniedPackage.isNotBlank(),onClick={
+                    val app=newDeniedPackage
+                    scope.launch { runCatching { controller.addDeniedPackage(app) } }
+                    newDeniedPackage=""
+                }) { Text("BLOCK THIS APP") }
+                controller.deniedPackages.forEach { denied ->
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text(denied,Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
+                        TextButton(onClick={scope.launch { controller.removeDeniedPackage(denied) }}) {
+                            Text("UNBLOCK")
+                        }
+                    }
                 }
                 Text("BANKING / PAYMENTS / PASSWORD MANAGERS / AUTHENTICATOR apps are denied before any Shiv capture, storage or AI request.",
                     color=accent)
