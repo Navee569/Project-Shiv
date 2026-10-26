@@ -209,6 +209,19 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             reload()
         } catch(e:Exception) { issue=e.message?:"Approval failed" }
     }
+    suspend fun undoApprovedCommitment(trace:DecisionTraceRecord) {
+        val current=dao.decision(trace.id) ?: run { issue="Decision not found";return }
+        val eventId=current.signalId ?: run { issue="Source event unavailable";return }
+        val audit=ActionLogRecord("undo-"+eventId,"UNDO_EVENT","[REDACTED]",
+            "ASK_FIRST","OWNER_REQUESTED",true,"EVENT_REMINDER_CANCELLED",null)
+        val success=dao.undoApprovedEvent(current.id,eventId,audit)
+        if(success) {
+            androidx.work.WorkManager.getInstance(context).cancelUniqueWork(
+                "shiv-approved-event-"+eventId)
+            progress="Local approved event and pending reminder reversed; delivered alerts remain"
+        } else issue="This approval has already been reversed or is no longer pending"
+        reload()
+    }
     suspend fun declineCommitment(trace:DecisionTraceRecord) {
         val current=dao.decision(trace.id)?:return
         if(current.decision=="ASK") dao.trace(current.copy(decision="DECLINED",
