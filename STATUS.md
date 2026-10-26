@@ -46,3 +46,41 @@ The owner requested an exception for configurable cloud AI API. Cloud sending is
 See [FEATURE_BY_FEATURE_AUDIT.md](FEATURE_BY_FEATURE_AUDIT.md) for every Phase 1 milestone (M0–M11), binding decisions (N1–N10), scenarios (A–K), and the gated Phase 2 catalog. Repairs include owner-reviewed event/reminder creation, >30 signal continuation, memory correction/deletion, full chat/signal erasure, model SHA-256 verification off the UI thread, and redacted event audit logs.
 
 **No declaration of complete feature parity:** encrypted export/restore, active inference cancellation, verified E2B/1B model performance, all awareness triggers, detailed owner tier controls/undo, microphone FGS, mixed-language quality, full sensor-learning adapters, and Samsung-specific validation are still incomplete or owner-verification-only. Phase 1 M11 remains **NOT ACCEPTED**. Phase 2 remains gated.
+
+
+## Corrected-baseline development pass (from verified 8e48ed0, preserving edae3ef audit)
+
+**Branch:** development/shiv-parity-completion-from-8e48ed0  
+**Source:** development/shiv-feature-parity-audit@edae3ef (direct descendant of screenshot commit 8e48ed0).  
+**Target:** merge back into development/shiv-feature-parity-audit, **not** into main.
+
+Source changes in this pass:
+- Calendar read is now a temporary, source-filtered preview. The owner individually
+  confirms each event before writing the encrypted event and redacted audit record.
+  Permission revocation blocks later import.
+- One-shot Accessibility requires the exact non-sensitive app package to be
+  supplied by the owner before arming for 15 seconds. Other packages are rejected
+  before the view hierarchy is traversed; STOP disarms it.
+- Reminder tier (ASK_FIRST by default, or ACT_THEN_TELL for explicitly requested
+  local reminders only) is owner-controlled and stored encrypted. Undo marks a
+  pending reminder canceled and requests WorkManager cancellation. Other
+  communication and financial actions retain the hard ASK_FIRST floor.
+- Approved owner-reviewed events can be undone atomically with their pending
+  reminder and a preserved audit trace; previously displayed Android
+  notifications cannot be recalled.
+- Owner-initiated read-only Contacts searches return at most ten temporary
+  display names. Phone numbers, email fields and the results themselves are
+  not saved in Shiv memory.
+- Case-insensitive banking/UPI/authenticator denylist matching now handles
+  mixed-case package variants and subpackages.
+- Added JVM and Android instrumentation regressions for consent, privacy,
+  reminder authority, reminder undo, and event undo. Both Android API 26 and
+  API 35 device-emulator runs are required before merge.
+
+**Not completed by this pass:** full M11/real Galaxy S23 acceptance, local E2B/1B
+real-model load, actual token/s and battery targets, always-ready offline
+microphone sessions, advanced multilingual accuracy, complete person/place
+graph and third-party integration contracts, fully general undo, secure export
+and restore. Phase 2 remains gated by M11 acceptance and optional privileged
+access remains owner-approval-only. These must not be described as done.
+The existing cloud AI implementation in ShivIntelligence.kt is unchanged.
