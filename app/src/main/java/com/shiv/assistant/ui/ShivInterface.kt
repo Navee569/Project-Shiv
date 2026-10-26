@@ -335,6 +335,7 @@ fun ShivInterface(
                     Text("Thermal state: " + (stats?.thermalStatus?.toString() ?: "NOT MEASURED"), color = Color.White)
                     Text("Free RAM: " + (stats?.availableRamMb?.toString()?.plus(" MB") ?: "NOT MEASURED"), color = Color.White)
                     Text("Queued signals: " + runCatching { controller.signalQueue.pendingCount() }.getOrDefault(0), color = Color.White)
+                    Text("Queued local inference: " + controller.localQueueLength, color = Color.White)
                     Text("Large model: " + (controller.leaseForConversation()?.allowLargeModel?.toString()
                         ?: "NOT EVALUATED"), color = Muted)
                 }

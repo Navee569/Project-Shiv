@@ -8,6 +8,11 @@ import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
 import com.shiv.assistant.ai.LocalInferenceMetrics
+import com.shiv.assistant.ai.LocalInferenceScheduler
+import com.shiv.assistant.ai.InferenceUrgency
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.automation.ShivSignalWorker
@@ -30,6 +35,9 @@ class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
     private val localNeural: Brain = LiteRtBrain(context)
+    private val localScheduler = LocalInferenceScheduler(localNeural,
+        CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    val localQueueLength: Int get() = localScheduler.waitingCount
     var localMetrics by mutableStateOf<LocalInferenceMetrics?>(null)
         private set
     var neuralReady by mutableStateOf(false)
@@ -207,7 +215,7 @@ class ShivController(private val context: Context) {
         } finally { working = false }
     }
     suspend fun interruptInference() {
-        localNeural.cancel()
+        localScheduler.interrupt()
     }
     suspend fun unloadModel() {
         localNeural.unload()
@@ -254,7 +262,7 @@ class ShivController(private val context: Context) {
         try {
             if (config.mode == IntelligenceMode.LOCAL && localNeural.modelId != null) {
                 val start = System.nanoTime()
-                val answer = localNeural.infer(question, 256)
+                val answer = localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
                 localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
                 energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
                 append("assistant", when (answer) {
