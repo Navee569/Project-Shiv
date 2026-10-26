@@ -92,3 +92,18 @@ hardening (M9). Added unit/instrumented coverage.
 Major remaining milestone work in the table above remains open; most
 importantly M11 has **not** been owner accepted on the S23. PHASE2_GATE.md
 continues to apply. The configured cloud AI exception remains untouched.
+
+
+## Incremental Phase 1 implementation, post-PR#5
+
+Additional scoped source paths: transactional personal-record erasure (retains
+imported model weights), SQLCipher expiry cleanup, owner-app denylist enforced
+at notification/Accessibility/queue ingress, per-inference resource admission,
+native model swap serialization and idle conversation model unloading, measured
+first-fragment latency, and queue cancellation tests. Exact testing and
+remaining work are detailed in STATUS.md.
+
+These improvements **do not** constitute M11 acceptance or Phase 2 entry.
+Do not conflate best-effort native cancellation with immediate NPU/CPU
+termination. Do not count characters as model tokens. Cloud AI exception
+remains as configured and unmodified.
