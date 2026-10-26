@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Special access: owner must explicitly grant Usage Access in device settings. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <application
         android:allowBackup="false"
@@ -44,5 +45,12 @@
             <meta-data android:name="android.accessibilityservice"
                 android:resource="@xml/shiv_accessibility" />
         </service>
+        <receiver android:name=".integrations.ShivCallCheckInReceiver"
+            android:exported="true"
+            android:permission="android.permission.READ_PHONE_STATE">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
