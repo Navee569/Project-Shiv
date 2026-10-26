@@ -8,6 +8,7 @@ import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
@@ -359,10 +360,12 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 else "WARNING: replaces Shiv personal records from the chosen archive. Prior pending reminders and approvals will not execute. Cloud consent is disabled after restore.")
                 OutlinedTextField(value=portablePassphrase,
                     onValueChange={portablePassphrase=it.take(256)},singleLine=true,
+                    visualTransformation=PasswordVisualTransformation(),
                     label={Text("Archive passphrase")})
                 if(portableDialog=="export")
                     OutlinedTextField(value=portableConfirm,
                         onValueChange={portableConfirm=it.take(256)},singleLine=true,
+                        visualTransformation=PasswordVisualTransformation(),
                         label={Text("Confirm passphrase")})
                 else
                     OutlinedTextField(value=portableConfirm,
