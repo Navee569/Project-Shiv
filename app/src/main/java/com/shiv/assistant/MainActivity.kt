@@ -87,6 +87,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onDestroy() {
         afterAuthentication = null
+        ownerController?.dispose()
+        ownerController = null
         recognizer?.destroy()
         recognizer = null
         super.onDestroy()
