@@ -30,3 +30,24 @@ Legend: **ACTIVE** has an actual bounded Shiv code path; **CONNECT** requires th
 - Required before release: permission-denied UI tests, device API 26–35 coverage, encryption recoverability tests, mock-cloud injection tests, malicious URI tests, integration contract tests with provider credentials, accessibility audit and manual UI acceptance.
 
 **Unmet entries are not to be reported as complete.**
+
+
+## Additional bounded feature entrypoints — 2026-10-26
+
+The earlier matrix is a **historical baseline** for commit 3b6c4e4; these are
+newly implemented code paths and their actual remaining verification status.
+
+| Feature | New code path | Verification / limitation |
+| --- | --- | --- |
+| Proactive agenda | Owner opt-in hourly WorkManager trigger; dedup, quiet hours, capped notices | Full timing, battery and reboot OWNER-VERIFY |
+| Routine evidence | Completed agenda events, 3 independent dates, charging-only consolidation | Not broad passive phone learning; not confirmed owner facts |
+| Feedback | Encrypted owner reactions, weekly seven-day report, bounded discretionary caps | Real-world reactions must be entered by owner |
+| Calendar | Permissioned two-week preview and review-before-import, deduped | Android Calendar OEM OWNER-VERIFY |
+| Contacts | Permissioned on-demand matching names, no numbers stored | Not a full social graph or dialer address book |
+| App Usage | Manual special Usage Access, per-app denylist, transient 24-hour package totals | No screen contents or background usage harvesting |
+| Accessibility | Explicit service enable + exact allowlist + 15-second arm; facts only | Potential FLAG_SECURE limitations, no continuous privileged automation |
+| Calls | Generic opt-in call-ended prompt without caller identity or call audio | OEM broadcast behavior OWNER-VERIFY |
+| SQLCipher instrumentation | Disposable on-phone plaintext/wrong-key regression test APK | Compiled by CI, not executed on a Galaxy S23 |
+
+A feature with a working entrypoint is still not automatically a completed Phase
+1/Phase 2 milestone. Major missing work remains as listed in STATUS.md.
