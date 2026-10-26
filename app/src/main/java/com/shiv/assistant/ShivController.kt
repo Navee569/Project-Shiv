@@ -29,6 +29,10 @@ import com.shiv.assistant.data.*
 import com.shiv.assistant.diagnostics.*
 import com.shiv.assistant.domain.*
 import com.shiv.assistant.model.*
+import com.shiv.assistant.integrations.ShivCalendarReader
+import com.shiv.assistant.integrations.ShivContactReader
+import com.shiv.assistant.integrations.CalendarPreview
+import com.shiv.assistant.automation.ShivProactive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.time.LocalDate
@@ -128,6 +132,12 @@ class ShivController(private val context: Context) {
     var notice by mutableStateOf("Local-first • Encrypted • You control every action")
         private set
     var notificationSummaries by mutableStateOf(false)
+    var proactiveOptIn by mutableStateOf(false)
+        private set
+    var passiveLearningOptIn by mutableStateOf(false)
+        private set
+    val calendarPreview = mutableStateListOf<CalendarPreview>()
+    val contactMatches = mutableStateListOf<String>()
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
         private set
     init {
@@ -140,6 +150,8 @@ class ShivController(private val context: Context) {
             )
             apiKey = vault.get("api_secret").orEmpty()
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            proactiveOptIn = vault.get("proactive_opt_in") == "yes"
+            passiveLearningOptIn = vault.get("passive_learning_opt_in") == "yes"
             reminderTier = runCatching {
                 AuthorityTier.valueOf(vault.get("reminder_authority") ?: "ASK_FIRST")
             }.getOrDefault(AuthorityTier.ASK_FIRST).let {
@@ -166,6 +178,70 @@ class ShivController(private val context: Context) {
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
     }
+    fun updateProactiveOptIn(enabled: Boolean) {
+        vault.put("proactive_opt_in", if (enabled) "yes" else "no")
+        proactiveOptIn = enabled
+        if (enabled) ShivProactive.schedule(context)
+        audit.add("PROACTIVE_CONSENT", if (enabled) "Owner enabled scheduled agenda nudges"
+            else "Owner disabled scheduled agenda nudges", "FREE", true)
+        notice = if (enabled) "Private agenda reminders and daily briefs enabled"
+            else "Proactive agenda nudges disabled"
+    }
+    fun updatePassiveLearningOptIn(enabled: Boolean) {
+        vault.put("passive_learning_opt_in", if (enabled) "yes" else "no")
+        passiveLearningOptIn = enabled
+        audit.add("LEARNING_CONSENT", if (enabled) "Owner enabled learning from completed agenda items"
+            else "Owner disabled routine learning", "FREE", true)
+        notice = if (enabled) "Repeated completed events may form evidence-based hypotheses"
+            else "Passive routine learning paused"
+    }
+    fun previewDeviceCalendar() {
+        calendarPreview.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Private sensing is paused"
+            return
+        }
+        try {
+            calendarPreview.addAll(ShivCalendarReader(context).upcoming())
+            notice = calendarPreview.size.toString() +
+                " calendar entries previewed. Nothing saved until you confirm import."
+        } catch (_: SecurityException) { notice = "Grant Calendar permission first" }
+        catch (_: Exception) { notice = "Calendar preview unavailable" }
+    }
+    fun importCalendarPreview() {
+        if (sensingPaused || guestMode || privacyZone) {
+            calendarPreview.clear()
+            notice = "Private sensing is paused"
+            return
+        }
+        var count = 0
+        try {
+            for (event in calendarPreview) {
+                if (agenda.importCalendar(event.eventId, event.title, event.startMillis)) count++
+            }
+            agendaItems.clear()
+            agendaItems.addAll(agenda.list())
+            audit.add("CALENDAR_IMPORT", "Owner confirmed " + count + " local calendar event(s)",
+                "ASK_FIRST", true)
+            notice = count.toString() + " new calendar events saved to encrypted Shiv agenda"
+        } catch (_: Exception) { notice = "Calendar import incomplete; saved entries are deduplicated" }
+        finally { calendarPreview.clear() }
+    }
+    fun clearCalendarPreview() { calendarPreview.clear() }
+    fun searchDeviceContacts(name: String) {
+        contactMatches.clear()
+        if (sensingPaused || guestMode || privacyZone) {
+            notice = "Private sensing is paused"
+            return
+        }
+        try {
+            contactMatches.addAll(ShivContactReader(context).searchByName(name))
+            notice = "Read-only contact-name lookup. Nothing is saved."
+        } catch (_: SecurityException) { notice = "Grant Contacts permission first" }
+        catch (_: Exception) { notice = "Contact lookup unavailable" }
+    }
+    fun clearContactPreview() { contactMatches.clear() }
+
     fun updateReminderTier(requested: AuthorityTier) {
         require(requested in setOf(AuthorityTier.ASK_FIRST, AuthorityTier.ACT_THEN_TELL)) {
             "Only reviewed and reversible reminder authority is supported"
@@ -210,7 +286,11 @@ class ShivController(private val context: Context) {
         notice = "Intelligence configuration saved securely"
     }
     fun updateSensingPaused(value: Boolean) {
-        if (value) ocrPreview = ""
+        if (value) {
+            ocrPreview = ""
+            calendarPreview.clear()
+            contactMatches.clear()
+        }
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
         if (!value) WorkManager.getInstance(context).enqueueUniqueWork(
@@ -220,13 +300,22 @@ class ShivController(private val context: Context) {
             "ASK_FIRST", true)
     }
     fun updateGuestMode(value: Boolean) {
-        if (value) { privateUnlocked = false; ocrPreview = "" }
+        if (value) {
+            privateUnlocked = false
+            ocrPreview = ""
+            calendarPreview.clear()
+            contactMatches.clear()
+        }
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
     }
     fun updatePrivacyZone(value: Boolean) {
-        if (value) ocrPreview = ""
+        if (value) {
+            ocrPreview = ""
+            calendarPreview.clear()
+            contactMatches.clear()
+        }
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
         audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
