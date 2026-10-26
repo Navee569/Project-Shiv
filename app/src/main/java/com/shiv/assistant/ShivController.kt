@@ -133,7 +133,10 @@ class ShivController(private val context: Context) {
         val question = message.trim()
         if (question.isEmpty() || working) return
         append("user", question)
-        // Refresh after owner edits from the Memories screen; never use stale facts.\n        notes.clear(); notes.addAll(vault.notes())\n        // Durable, encrypted signal is saved BEFORE any model inference.
+        // Refresh after owner edits from the Memories screen; never use stale facts.
+        notes.clear()
+        notes.addAll(vault.notes())
+        // Durable, encrypted signal is saved BEFORE any model inference.
         phase.submitSignal("owner_input", question, 5)
         // Precise scheduling/DB questions never require model hallucination.
         val lower=question.lowercase().trimEnd('?', '.', '!')
@@ -221,20 +224,28 @@ class ShivController(private val context: Context) {
             notice="Action blocked by Shiv owner policy"
             return
         }
-        when (action.kind) {
-            ActionKind.NOTES -> saveNote(action.argument)
+        val result = when (action.kind) {
+            ActionKind.NOTES -> {
+                saveNote(action.argument)
+                "ENCRYPTED_NOTE_SAVED"
+            }
             ActionKind.REMINDER -> {
                 val id = ShivReminders.schedule(context, action.argument)
                 if(id!=null) vault.put("last_reminder_id",id.toString())
                 notice = if (id == null) "Use: remind me in 10 minutes to ..."
                     else "Reminder scheduled locally; undo is available in Permissions"
+                if(id==null) "INVALID_DATE" else "SCHEDULED"
             }
-            else -> notice = if (ShivActions.launch(context, action)) "Opened external app for review"
-                else "No compatible app installed, or action unavailable"
+            else -> {
+                val opened=ShivActions.launch(context, action)
+                notice = if(opened) "Opened external app for review"
+                    else "No compatible app installed, or action unavailable"
+                if(opened) "APP_HANDOFF_OPENED" else "APP_HANDOFF_FAILED"
+            }
         }
         kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
             com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
-                ActionAuthorization.log(action,authorization,"APP_HANDOFF","OWNER_CONFIRMED"))
+                ActionAuthorization.log(action,authorization,"APP_HANDOFF",result))
         }
     }
     fun saveNote(value: String) {

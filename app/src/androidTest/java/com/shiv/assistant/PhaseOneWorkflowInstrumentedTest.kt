@@ -81,4 +81,30 @@ class PhaseOneWorkflowInstrumentedTest {
         repo.forget(revised.id)
         assertFalse(repo.search("appointment Saturday").any{it.id==revised.id})
     }
+
+    @Test fun chatRefreshesEditedMemoriesBeforeEveryReply() = runBlocking {
+        val controller=ShivController(context)
+        val original=controller.vault.get("notes")
+        val marker="owner-updated-memory-"+UUID.randomUUID()
+        try {
+            controller.vault.addNote(marker)
+            controller.submit("What's on tomorrow?")
+            assertTrue(controller.notes.contains(marker))
+            controller.vault.put("notes",original ?: "[]")
+            controller.submit("What's on tomorrow?")
+            assertFalse(controller.notes.contains(marker))
+        } finally {
+            controller.vault.put("notes",original ?: "[]")
+        }
+    }
+
+    @Test fun failedOwnerApprovedReminderIsLoggedAsFailure() = runBlocking {
+        val controller=ShivController(context)
+        controller.propose(com.shiv.assistant.domain.ShivPlanner.parse("remind impossible date"))
+        controller.approve()
+        val log=EncryptedDatabase.open(context).dao().actions(20)
+            .first { it.type=="REMINDER" && it.result=="INVALID_DATE" }
+        assertEquals("[REDACTED]",log.argsRedacted)
+        assertTrue(log.confirmed)
+    }
 }

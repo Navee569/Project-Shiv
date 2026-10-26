@@ -151,3 +151,26 @@ In particular, source-displayed feature labels must not imply that Android
 privileged behavior is available without the owner's runtime grant, nor that
 AI-text tool proposals can self-authorize irreversible actions. CLOUD/HYBRID
 intelligence was not changed and the Phase 2 requirements remain gated.
+
+## 26 October 2026 follow-up at merge baseline `6c114476`
+
+The branch was checked at PR #8's exact merge SHA, rather than `main`.
+`ShivIntelligence.kt` already implements opt-in OpenAI-compatible cloud chat
+and selected-image requests; `ShivController` saves mode, HTTPS endpoint,
+model, encrypted API secret and explicit consent. This is an existing Phase 1
+owner exception to the original local-only rule, not a new Phase 2 provider
+integration. No live provider call or device behavior has been verified here.
+
+One source defect was found in chat: literal `\\n` text inside a `//` comment
+commented out the refresh of the in-memory notes list. A corrected or deleted
+fact could therefore remain in the next chat's `notes` argument. The refresh
+is restored and covered by an Android regression that adds then removes a note
+between two chat submissions. The in-app capability list now describes the
+existing Contacts name preview and scoped Accessibility preview with their
+permission and access limits, instead of marking both as entirely planned.
+Approved actions now log the observed result: invalid reminder time, an opened
+external handoff, or a failed handoff, rather than logging every approval as
+if the action succeeded. A regression covers invalid reminder approval.
+
+This closes only those audited defects. The milestone table and owner/device
+limitations above remain open; M11 has not been accepted and Phase 2 is gated.

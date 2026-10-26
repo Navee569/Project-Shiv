@@ -207,3 +207,24 @@ speaker recognition, full provider integrations, calibrated energy benchmarking,
 continuous adaptive sensing, fully general reversible actions and several
 architecture/UX/security acceptance items. Phase 2 gate remains intact in
 docs/PHASE2_GATE.md. Do not report full feature completion.
+
+## Follow-up audit from PR #8 merge `6c114476` — 26 October 2026
+
+The optional cloud chat and selected-image integration already exists in
+`ShivIntelligence.kt` and remains completely unchanged. It requires the owner
+to choose CLOUD/HYBRID, enter an endpoint/model, and separately enable cloud
+transmission; local mode cannot send. Live provider responses are unverified.
+
+The chat memory refresh was accidentally inside a line comment with literal
+`\\n` characters. It now runs before every response so corrected or removed
+notes cannot remain in the controller's cached list. An API26/API35 Android
+regression exercises add/remove between chat submissions. The capability list
+now accurately labels the existing temporary Contacts and short on-demand
+Accessibility previews as requiring device permission.
+Owner-approved reminders and external handoffs now record their actual result
+in the redacted action log; approval alone no longer reads as successful
+execution. An Android regression covers a reminder with an invalid time.
+
+These repairs do not establish complete Phase 1 parity or M11 owner acceptance.
+Remaining gaps and Galaxy S23 OWNER-VERIFY checks in this file, the audit and
+`TESTING.md` remain open. No Phase 2 or optional privileged feature was started.
