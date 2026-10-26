@@ -81,7 +81,9 @@
    percentage; a one-time in-flight native cancellation may be delayed.
 6. Cancel a long-running local request, then ask a second question. Verify the
    new request is not stuck and priority queue recovers.
-7. Unload a model before REMOVE REFERENCE. Confirm the original document still
+7. After using a selected CHAT model, leave Shiv idle for over two minutes;
+   confirm in Models that it unloads (or record a failure). Unload a model
+   before REMOVE REFERENCE. Confirm the original document still
    exists in My Files and free storage reflects release of the Shiv staged copy.
 8. Confirm CLOUD/HYBRID settings and existing explicit consent path still work
    as originally configured; do not enter credentials into shared logs.
