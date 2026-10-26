@@ -239,6 +239,11 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         proactiveLastKey=nudgeLedger.lastKey()
         proactiveFeedback=nudgeLedger.report()
     }
+    fun refreshPrivacyAfterOwnerReset() {
+        proactiveOptIn=ShivVault(context).get("proactive_opt_in")=="yes"
+        refreshProactiveFeedback()
+        clearUsagePreview()
+    }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
