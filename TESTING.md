@@ -54,7 +54,8 @@
 - Battery additional drain: OWNER-VERIFY
 - Local tokens/s and time to first token: OWNER-VERIFY
 - Notification denylist: OWNER-VERIFY
-- Accessibility/ADB/Shizuku: NOT IMPLEMENTED
+- Accessibility on-demand extraction: BUILT - OWNER-VERIFY
+- ADB/Shizuku: NOT IMPLEMENTED (requires separate owner approval)
 - Final functional acceptance: NOT COMPLETE
 
 ## OWNER-VERIFY: reminder authority
