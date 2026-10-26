@@ -28,6 +28,6 @@ object RoutineLearner {
                 LearnedRoutine(key.first, key.second, key.third,
                     distinctDays.takeLast(8).map { it.id },
                     (0.72 + 0.04 * (distinctDays.size - 3)).coerceAtMost(0.92))
-            }.sortedByDescending { it.confidence }.take(20)
+            }.sortedByDescending { it.confidence }.take(20).toList()
     }
 }
