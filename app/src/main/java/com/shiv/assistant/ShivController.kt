@@ -21,6 +21,7 @@ import com.shiv.assistant.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.time.LocalDate
 
 data class ChatEntry(val role: String, val text: String)
 
@@ -34,6 +35,8 @@ class ShivController(private val context: Context) {
     var neuralReady by mutableStateOf(false)
         private set
     val knowledge = ShivKnowledge(vault)
+    val agenda = ShivAgenda(vault)
+    val agendaItems = mutableStateListOf<AgendaItem>()
     val audit = ShivAuditTrail(vault)
     val energy = ShivEnergyLedger(vault)
     private val backup = ShivEncryptedBackup(context, vault)
@@ -93,6 +96,7 @@ class ShivController(private val context: Context) {
             val persisted = JSONArray(vault.get("macros") ?: "[]")
             for (i in 0 until persisted.length()) macros.add(persisted.getString(i))
             models = modelCatalog.all()
+            agendaItems.addAll(agenda.list())
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
@@ -217,6 +221,18 @@ class ShivController(private val context: Context) {
         val question = message.trim()
         if (question.isEmpty() || working) return
         append("user", question)
+        val normalized = question.lowercase()
+        if (normalized.contains("what's on tomorrow") ||
+            normalized.contains("what is on tomorrow") ||
+            normalized.contains("schedule tomorrow")) {
+            val items = agenda.onDay(LocalDate.now().plusDays(1))
+            append("assistant", if (items.isEmpty()) "No saved events or tasks for tomorrow."
+            else items.joinToString("\n") {
+                AgendaDates.formatLocal(it.dueEpochMs).substringAfter(' ') + " — " +
+                    it.kind.name + ": " + it.title + (if (it.completed) " (done)" else "")
+            })
+            return
+        }
         val proposal = ShivPlanner.parse(question)
         if (proposal.kind == ActionKind.NOTES) {
             saveNote(proposal.argument)
@@ -329,6 +345,29 @@ class ShivController(private val context: Context) {
         } catch (e: Exception) {
             notice = "Encrypted restore rejected: " + (e.message ?: "unknown error")
         } finally { working = false }
+    }
+    fun createAgendaItem(title: String, dateTime: String, kind: AgendaKind) {
+        runCatching {
+            val item = agenda.add(title, dateTime, kind)
+            refreshAgenda()
+            audit.add(kind.name, "Owner saved dated agenda item " + item.id, "ASK_FIRST", true)
+            notice = kind.name.lowercase().replaceFirstChar { it.uppercase() } + " saved for " + dateTime
+        }.onFailure { notice = "Could not save event/task: " + (it.message ?: "invalid date") }
+    }
+    fun completeAgendaItem(id: String, done: Boolean) {
+        agenda.markCompleted(id, done)
+        refreshAgenda()
+        notice = if (done) "Task marked completed" else "Task marked outstanding"
+    }
+    fun removeAgendaItem(id: String) {
+        agenda.remove(id)
+        refreshAgenda()
+        audit.add("AGENDA_DELETE", "Owner deleted agenda item " + id, "ASK_FIRST", true)
+        notice = "Agenda item deleted"
+    }
+    private fun refreshAgenda() {
+        agendaItems.clear()
+        agendaItems.addAll(agenda.list())
     }
     fun saveMacro(goal: String) {
         if (goal.isBlank()) return

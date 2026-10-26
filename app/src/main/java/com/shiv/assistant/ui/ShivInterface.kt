@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.*
+import com.shiv.assistant.data.AgendaKind
+import com.shiv.assistant.data.AgendaDates
 import kotlinx.coroutines.launch
 
 private val Neon = Color(0xFF65F5F0)
@@ -68,7 +70,7 @@ fun ShivInterface(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Core", "Chat", "Automate", "Memory", "Models", "Status", "Privacy", "Settings").forEach {
+                listOf("Core", "Chat", "Tasks", "Automate", "Memory", "Models", "Status", "Privacy", "Settings").forEach {
                     val active = tab == it
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -159,6 +161,45 @@ fun ShivInterface(
                     TextButton(onClick = onPhoto) { Text("◈ Vision", color = Neon) }
                     TextButton(onClick = { controller.messages.lastOrNull { it.role == "assistant" }?.let { onSpeak(it.text) } }) {
                         Text("◉ Speak", color = Neon)
+                    }
+                }
+            }
+            "Tasks" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Header("EVENTS & TASKS", "Owner-entered dates. No events are invented or created from uncertain speech.")
+                var itemTitle by remember { mutableStateOf("") }
+                var itemDate by remember { mutableStateOf("") }
+                var itemType by remember { mutableStateOf(AgendaKind.TASK) }
+                OutlinedTextField(itemTitle, { itemTitle = it.take(300) },
+                    label = { Text("Event or task name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(itemDate, { itemDate = it.take(16) },
+                    label = { Text("Date and time — YYYY-MM-DD HH:mm") }, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = itemType == AgendaKind.TASK, onClick = { itemType = AgendaKind.TASK })
+                    Text("Task", color = Color.White)
+                    RadioButton(selected = itemType == AgendaKind.EVENT, onClick = { itemType = AgendaKind.EVENT })
+                    Text("Event", color = Color.White)
+                }
+                Button(onClick = { controller.createAgendaItem(itemTitle, itemDate, itemType) },
+                    enabled = itemTitle.isNotBlank() && itemDate.isNotBlank()) { Text("SAVE TO PRIVATE AGENDA") }
+                Header("NEXT 48 HOURS", "Only saved records, never model guesses.")
+                controller.agenda.upcoming().forEach { item ->
+                    GlassCard {
+                        Text(item.title, color = Color.White)
+                        Text(AgendaDates.formatLocal(item.dueEpochMs), color = Violet, fontSize = 12.sp)
+                    }
+                }
+                Header("ALL SAVED ITEMS", "Stored encrypted in SQLCipher.")
+                controller.agendaItems.forEach { item ->
+                    GlassCard {
+                        Text(item.kind.name + " • " + item.title, color = Color.White)
+                        Text(AgendaDates.formatLocal(item.dueEpochMs), color = Muted, fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = item.completed,
+                                onCheckedChange = { controller.completeAgendaItem(item.id, it) })
+                            Text("Complete", color = Muted, modifier = Modifier.weight(1f), fontSize = 11.sp)
+                            TextButton(onClick = { controller.removeAgendaItem(item.id) }) { Text("DELETE") }
+                        }
                     }
                 }
             }
