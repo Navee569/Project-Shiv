@@ -10,6 +10,13 @@ import java.time.Instant
 
 /** Pure safety assertions for changes based on the audited 8e48ed0 tree. */
 class ParityCompletionSafetyTest {
+    @Test fun mixedCaseBankingPackagesAndSubpackagesAreAlwaysRejected() {
+        assertTrue(SensitiveAppDenylist.excluded("com.SBI.SBIFreedomPlus"))
+        assertTrue(SensitiveAppDenylist.excluded("com.phonepe.app.SECURE"))
+        assertTrue(SensitiveAppDenylist.excluded("Com.Example.Private",
+            setOf("com.example.private")))
+        assertFalse(SensitiveAppDenylist.excluded("com.android.calendar"))
+    }
     @Test fun calendarImportRequiresExplicitCleanCandidate() {
         val now = Instant.parse("2026-10-26T10:00:00Z").toEpochMilli()
         val safe = CalendarCandidate("external-91-"+(now+60_000),
