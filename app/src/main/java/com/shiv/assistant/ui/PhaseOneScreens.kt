@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import com.shiv.assistant.PhaseOneController
+import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
 import kotlinx.coroutines.launch
 
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
  * imported metadata, and pending approvals are never shown as complete actions.
  */
 @Composable
-fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->Unit) {
+fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
@@ -185,17 +186,17 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
                 Row {
-                    FilterChip(controller.reminderTier==AuthorityTier.ASK_FIRST,
-                        onClick={scope.launch{controller.changeReminderTier(AuthorityTier.ASK_FIRST)}},
+                    FilterChip(owner.reminderTier==AuthorityTier.ASK_FIRST,
+                        onClick={scope.launch{owner.changeReminderTier(AuthorityTier.ASK_FIRST)}},
                         label={Text("Ask first")})
                     Spacer(Modifier.width(8.dp))
-                    FilterChip(controller.reminderTier==AuthorityTier.ACT_THEN_TELL,
-                        onClick={scope.launch{controller.changeReminderTier(AuthorityTier.ACT_THEN_TELL)}},
+                    FilterChip(owner.reminderTier==AuthorityTier.ACT_THEN_TELL,
+                        onClick={scope.launch{owner.changeReminderTier(AuthorityTier.ACT_THEN_TELL)}},
                         label={Text("Schedule, then tell")})
                 }
                 Text("Only explicit local reminders may use act-then-tell. Payments and messages still require review.",
                     color=Color.LightGray,fontSize=11.sp)
-                OutlinedButton(onClick={scope.launch{controller.undoLatestReminder()}}) {
+                OutlinedButton(onClick={scope.launch{owner.undoLatestReminder()}}) {
                     Text("UNDO LATEST PENDING REMINDER")
                 }
                 OutlinedButton(onClick={controller.setPatternLearning(true)}) {
