@@ -256,43 +256,49 @@ class ShivController(private val context: Context) {
      */
     suspend fun eraseOwnerRecords() {
         require(!working) { "Finish the current action first" }
-        val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
-        val ids=withContext(Dispatchers.IO) {
-            val dao=database.dao()
-            val pending=dao.reminderIds()
-            dao.eraseOwnerRecords()
-            pending
+        working=true
+        try {
+            // Stop external producers BEFORE touching the private database.
+            check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
+                .edit().clear().commit()) { "Could not revoke sensing" }
+            check(context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE)
+                .edit().clear().commit()) { "Could not revoke passive learning" }
+            check(context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE)
+                .edit().clear().commit()) { "Could not revoke call check-ins" }
+            val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
+            val ids=withContext(Dispatchers.IO) {
+                val dao=database.dao()
+                val pending=dao.reminderIds()
+                dao.eraseOwnerRecords()
+                pending
+            }
+            val wm=androidx.work.WorkManager.getInstance(context)
+            for(id in ids) {
+                wm.cancelAllWorkByTag("shiv-reminder-"+id)
+                wm.cancelUniqueWork("shiv-approved-"+id)
+            }
+            wm.cancelUniqueWork("shiv-durable-signals")
+            wm.cancelUniqueWork("shiv-opt-in-pattern-learning")
+            phase.hub.clearSessions()
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+                .cancelAll()
+            messages.clear()
+            notes.clear()
+            macros.clear()
+            pending=null
+            visionCandidate=null
+            apiKey=""
+            config=AssistantConfiguration()
+            speechLocale="en-IN"
+            notificationSummaries=false
+            reminderTier=AuthorityTier.ASK_FIRST
+            phase.discardCalendarPreview()
+            phase.clearContactNames()
+            phase.reload()
+            notice="Owner data erased from Shiv's encrypted database; imported model files remain."
+        } finally {
+            working=false
         }
-        phase.hub.clearSessions()
-        (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
-            .cancelAll()
-        val wm=androidx.work.WorkManager.getInstance(context)
-        for(id in ids) {
-            wm.cancelAllWorkByTag("shiv-reminder-"+id)
-            wm.cancelUniqueWork("shiv-approved-"+id)
-        }
-        wm.cancelUniqueWork("shiv-durable-signals")
-        wm.cancelUniqueWork("shiv-opt-in-pattern-learning")
-        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
-            .edit().clear().commit()
-        context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE)
-            .edit().clear().commit()
-        context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE)
-            .edit().clear().commit()
-        messages.clear()
-        notes.clear()
-        macros.clear()
-        pending=null
-        visionCandidate=null
-        apiKey=""
-        config=AssistantConfiguration()
-        speechLocale="en-IN"
-        notificationSummaries=false
-        reminderTier=AuthorityTier.ASK_FIRST
-        phase.discardCalendarPreview()
-        phase.clearContactNames()
-        phase.reload()
-        notice="Owner data erased from Shiv's encrypted database; imported model files remain."
     }
 
     fun clearHistory() {
