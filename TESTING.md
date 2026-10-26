@@ -46,3 +46,33 @@
 | Calls | Confirm no interception/recording of cellular call audio | Not checked |
 
 Acceptance requires recording observations and resolving critical defects before any Phase 2 entry.
+
+
+## Verify corrected parity-branch development additions
+
+Start from the **successful final SHA's** CI APK, not an artifact from main.
+
+1. Permissions > Calendar: decline permission and verify zero imports. Grant it,
+   preview temporary entries, discard and verify no event was written. Preview
+   again, approve one permitted non-sensitive event, and verify an encrypted
+   event and redacted action log. Revoke READ_CALENDAR before approval;
+   importing must stop. Repeat approval; it must not duplicate the event.
+2. Permissions > Accessibility: add the full package identifier of a harmless
+   test app, enable Shiv service manually in Android Settings, then ARM FOR 15S.
+   Switch to a different app and confirm nothing is captured; switch to the
+   exact allowed app and verify only possible date/time facts. A banking/OTP
+   package or password field must never be recorded. STOP immediately
+   disarms. Secure/FLAG_SECURE windows still need explicit real-device review.
+3. Permissions > Reminder Authority: choose ASK_FIRST and review an explicit
+   10-minute reminder. Switch to ACT_THEN_TELL, issue another explicit
+   reminder, and verify it can be canceled by UNDO. Repeat undo: no second
+   cancellation should be claimed. Messages and UPI must still require review.
+4. Decisions > APPROVED event: press Undo and verify its local event is absent,
+   pending reminder shows CANCELLED, and the decision remains UNDONE in the
+   encrypted audit. Repeated undo does not duplicate changes.
+5. Permissions > Contacts: grant READ_CONTACTS for a one-shot search. Confirm
+   only a few names display, with no phone numbers/emails or saved copies.
+   Revoke the permission and confirm no further reads. Test empty queries.
+6. Repeat the latest APK build, JUnit/lint, and instrumented Android API26 and
+   API35 suites. Emulator passes do not prove Galaxy S23 background behavior,
+   Kannada/Telugu speech, real LiteRT model performance or power consumption.
