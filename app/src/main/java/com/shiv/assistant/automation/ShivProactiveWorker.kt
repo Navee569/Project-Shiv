@@ -96,9 +96,17 @@ class ShivProactiveWorker(context: Context, params: WorkerParameters) :
 }
 object ShivProactive {
     fun schedule(context: Context) {
+        val manager = WorkManager.getInstance(context)
+        val vault = ShivVault(context)
+        if (vault.get("proactive_opt_in") != "yes" ||
+            vault.get("sensing_paused") == "yes" ||
+            vault.get("guest_mode") == "yes" || vault.get("privacy_zone") == "yes") {
+            manager.cancelUniqueWork("shiv_proactive")
+            return
+        }
         val request = PeriodicWorkRequestBuilder<ShivProactiveWorker>(1, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build()).build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        manager.enqueueUniquePeriodicWork(
             "shiv_proactive", ExistingPeriodicWorkPolicy.KEEP, request)
     }
 }
