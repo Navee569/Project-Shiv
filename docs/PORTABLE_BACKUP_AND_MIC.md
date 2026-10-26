@@ -69,3 +69,20 @@ the in-app STOP control also works.
 - Real S23 verification **still needed** for SAF provider behaviour, restore
   across devices, speech-packs, One UI foreground-microphone policy, battery,
   thermal measurements, background process death and model accuracy.
+
+## Offline image text and reviewed due-date tasks
+
+Tap **Vision** on Chat and select an image. The dialog now includes **LOCAL OCR**
+alongside **LOCAL LABELS** and the separate, explicitly consented cloud image
+API action. LOCAL OCR uses the bundled ML Kit Latin script model entirely on
+device; it does not send the image or recognized text to cloud AI.
+
+The temporary OCR preview only offers a due-date task if the visible text has
+a strict ISO date such as `Due date: 2026-11-30`. The owner must review the title
+and supply an exact future 24-hour time before **SAVE REVIEWED TASK** creates an
+encrypted task. Dismiss keeps no task or image copy. Banking/OTP/password-like
+recognition results are suppressed before reaching persistent storage.
+
+**Limitations:** OCR can misread photos. Recognition of Kannada or Telugu
+scripts is not provided by this bundled Latin model. The screen, chosen
+image formats, calendar-time behavior and accuracy require S23 verification.
