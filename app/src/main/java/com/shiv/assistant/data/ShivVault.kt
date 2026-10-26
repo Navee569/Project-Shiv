@@ -74,9 +74,9 @@ class ShivVault(context: Context) {
                 Base64.encodeToString(candidate, Base64.NO_WRAP))
             candidate
         }
-        ShivRoomDatabase.open(appContext, bytes).entries().also {
-            bytes.fill(0)
-        }
+        // SQLCipher's factory needs this passphrase for possible database reopen.
+        // Do not wipe the array before the first lazy DB open.
+        ShivRoomDatabase.open(appContext, bytes).entries()
     }
 
     /**
