@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
-import java.time.Instant
+import java.io.ByteArrayOutputStream
 
 /**
  * Owner-initiated passphrase-encrypted archive for personal SQLCipher records.
@@ -19,16 +19,18 @@ import java.time.Instant
  * and old approvals are disabled to avoid unexpected actions after a restore.
  * Model binaries and paths are device-specific and NEVER exported or overwritten.
  */
-class PortableOwnerArchive(private val context: Context) {
-    private val database get() = EncryptedDatabase.open(context)
+class PortableOwnerArchive(
+    private val context: Context,
+    private val database: ShivDatabase = EncryptedDatabase.open(context)
+) {
     private val tables = listOf("vault_entries", "profiles", "memories", "events", "tasks",
         "reminders", "saved_rules", "chat_history", "action_log", "permission_tiers",
         "signals", "beliefs", "decision_traces")
     private val maxRows=50_000
     private val maxBytes=PortableBackupCodec.MAX_ARCHIVE_BYTES
 
-    suspend fun exportTo(uri:Uri, passphrase:CharArray):Int = withContext(Dispatchers.IO) {
-        val bytes = try {
+    suspend fun exportEncrypted(passphrase:CharArray):ByteArray = withContext(Dispatchers.IO) {
+        try {
             val json=database.runInTransaction<JSONObject> {
                 val sql=database.openHelper.writableDatabase
                 val data=JSONObject()
@@ -41,6 +43,10 @@ class PortableOwnerArchive(private val context: Context) {
             try { PortableBackupCodec.encrypt(json,passphrase) }
             finally { json.fill(0) }
         } finally { passphrase.fill('\u0000') }
+    }
+
+    suspend fun exportTo(uri:Uri, passphrase:CharArray):Int = withContext(Dispatchers.IO) {
+        val bytes=exportEncrypted(passphrase)
         // The SAF destination contains ONLY encrypted bytes, never JSON plaintext.
         val stream=context.contentResolver.openOutputStream(uri,"wt")
             ?: throw IllegalArgumentException("Cannot write the selected backup document")
@@ -54,10 +60,21 @@ class PortableOwnerArchive(private val context: Context) {
      */
     suspend fun restoreFrom(uri:Uri, passphrase:CharArray):Int = withContext(Dispatchers.IO) {
         val encrypted=context.contentResolver.openInputStream(uri)?.use { input ->
-            val bytes=input.readNBytes(maxBytes+65)
-            require(bytes.size<=maxBytes+64) { "Backup file exceeds 12 MB limit" }
-            bytes
+            val buffer=ByteArray(64*1024)
+            val result=ByteArrayOutputStream()
+            while(true) {
+                val read=input.read(buffer)
+                if(read<0)break
+                result.write(buffer,0,read)
+                require(result.size()<=maxBytes+64) { "Backup file exceeds 12 MB limit" }
+            }
+            result.toByteArray()
         } ?: throw IllegalArgumentException("Backup document is unavailable")
+        restoreEncrypted(encrypted,passphrase)
+    }
+
+    suspend fun restoreEncrypted(encrypted:ByteArray,passphrase:CharArray):Int =
+        withContext(Dispatchers.IO) {
         val plaintext=try { PortableBackupCodec.decrypt(encrypted,passphrase) }
             finally { passphrase.fill('\u0000') }
         val snapshot=try {
