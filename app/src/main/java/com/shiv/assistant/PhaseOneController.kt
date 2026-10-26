@@ -25,6 +25,8 @@ import com.shiv.assistant.automation.ShivAgendaNudgeWorker
 import com.shiv.assistant.data.OwnerNudgeLedger
 import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.data.LocalModelComputeLedger
+import com.shiv.assistant.integrations.UsageOverview
+import com.shiv.assistant.domain.UsageObservation
 import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +45,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
+    val usagePreview=mutableStateListOf<UsageObservation>()
     private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
@@ -189,6 +192,24 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         context.stopService(Intent(context,ShivMicSessionService::class.java))
         progress="Offline microphone session stopped"
     }
+    fun openUsageAccessSettings() {
+        context.startActivity(android.content.Intent(
+            android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    suspend fun previewUsage() {
+        usagePreview.clear()
+        val reader=UsageOverview(context)
+        if(!reader.hasOwnerGrant()) {
+            issue="Enable Shiv manually under Android Special app access → Usage access"
+            return
+        }
+        try {
+            usagePreview.addAll(reader.lastDay())
+            progress="Owner-requested 24h app usage preview; nothing was saved or sent to AI"
+        } catch (_:Exception) { issue="Unable to read Android app usage metadata" }
+    }
+    fun clearUsagePreview() { usagePreview.clear() }
     fun setLocalComputeBudget(seconds:Int) {
         require(seconds in 60..3600)
         computeLedger.setBudgetSeconds(seconds)
