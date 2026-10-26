@@ -50,6 +50,9 @@ class ShivController(private val context: Context) {
         private set
     var notificationSummaries by mutableStateOf(false)
         private set
+    var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
+        private set
+        private set
     init {
         runCatching {
             config = AssistantConfiguration(
@@ -61,6 +64,12 @@ class ShivController(private val context: Context) {
             apiKey = vault.get("api_secret").orEmpty()
             speechLocale = vault.get("speech_locale") ?: "en-IN"
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            reminderTier = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                runCatching {
+                    AuthorityTier.valueOf(com.shiv.assistant.data.EncryptedDatabase.open(context)
+                        .dao().tier("REMINDER")?.tier ?: "ASK_FIRST")
+                }.getOrDefault(AuthorityTier.ASK_FIRST)
+            }.let { if(it==AuthorityTier.ACT_THEN_TELL) it else AuthorityTier.ASK_FIRST }
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
             notes.addAll(vault.notes())
             val persisted = JSONArray(vault.get("macros") ?: "[]")
@@ -79,6 +88,35 @@ class ShivController(private val context: Context) {
         vault.put("api_secret", secret)
         apiKey = secret
         notice = "Intelligence configuration saved securely"
+    }
+    suspend fun changeReminderTier(tier:AuthorityTier) {
+        require(tier in setOf(AuthorityTier.ASK_FIRST,AuthorityTier.ACT_THEN_TELL))
+        withContext(Dispatchers.IO) {
+            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putTier(
+                com.shiv.assistant.data.PermissionTierRecord("REMINDER",tier.name,System.currentTimeMillis()))
+        }
+        reminderTier=tier
+        notice=if(tier==AuthorityTier.ASK_FIRST) "Reminder approval required"
+            else "Explicit reminders may be scheduled, with owner undo available"
+    }
+    suspend fun undoLatestReminder() {
+        val id=vault.get("last_reminder_id").orEmpty()
+        if(id.isBlank()) {
+            notice="No pending reminder to undo"
+            return
+        }
+        val undone=ShivReminders.undo(context,id)
+        if(undone) {
+            vault.put("last_reminder_id","")
+            withContext(Dispatchers.IO) {
+                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+                    com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
+                    "REMINDER_UNDO","[REDACTED]","ASK_FIRST","OWNER_REQUESTED",
+                    true,"CANCEL_REQUESTED",null))
+            }
+        }
+        notice=if(undone) "Pending reminder canceled; delivered notifications cannot be recalled"
+            else "Reminder already delivered, canceled, or missing"
     }
     private fun append(role: String, text: String) {
         messages.add(ChatEntry(role, text))
@@ -131,6 +169,21 @@ class ShivController(private val context: Context) {
             append("assistant", "Saved to encrypted Shiv memory.")
             return
         }
+        if (proposal.kind == ActionKind.REMINDER &&
+            reminderTier == AuthorityTier.ACT_THEN_TELL &&
+            ActionAuthorization.decide(proposal, reminderTier, false).permitted) {
+            val id=ShivReminders.schedule(context,proposal.argument)
+            if(id!=null) vault.put("last_reminder_id",id.toString())
+            withContext(Dispatchers.IO) {
+                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+                    com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
+                        "REMINDER","[REDACTED]","ACT_THEN_TELL","OWNER_CONFIGURED",
+                        id!=null,if(id!=null)"SCHEDULED" else "INVALID_DATE",null))
+            }
+            append("assistant",if(id!=null) "Reminder scheduled. Use Permissions > Undo latest reminder to cancel it."
+                else "I couldn't parse the reminder time. Try 'remind me in 10 minutes'.")
+            return
+        }
         if (proposal.kind != ActionKind.UNKNOWN) {
             pending = proposal
             append("assistant", proposal.explanation + ". Approve or cancel the proposed action below.")
@@ -169,7 +222,9 @@ class ShivController(private val context: Context) {
             ActionKind.NOTES -> saveNote(action.argument)
             ActionKind.REMINDER -> {
                 val id = ShivReminders.schedule(context, action.argument)
-                notice = if (id == null) "Use: remind me in 10 minutes to ..." else "Reminder scheduled locally"
+                if(id!=null) vault.put("last_reminder_id",id.toString())
+                notice = if (id == null) "Use: remind me in 10 minutes to ..."
+                    else "Reminder scheduled locally; undo is available in Permissions"
             }
             else -> notice = if (ShivActions.launch(context, action)) "Opened external app for review"
                 else "No compatible app installed, or action unavailable"
