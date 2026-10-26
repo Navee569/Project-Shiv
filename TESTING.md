@@ -101,3 +101,34 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
 5. Execute the final commit's native APK build, JVM unit tests, lint, static
    safety checks and Android API 26/35 instrumentation. CI emulator success
    does not prove battery, speech, One UI, or model usability on Galaxy S23.
+
+
+## Combined owner acceptance: portable backup and bounded offline microphone
+
+1. **Before restoring, make disposable test data.** Enter a private note, an
+   event, a reminder and a test configuration. Export through Permissions >
+   Portable encrypted backup using a unique long passphrase and SAF picker.
+   Verify the `.shiv` file does not contain the note in plaintext.
+2. Attempt restore with a wrong passphrase and a modified file. Old Shiv
+   records must remain intact. On a test install, restore the original archive
+   and confirm the note/event are present, previous reminders are inactive,
+   authority settings return ASK_FIRST, and cloud consent is LOCAL/OFF. Models
+   must be reimported on another device. No network activity is required.
+3. Disable backup access or cancel SAF picker and confirm no partial changes.
+   Test process recreation after import. Never use irreplaceable personal
+   notes for initial recovery testing.
+4. With an installed Android 13+ on-device speech pack, give microphone
+   permission in Shiv's foreground and explicitly start its 10-minute mic
+   session. Confirm Android's microphone indicator + persistent STOP action.
+   Speak a harmless commitment; it must enter ASK_FIRST and must not create
+   an unreviewed calendar event. Speak an OTP; no secret fact may be saved.
+   Test in-app STOP, notification STOP, app background, thermal restrictions,
+   low battery, missing Kannada/Telugu packs and phone interruption. Confirm
+   no network speech service is used.
+5. Submit duplicate harmless meeting notifications from the same test app.
+   Within 10 minutes expect a single queued fact; a different app should
+   remain independent. Repeated user-typed commands remain separate.
+6. Run final native build/JVM/static/lint and Android API26/API35 emulator
+   instrumentation on the **exact same commit**, and record observed S23
+   thermal, power, voice latency and compatible model performance separately.
+   No passing emulator test counts as physical S23 release acceptance.
