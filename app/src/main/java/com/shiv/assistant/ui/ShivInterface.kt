@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.*
 import com.shiv.assistant.data.AgendaKind
+import com.shiv.assistant.data.OwnerReaction
 import com.shiv.assistant.data.AgendaDates
 import kotlinx.coroutines.launch
 
@@ -463,6 +464,8 @@ fun ShivInterface(
                     color = Muted, fontSize = 12.sp)
                 Text("Output characters: " + (inference?.outputCharacters?.toString() ?: "NOT MEASURED"),
                     color = Muted, fontSize = 12.sp)
+                Header("WEEKLY SELF-REVIEW", "Counts use owner-entered reactions, not guessed task outcomes.")
+                Text(controller.feedback.weeklyReport(), color = Muted, fontSize = 11.sp)
                 Header("ENERGY LEDGER", "Only recorded activity is shown; no invented battery usage numbers.")
                 Text(runCatching { controller.energy.report() }.getOrDefault("No measurements"), color = Muted, fontSize = 11.sp)
             }
@@ -512,6 +515,15 @@ fun ShivInterface(
                             color = Color.White, fontWeight = FontWeight.Bold)
                         Text(trace.reason, color = Muted, fontSize = 12.sp)
                         Text("Authority: " + trace.tier, color = Violet, fontSize = 11.sp)
+                        if (trace.action == "PROACTIVE") {
+                            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                                OwnerReaction.entries.forEach { reaction ->
+                                    TextButton(onClick = {
+                                        controller.reactToTrace(trace.id, reaction)
+                                    }) { Text(reaction.name, fontSize = 10.sp) }
+                                }
+                            }
+                        }
                     }
                 }
             }
