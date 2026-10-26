@@ -121,8 +121,8 @@ class ShivController(private val context: Context) {
     var sensingPaused by mutableStateOf(false)
         private set
     var ocrPreview by mutableStateOf("")
-    var ocrTaskCandidate by mutableStateOf<OcrTaskCandidate?>(null)
         private set
+    var ocrTaskCandidate by mutableStateOf<OcrTaskCandidate?>(null)
         private set
     var guestMode by mutableStateOf(false)
         private set
