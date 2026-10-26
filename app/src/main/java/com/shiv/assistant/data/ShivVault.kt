@@ -7,6 +7,7 @@ import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -17,6 +18,7 @@ import javax.crypto.spec.GCMParameterSpec
  * There are no unencrypted credentials, memories, or conversation bodies in SharedPreferences.
  */
 class ShivVault(context: Context) {
+    private val appContext = context.applicationContext
     private val preferences = context.applicationContext.getSharedPreferences("shiv_encrypted_v1", Context.MODE_PRIVATE)
     private val alias = "shiv_vault_master_v1"
     private val key: SecretKey by lazy {
@@ -36,7 +38,7 @@ class ShivVault(context: Context) {
         }.generateKey()
     }
     @Synchronized
-    fun put(name: String, value: String) {
+    private fun putLegacy(name: String, value: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         cipher.updateAAD(name.toByteArray(Charsets.UTF_8))
@@ -46,7 +48,7 @@ class ShivVault(context: Context) {
         }
     }
     @Synchronized
-    fun get(name: String): String? {
+    private fun getLegacy(name: String): String? {
         val source = preferences.getString(name, null) ?: return null
         try {
             val bytes = Base64.decode(source, Base64.DEFAULT)
@@ -59,6 +61,46 @@ class ShivVault(context: Context) {
             // Never silently overwrite corrupted data. UI can recover or erase explicitly.
             throw IllegalStateException("Encrypted Shiv record unavailable: " + name, e)
         }
+    }
+    private val secureEntries: SecureEntries by lazy {
+        val existing = getLegacy("__sqlcipher_passphrase_v1")
+        val bytes = if (existing != null) {
+            Base64.decode(existing, Base64.NO_WRAP).also {
+                require(it.size == 32) { "Encrypted database secret invalid" }
+            }
+        } else {
+            val candidate = ByteArray(32).also(SecureRandom()::nextBytes)
+            putLegacy("__sqlcipher_passphrase_v1",
+                Base64.encodeToString(candidate, Base64.NO_WRAP))
+            candidate
+        }
+        ShivRoomDatabase.open(appContext, bytes).entries().also {
+            bytes.fill(0)
+        }
+    }
+
+    /**
+     * Lazy, lossless migration: read each legacy Keystore-encrypted value,
+     * commit it into SQLCipher, and only then remove the original ciphertext.
+     */
+    @Synchronized
+    fun get(name: String): String? {
+        require(name.isNotBlank() && name != "__sqlcipher_passphrase_v1")
+        val stored = secureEntries.read(name)
+        if (stored != null) return stored
+        val legacy = getLegacy(name) ?: return null
+        secureEntries.write(SecureEntry(name, legacy))
+        check(preferences.edit().remove(name).commit()) { "Legacy cleanup failed" }
+        return legacy
+    }
+
+    @Synchronized
+    fun put(name: String, value: String) {
+        require(name.isNotBlank() && name != "__sqlcipher_passphrase_v1")
+        secureEntries.write(SecureEntry(name, value))
+        // Remove any Keystore-encrypted legacy copy only after SQLCipher commit.
+        if (preferences.contains(name))
+            check(preferences.edit().remove(name).commit()) { "Legacy cleanup failed" }
     }
     fun notes(): List<String> {
         val data = get("notes") ?: return emptyList()

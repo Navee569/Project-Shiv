@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.android.legacy-kapt'
 }
 android {
     namespace = 'com.shiv.assistant'
@@ -34,5 +35,9 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     implementation 'com.google.ai.edge.litertlm:litertlm-android:0.18.0'
     implementation 'androidx.biometric:biometric:1.1.0'
+    implementation 'androidx.room:room-runtime:2.8.4'
+    kapt 'androidx.room:room-compiler:2.8.4'
+    implementation 'net.zetetic:sqlcipher-android:4.19.1@aar'
+    implementation 'androidx.sqlite:sqlite:2.7.0'
     testImplementation 'junit:junit:4.13.2'
 }
