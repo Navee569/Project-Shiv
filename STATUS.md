@@ -84,3 +84,40 @@ graph and third-party integration contracts, fully general undo, secure export
 and restore. Phase 2 remains gated by M11 acceptance and optional privileged
 access remains owner-approval-only. These must not be described as done.
 The existing cloud AI implementation in ShivIntelligence.kt is unchanged.
+
+
+## 26 October 2026 additional Phase 1 integration — correct audited lineage
+
+**New branch:** `development/shiv-phase1-remaining-integrations-20261026`, based on
+`development/shiv-feature-parity-audit` at the verified post-PR#5 source.
+Cloud intelligence implementation `ShivIntelligence.kt` is unchanged.
+
+Development added in this pass (CI vs S23 verification to be reported separately):
+- Explicit owner-data-erasure flow requiring the exact `ERASE SHIV DATA` phrase.
+  One SQLCipher transaction removes Shiv's chat, memory, facts, events,
+  reminders, rules, beliefs, decisions, owner preferences, action audit,
+  encrypted cloud secret and queued private signals. Pending reminder jobs
+  are canceled; local model *sessions* and app notifications are cleared.
+  Model weight files/metadata remain to avoid destroying public GB assets.
+  This is not a filesystem-level secure overwrite of storage blocks.
+- Daily battery-aware WorkManager memory-expiry cleanup physically deletes
+  expired memory records. Pending owner decision records are retained.
+- Owner-encrypted per-app notification/Accessibility/queue exclusions with
+  exact package validation and screen capture disarming. Built-in banking,
+  authenticator and payment exclusions remain non-overridable.
+- Local neural inference rechecks battery/RAM/thermal on every reply, uses
+  the smaller router when eligible, serializes all chat inference and model
+  load/unload, requests 2-minute large-model idle release, limits prompts and
+  best-effort in-flight time. Logs only measured first-fragment latency and
+  character count; **neither is a claimed token/s or battery measurement**.
+- Separate throwaway SQLCipher instrumentation checks owner erasure,
+  expiration, and retention of imported public model metadata. Pure JUnit
+  tests exercise canceled inference-queue request recovery and app exclusions.
+
+**Still incomplete/unverified:** Phase 1 M11 physical S23 acceptance, full
+encrypted portable export/restore, hardware LiteRT model files and delegate
+calibration, high-quality local Kannada/Telugu voice, continuous microphone
+user-initiated service, complete third-party authenticated integrations,
+general-purpose reversible automation, on-device energy profiling, and all
+remaining gaps in FEATURE_BY_FEATURE_AUDIT.md. Phase 2 stays gated per
+docs/PHASE2_GATE.md. Do not claim complete implementation or S23 testing.

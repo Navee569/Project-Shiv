@@ -76,3 +76,28 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
 6. Repeat the latest APK build, JUnit/lint, and instrumented Android API26 and
    API35 suites. Emulator passes do not prove Galaxy S23 background behavior,
    Kannada/Telugu speech, real LiteRT model performance or power consumption.
+
+
+## New owner-controlled privacy, neural and retention tests
+
+1. On disposable test data, create notes, a future event, a queued reminder,
+   owner source exclusions and an opt-in cloud credential. In Permissions,
+   choose ERASE OWNER DATA and cancel: nothing should change. Open again and
+   enter exactly `ERASE SHIV DATA` to verify data is cleared, API
+   credentials/consent reset, model *files* retained, pending notifications
+   canceled, and model sessions unloaded. Check app restart and no old facts
+   resurfacing. This is destructive: use a test profile/install only.
+2. Insert a memory with an expired `expiresAt` date in a disposable emulator
+   test DB. After purge, expired memory is physically absent, a future memory
+   remains, and a second cleanup is idempotent. Daily WorkManager scheduling
+   is inexact.
+3. Add one harmless app ID to owner exclusions. On-device notification and
+   one-shot screen capture from that app must produce zero queued payloads.
+   Removing it must NOT permit a built-in banking or authenticator package.
+4. Import a real compatible local router and conversation .litertlm model,
+   test high and low RAM pressure, battery below 25%, heat and delayed release
+   after >2 idle minutes. Compare first-fragment/reply milliseconds from the
+   app, not benchmark guesses. Actual LiteRT native cancellation can lag.
+5. Execute the final commit's native APK build, JVM unit tests, lint, static
+   safety checks and Android API 26/35 instrumentation. CI emulator success
+   does not prove battery, speech, One UI, or model usability on Galaxy S23.

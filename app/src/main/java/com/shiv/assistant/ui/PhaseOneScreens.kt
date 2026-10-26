@@ -38,6 +38,9 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
+    var newDeniedPackage by remember { mutableStateOf("") }
+    var confirmErase by remember { mutableStateOf(false) }
+    var erasePhrase by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -233,14 +236,63 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 OutlinedButton(onClick={controller.setPatternLearning(false)}) {
                     Text("DISABLE PATTERN LEARNING")
                 }
+                Text("OWNER APP SOURCE EXCLUSIONS",color=accent)
+                Text("Block additional apps before Shiv reads notification or screen details. " +
+                    "Built-in banking/OTP exclusions cannot be removed.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedTextField(value=newDeniedPackage,
+                    onValueChange={newDeniedPackage=it.take(160)},
+                    label={Text("Android package name to deny")},singleLine=true)
+                Button(enabled=newDeniedPackage.isNotBlank(),onClick={
+                    val app=newDeniedPackage
+                    scope.launch { runCatching { controller.addDeniedPackage(app) } }
+                    newDeniedPackage=""
+                }) { Text("BLOCK THIS APP") }
+                controller.deniedPackages.forEach { denied ->
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text(denied,Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
+                        TextButton(onClick={scope.launch { controller.removeDeniedPackage(denied) }}) {
+                            Text("UNBLOCK")
+                        }
+                    }
+                }
                 Text("BANKING / PAYMENTS / PASSWORD MANAGERS / AUTHENTICATOR apps are denied before any Shiv capture, storage or AI request.",
                     color=accent)
                 Text("Shiv does not record telephone call audio or read other apps' private files.",color=Color.LightGray)
+                HorizontalDivider()
+                Text("OWNER DATA ERASURE",color=Color(0xFFFF9191))
+                Text("Permanently removes private Shiv records and cloud credentials. " +
+                    "Retains imported .litertlm model files. This cannot be undone.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedButton(onClick={confirmErase=true}) { Text("ERASE OWNER DATA…") }
                 Text("For offline Kannada/Telugu TTS: Settings > General management > Language > Text-to-speech > Preferred engine > Speech Services by Google > gear > Install voice data.",
                     color=Color.White)
             }
         }
     }
+    if(confirmErase) AlertDialog(
+        onDismissRequest={confirmErase=false;erasePhrase=""},
+        title={Text("Permanently erase personal Shiv data?")},
+        text={
+            Column {
+                Text("Notes, chat, events, reminders, rules, learned beliefs, " +
+                    "approval logs, API secrets and permissions will be cleared. " +
+                    "Imported public model weights are kept. Enter ERASE SHIV DATA to continue.")
+                OutlinedTextField(erasePhrase,{erasePhrase=it.take(15)},singleLine=true,
+                    label={Text("Type ERASE SHIV DATA")})
+            }
+        },
+        confirmButton={
+            Button(enabled=erasePhrase=="ERASE SHIV DATA",onClick={
+                confirmErase=false
+                erasePhrase=""
+                scope.launch { runCatching { owner.eraseOwnerRecords() } }
+            }) { Text("ERASE PERSONAL RECORDS") }
+        },
+        dismissButton={TextButton(onClick={confirmErase=false;erasePhrase=""}) {
+            Text("CANCEL")
+        }}
+    )
     if(editing!=null) AlertDialog(
         onDismissRequest={editing=null},
         title={Text("Correct memory")},
