@@ -24,6 +24,7 @@ import com.shiv.assistant.automation.SignalWorker
 import com.shiv.assistant.automation.ShivAgendaNudgeWorker
 import com.shiv.assistant.data.OwnerNudgeLedger
 import com.shiv.assistant.data.OwnerNudgeReaction
+import com.shiv.assistant.data.LocalModelComputeLedger
 import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
     private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
+    private val computeLedger=LocalModelComputeLedger(ShivVault(context))
+    var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
+        private set
     var proactiveOptIn by mutableStateOf(ShivVault(context).get("proactive_opt_in")=="yes")
         private set
     var proactiveFeedback by mutableStateOf(nudgeLedger.report())
@@ -185,6 +189,14 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         context.stopService(Intent(context,ShivMicSessionService::class.java))
         progress="Offline microphone session stopped"
     }
+    fun setLocalComputeBudget(seconds:Int) {
+        require(seconds in 60..3600)
+        computeLedger.setBudgetSeconds(seconds)
+        localBudgetSeconds=seconds
+        progress="Local model daily compute allowance: "+(seconds/60)+" min. " +
+            "This is not a measured battery budget."
+    }
+    fun localComputeReport():String=computeLedger.report()
     fun setProactiveOptIn(enabled:Boolean) {
         ShivVault(context).put("proactive_opt_in",if(enabled)"yes" else "no")
         proactiveOptIn=enabled
@@ -365,7 +377,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     fun modelStatus():String {
         val router=hub.router.status()
         val chat=hub.conversation.status()
-        return "Router: "+(router.modelName?:"not loaded")+
+        return computeLedger.report()+" | Router: "+(router.modelName?:"not loaded")+
             " | Conversation: "+(chat.modelName?:"not loaded")+
             " | Queue: "+hub.inference.pendingCount()+
             " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
