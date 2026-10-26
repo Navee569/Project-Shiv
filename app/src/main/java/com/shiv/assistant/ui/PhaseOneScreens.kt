@@ -16,6 +16,7 @@ import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
 import com.shiv.assistant.data.PortableOwnerArchive
+import com.shiv.assistant.data.OwnerNudgeReaction
 import kotlinx.coroutines.launch
 
 /**
@@ -281,6 +282,33 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
                     OutlinedButton(onClick={controller::stopOfflineMicSession}) { Text("STOP MIC") }
+                }
+                Text("OPT-IN PROACTIVE AGENDA",color=accent)
+                Text("Private, approximate hourly checks of events you approved. " +
+                    "Quiet hours 10 PM–9 AM; maximum three optional notices per day, " +
+                    "reduced if you repeatedly dismiss/correct them. " +
+                    "No background AI, microphone, cloud call or guessed commitments.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("Optional agenda nudges",Modifier.weight(1f),color=Color.White)
+                    Switch(checked=controller.proactiveOptIn,
+                        onCheckedChange={controller.setProactiveOptIn(it)})
+                }
+                Text("Weekly self-review: "+controller.proactiveFeedback,
+                    color=Color.LightGray,fontSize=11.sp)
+                if(controller.proactiveLastKey.isNotBlank()) {
+                    Text("Review your last optional notification (owner feedback only):",
+                        color=Color.LightGray,fontSize=11.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        OwnerNudgeReaction.entries.forEach { reaction ->
+                            TextButton(onClick={controller.recordProactiveReaction(reaction)}) {
+                                Text(reaction.name,fontSize=10.sp)
+                            }
+                        }
+                    }
+                }
+                OutlinedButton(onClick={controller::refreshProactiveFeedback}) {
+                    Text("REFRESH OPTIONAL-NOTICE FEEDBACK")
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
                 Row {
