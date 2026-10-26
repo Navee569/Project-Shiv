@@ -8,6 +8,10 @@ import com.shiv.assistant.data.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +22,19 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class PhaseOneWorkflowInstrumentedTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun failedSignalsRemainReviewableAndCanBeRetried() = runBlocking {
+        val dao=EncryptedDatabase.open(context).dao()
+        val id=UUID.randomUUID().toString()
+        dao.enqueue(SignalRecord(id,"test","A retained failed observation",3,
+            status="FAILED",attempts=8,lastError="transient"))
+        assertTrue(dao.failedSignalCount()>=1)
+        assertTrue(dao.retryFailedSignals()>=1)
+        val retried=dao.signal(id)!!
+        assertEquals("RETRY",retried.status)
+        assertEquals(0,retried.attempts)
+        assertNull(retried.lastError)
+    }
 
     @Test fun backlogLargerThan30IsProcessedWithoutLostSignals() = runBlocking {
         val dao=EncryptedDatabase.open(context).dao()
@@ -80,6 +97,22 @@ class PhaseOneWorkflowInstrumentedTest {
         assertTrue(repo.search("appointment Saturday").any{it.id==revised.id})
         repo.forget(revised.id)
         assertFalse(repo.search("appointment Saturday").any{it.id==revised.id})
+    }
+    @Test fun repeatedExplicitMemoryIsStoredOnce() = runBlocking {
+        val marker="Owner fact "+UUID.randomUUID()
+        val repository=ShivRepository(context)
+        val first=repository.remember(marker)
+        val ids=coroutineScope {
+            (0 until 8).map { async(Dispatchers.IO) { repository.remember(marker).id } }
+                .awaitAll()
+        }
+        assertTrue(ids.all { it==first.id })
+        assertEquals(1,repository.search(marker).count { it.id==first.id })
+        val vault=ShivVault(context)
+        vault.addNote(marker)
+        vault.addNote(marker)
+        assertEquals(1,vault.notes().count { it==marker })
+        repository.forget(first.id)
     }
 
     @Test fun chatRefreshesEditedMemoriesBeforeEveryReply() = runBlocking {

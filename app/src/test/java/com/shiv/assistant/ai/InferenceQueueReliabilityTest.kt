@@ -54,4 +54,31 @@ class InferenceQueueReliabilityTest {
             assertTrue(fake.executed.isEmpty())
         } finally { queue.shutdown() }
     }
+    @Test fun cancelingActiveCallerStopsCooperativeInferenceAndFreesQueue() = runBlocking {
+        val entered=CompletableDeferred<Unit>()
+        val canceled=CompletableDeferred<Unit>()
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String):String {
+                if(prompt=="active") {
+                    entered.complete(Unit)
+                    try { awaitCancellation() }
+                    finally { canceled.complete(Unit) }
+                }
+                return "reply:"+prompt
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            val first=async { queue.submit(InferenceRequest("active","active",InferencePriority.INTERACTIVE)) }
+            withTimeout(3000) { entered.await() }
+            first.cancelAndJoin()
+            withTimeout(3000) { canceled.await() }
+            assertEquals("reply:next",withTimeout(4000) {
+                queue.submit(InferenceRequest("next","next",InferencePriority.URGENT))
+            })
+        } finally { queue.shutdown() }
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private val Neon = Color(0xFF65F5F0)
@@ -46,6 +47,7 @@ fun ShivInterface(
     var ocrTaskTitle by remember { mutableStateOf("Review document commitment") }
     var ocrTaskClock by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Capability?>(null) }
+    var chatJob by remember { mutableStateOf<Job?>(null) }
     val pending = controller.pending
     val photo = controller.visionCandidate
     Column(
@@ -141,11 +143,14 @@ fun ShivInterface(
                     Button(
                         onClick = {
                             val text = draft; draft = ""
-                            scope.launch { controller.submit(text) }
+                            chatJob = scope.launch { controller.submit(text) }
                         },
                         enabled = !controller.working && draft.isNotBlank(),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)
                     ) { Text("SEND") }
+                    if(controller.working) TextButton(onClick = { chatJob?.cancel() }) {
+                        Text("STOP", color = Violet)
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {

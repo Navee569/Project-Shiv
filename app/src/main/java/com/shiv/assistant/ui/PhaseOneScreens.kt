@@ -17,6 +17,7 @@ import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
 import com.shiv.assistant.data.PortableOwnerArchive
 import com.shiv.assistant.data.OwnerNudgeReaction
+import com.shiv.assistant.domain.AppSourceMode
 import kotlinx.coroutines.launch
 
 /**
@@ -47,6 +48,8 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
     var newDeniedPackage by remember { mutableStateOf("") }
+    var sourcePackage by remember { mutableStateOf("") }
+    var sourceMode by remember { mutableStateOf(AppSourceMode.NOTIFICATIONS_ONLY) }
     var confirmErase by remember { mutableStateOf(false) }
     var erasePhrase by remember { mutableStateOf("") }
     var portableDialog by remember { mutableStateOf<String?>(null) }
@@ -106,7 +109,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Button(enabled=!controller.loading,onClick={scope.launch{controller.importModel(role)}}) {
                         Text("CONFIRM APP-PRIVATE COPY")
                     }
-                    TextButton(onClick={controller::cancelModel}){Text("CANCEL")}
+                    TextButton(onClick=controller::cancelModel){Text("CANCEL")}
                 }
                 Text(controller.progress,color=Color.LightGray)
                 controller.issue?.let{Text(it,color=Color(0xFFFF9191))}
@@ -141,6 +144,13 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     "native cancellation may be delayed. Owner-requested reminders do not consume it.",
                     color=Color.LightGray,fontSize=11.sp)
                 Text("Pending encrypted signals: "+controller.notificationCount)
+                Text("Failed signals retained for owner review: "+controller.failedSignalCount,
+                    color=Color.LightGray,fontSize=11.sp)
+                if(controller.failedSignalCount>0) {
+                    OutlinedButton(onClick={scope.launch { controller.retryFailedSignals() }}) {
+                        Text("RETRY FAILED SIGNALS")
+                    }
+                }
                 Button(onClick={scope.launch{controller.reload()}}){Text("REFRESH")}
             }
             "Events" -> {
@@ -258,7 +268,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     }
                 }
                 if(controller.calendarCandidates.isNotEmpty())
-                    TextButton(onClick={controller::discardCalendarPreview}) {
+                    TextButton(onClick=controller::discardCalendarPreview) {
                         Text("DISCARD ALL PREVIEWS")
                     }
                 Text("APP USAGE • OWNER-REQUESTED PREVIEW",color=accent)
@@ -266,7 +276,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     "Android Usage Access. Sensitive apps are excluded. Results are temporary, " +
                     "never entered into memory or an AI prompt.",
                     color=Color.LightGray,fontSize=11.sp)
-                OutlinedButton(onClick={controller::openUsageAccessSettings}) {
+                OutlinedButton(onClick=controller::openUsageAccessSettings) {
                     Text("OPEN USAGE ACCESS SETTINGS")
                 }
                 OutlinedButton(onClick={scope.launch{controller.previewUsage()}}) {
@@ -277,7 +287,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         color=Color.LightGray,fontSize=11.sp)
                 }
                 if(controller.usagePreview.isNotEmpty()) {
-                    OutlinedButton(onClick={controller::clearUsagePreview}) {
+                    OutlinedButton(onClick=controller::clearUsagePreview) {
                         Text("CLEAR USAGE PREVIEW")
                     }
                 }
@@ -296,7 +306,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Text(match,color=Color.White)
                 }
                 if(controller.contactNameMatches.isNotEmpty())
-                    TextButton(onClick={controller::clearContactNames}) { Text("CLEAR CONTACT RESULTS") }
+                    TextButton(onClick=controller::clearContactNames) { Text("CLEAR CONTACT RESULTS") }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
                 }
@@ -314,7 +324,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                             controller.startOfflineMicSession(owner.speechLocale)
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
-                    OutlinedButton(onClick={controller::stopOfflineMicSession}) { Text("STOP MIC") }
+                    OutlinedButton(onClick=controller::stopOfflineMicSession) { Text("STOP MIC") }
                 }
                 Text("OPT-IN PROACTIVE AGENDA",color=accent)
                 Text("Private, approximate hourly checks of events you approved. " +
@@ -340,7 +350,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         }
                     }
                 }
-                OutlinedButton(onClick={controller::refreshProactiveFeedback}) {
+                OutlinedButton(onClick=controller::refreshProactiveFeedback) {
                     Text("REFRESH OPTIONAL-NOTICE FEEDBACK")
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
@@ -381,6 +391,37 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         Text(denied,Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
                         TextButton(onClick={scope.launch { controller.removeDeniedPackage(denied) }}) {
                             Text("UNBLOCK")
+                        }
+                    }
+                }
+                Text("PER-APP SOURCE CONTROL",color=accent)
+                Text("Include allows opt-in notification facts and a separately armed 15-second screen preview. Notifications only blocks screen reading. Exclude blocks both. Android grants and the built-in sensitive-app denylist always take priority.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedTextField(value=sourcePackage,
+                    onValueChange={sourcePackage=it.take(160)},
+                    label={Text("Android package to configure")},singleLine=true)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    AppSourceMode.entries.forEach { mode ->
+                        FilterChip(selected=sourceMode==mode,
+                            onClick={sourceMode=mode},
+                            label={Text(mode.name.replace('_',' '))})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Button(enabled=sourcePackage.isNotBlank(),onClick={
+                    val name=sourcePackage
+                    scope.launch {
+                        runCatching { controller.setAppSourceMode(name,sourceMode) }
+                            .onFailure { owner.showNotice(it.message ?: "App policy could not be saved") }
+                    }
+                    sourcePackage=""
+                }) { Text("SAVE APP POLICY") }
+                controller.appSourceModes.toSortedMap().forEach { (app,mode) ->
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("$app • ${mode.name.replace('_',' ')}",
+                            Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
+                        TextButton(onClick={scope.launch { controller.removeAppSourceMode(app) }}) {
+                            Text("RESET")
                         }
                     }
                 }

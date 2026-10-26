@@ -12,6 +12,9 @@ import com.shiv.assistant.data.ShivVault
 import com.shiv.assistant.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.room.withTransaction
 import org.json.JSONArray
 
@@ -198,7 +201,13 @@ class ShivController(private val context: Context) {
         working = true
         try {
             val response = brain.respond(question, notes, config, apiKey)
+            // A provider or runtime may return after coroutine cancellation;
+            // never append that stale reply to the owner's encrypted history.
+            currentCoroutineContext().ensureActive()
             append("assistant", response)
+        } catch (cancelled: CancellationException) {
+            notice = "Reply canceled"
+            throw cancelled
         } catch (e: Exception) {
             append("assistant", "I could not process that request: " + (e.message ?: "unknown error"))
         } finally { working = false }
@@ -250,7 +259,6 @@ class ShivController(private val context: Context) {
     }
     fun saveNote(value: String) {
         if (value.trim().isEmpty()) return
-        vault.addNote(value.trim())
         kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
             com.shiv.assistant.data.ShivRepository(context).remember(value.trim())
         }

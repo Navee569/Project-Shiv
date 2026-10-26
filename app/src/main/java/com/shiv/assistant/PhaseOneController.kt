@@ -13,6 +13,8 @@ import com.shiv.assistant.integrations.CalendarImportPolicy
 import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.AppSourceAccess
+import com.shiv.assistant.domain.AppSourceMode
 import com.shiv.assistant.domain.DueDateProposal
 import java.time.LocalTime
 import java.time.ZoneId
@@ -45,6 +47,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
+    val appSourceModes=mutableStateMapOf<String,AppSourceMode>()
     val usagePreview=mutableStateListOf<UsageObservation>()
     private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
@@ -65,6 +68,8 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     var issue by mutableStateOf<String?>(null)
         private set
     var notificationCount by mutableIntStateOf(0)
+        private set
+    var failedSignalCount by mutableIntStateOf(0)
         private set
     fun openAccessibilitySettings() {
         context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -162,6 +167,23 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             (old-packageName.trim().lowercase(java.util.Locale.ROOT)).sorted().joinToString("\n"))
         reload()
         progress="Custom exclusion removed; built-in banking denylist remains enforced"
+    }
+    suspend fun setAppSourceMode(packageName:String,mode:AppSourceMode) = withContext(Dispatchers.IO) {
+        val name=packageName.trim().lowercase(java.util.Locale.ROOT)
+        require(SourceExclusions.validPackage(name)) { "Enter a full Android app package" }
+        val vault=ShivVault(context)
+        val current=AppSourceAccess.decode(vault.get(AppSourceAccess.VAULT_KEY))
+        require(current.size<100 || name in current) { "App policy capacity reached" }
+        vault.put(AppSourceAccess.VAULT_KEY,AppSourceAccess.encode(current+(name to mode)))
+        reload()
+        progress="Source policy saved; Android permissions and one-shot screen review still apply"
+    }
+    suspend fun removeAppSourceMode(packageName:String) = withContext(Dispatchers.IO) {
+        val vault=ShivVault(context)
+        val current=AppSourceAccess.decode(vault.get(AppSourceAccess.VAULT_KEY))
+        vault.put(AppSourceAccess.VAULT_KEY,AppSourceAccess.encode(current-packageName))
+        reload()
+        progress="App returned to default policy; built-in and owner denylists still apply"
     }
     fun startOfflineMicSession(locale:String) {
         if(Build.VERSION.SDK_INT<33 ||
@@ -293,8 +315,10 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         val storedBeliefs=dao.beliefs()
         val traces=dao.traces(30)
         val count=dao.pendingCount()
+        val failed=dao.failedSignalCount()
         val savedMemories=dao.recentMemories(System.currentTimeMillis(),100)
         val excluded=SourceExclusions.fromString(ShivVault(context).get("app_denied_packages"))
+        val modes=AppSourceAccess.decode(ShivVault(context).get(AppSourceAccess.VAULT_KEY))
         withContext(Dispatchers.Main) {
             models.clear();models.addAll(stored)
             memories.clear();memories.addAll(savedMemories)
@@ -303,7 +327,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             beliefs.clear();beliefs.addAll(storedBeliefs)
             decisions.clear();decisions.addAll(traces)
             notificationCount=count
+            failedSignalCount=failed
             deniedPackages.clear();deniedPackages.addAll(excluded.sorted())
+            appSourceModes.clear();appSourceModes.putAll(modes)
         }
     }
     suspend fun importModel(role:String) {
@@ -342,6 +368,12 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     suspend fun submitSignal(source:String,text:String,priority:Int=4) {
         val id=repository.incoming(source,text,priority)
         if(id!=null)SignalWorker.schedule(context)
+        reload()
+    }
+    suspend fun retryFailedSignals() {
+        val retried=withContext(Dispatchers.IO) { dao.retryFailedSignals() }
+        if(retried>0)SignalWorker.schedule(context)
+        progress="$retried preserved signal(s) returned to the encrypted queue"
         reload()
     }
     suspend fun approveCommitment(trace:DecisionTraceRecord) {

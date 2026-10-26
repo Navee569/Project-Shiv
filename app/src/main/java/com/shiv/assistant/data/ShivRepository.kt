@@ -3,6 +3,7 @@ package com.shiv.assistant.data
 import android.content.Context
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.AppSourceAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -16,7 +17,8 @@ class ShivRepository(private val context: Context) {
     suspend fun incoming(source: String, fact: String, priority: Int = 1, packageName: String? = null): String? =
         withContext(Dispatchers.IO) {
             // Critical: never persist or pass denylisted content to a model, including an audit log.
-            if (packageName != null && SourceExclusions.shouldBlock(context,packageName)) return@withContext null
+            if (packageName != null && !AppSourceAccess.mayRead(context,packageName,source))
+                return@withContext null
             require(priority in 0..10)
             val compact = fact.trim().take(1500)
             if (compact.isBlank()) return@withContext null
@@ -45,10 +47,28 @@ class ShivRepository(private val context: Context) {
             dao.rules(),dao.recentChats(8),dao.actions(10))
     suspend fun remember(text: String,category: String = "FACT",source: String = "owner"): MemoryRecord {
         require(text.isNotBlank())
-        val entry = MemoryRecord(UUID.randomUUID().toString(),text.trim().take(8192),category,source,
-            confidence=if(source=="owner") 1.0 else 0.5,explicit=source=="owner")
-        dao.putMemory(entry)
-        return entry
+        val compact=text.trim().take(8192)
+        return database.withTransaction {
+            // Owner repetition is not new evidence; keep the existing explicit
+            // fact. Inferred repetitions remain distinct for pattern learning.
+            if(source=="owner") {
+                dao.matchingOwnerMemory(compact,category)?.let {
+                    indexOwnerNote(compact)
+                    return@withTransaction it
+                }
+            }
+            val entry=MemoryRecord(UUID.randomUUID().toString(),compact,category,source,
+                confidence=if(source=="owner") 1.0 else 0.5,explicit=source=="owner")
+            dao.putMemory(entry)
+            if(source=="owner")indexOwnerNote(compact)
+            entry
+        }
+    }
+    private suspend fun indexOwnerNote(text:String) {
+        val current=JSONArray(dao.vault("notes")?.value ?: "[]")
+        val values=(0 until current.length()).map { current.getString(it) }
+        if(values.any { it.equals(text,ignoreCase=true) })return
+        dao.putVault(VaultEntry("notes",JSONArray((values+text).takeLast(250)).toString()))
     }
     /**
      * Corrections and deletion update the canonical fact AND the legacy
@@ -109,5 +129,11 @@ data class ContextSnapshot(val asOf:String,val events:List<EventRecord>,
         append("\nEvents: ").append(events.take(8).joinToString("; "){it.title+" @ "+it.startAt})
         append("\nMemories: ").append(relevantMemories.take(8).joinToString("; "){it.text.take(100)})
         append("\nRules: ").append(rules.take(8).joinToString("; "){it.description.take(80)})
+        append("\nRecent conversation: ").append(recentConversations.take(4).asReversed()
+            .joinToString("; "){it.role+": "+it.body.take(100)})
+        // Action arguments are deliberately excluded even from local prompt
+        // context; the model only needs to know what actually happened.
+        append("\nRecent action outcomes: ").append(recentActions.take(6)
+            .joinToString("; "){it.type+"="+it.result})
     }.take(4000)
 }

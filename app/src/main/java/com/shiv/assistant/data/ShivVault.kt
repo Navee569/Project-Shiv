@@ -131,7 +131,10 @@ class ShivVault(private val context: Context) {
     }
     fun addNote(note:String) {
         require(note.isNotBlank() && note.length <= 8192)
-        put("notes",org.json.JSONArray((notes()+note.trim()).takeLast(250)).toString())
+        val compact=note.trim()
+        val existing=notes()
+        if(existing.any { it.equals(compact,ignoreCase=true) })return
+        put("notes",org.json.JSONArray((existing+compact).takeLast(250)).toString())
     }
     fun history():List<Pair<String,String>> {
         val json = org.json.JSONArray(get("history")?:"[]")

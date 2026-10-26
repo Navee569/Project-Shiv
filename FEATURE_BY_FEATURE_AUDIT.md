@@ -174,3 +174,38 @@ if the action succeeded. A regression covers invalid reminder approval.
 
 This closes only those audited defects. The milestone table and owner/device
 limitations above remain open; M11 has not been accepted and Phase 2 is gated.
+
+### Pending local follow-up
+
+The inference queue previously removed canceled waiting requests but did not
+cancel cooperative active requests. The follow-up adds active
+coroutine cancellation, a Chat STOP control, and a late-reply guard. A focused
+JVM regression covers the queue handoff. Native build and API 26/35 validation
+must run before this can be treated as verified or merged. The owner's M11
+acceptance is still pending, so the Phase 2 gate remains closed.
+
+Phase 1 N7 per-app source modes now permit owner configuration for notification
+facts and one-shot screen facts separately. A sensitive app cannot be restored
+by an INCLUDE rule, and policy is enforced at both read and encrypted-queue
+ingress. Exact on-phone Accessibility behavior remains OWNER-VERIFY.
+
+M5 explicit owner facts now use transactional exact deduplication with their
+encrypted note index, including concurrent repeat-save regression coverage.
+This does not supply a semantic people/place graph or measured embedding gain.
+
+M0/M2 local verification found a malformed Gradle wrapper distribution URL
+and seven inert Compose click handlers. Both source defects were repaired;
+the final SHA still needs build/JVM/lint and API 26/35 instrumentation before
+these repairs can be marked verified.
+
+M5 local model inference now uses the previously unconnected bounded context
+snapshot. It includes approved events, facts, rules, recent chat and action
+outcomes, but not action arguments. The cloud implementation remains unchanged
+and does not receive this snapshot. Model output quality with real imported
+weights still requires Galaxy S23 owner verification.
+
+Failed encrypted signals now remain visible as a count in AI Status, with an
+owner-triggered retry that resets attempts. Android regression covers this
+recovery path. The final local debug build, JVM suite, lint, instrumentation
+APK compilation, and static checks passed; emulator execution on the final
+SHA and Galaxy S23 acceptance are separate gates.

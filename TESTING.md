@@ -76,6 +76,12 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
 6. Repeat the latest APK build, JUnit/lint, and instrumented Android API26 and
    API35 suites. Emulator passes do not prove Galaxy S23 background behavior,
    Kannada/Telugu speech, real LiteRT model performance or power consumption.
+7. Permissions > PER-APP SOURCE CONTROL: choose NOTIFICATIONS ONLY for a harmless
+   test app and verify its notification fact may be queued while a separately
+   armed screen preview is blocked. Choose EXCLUDE and verify neither source
+   creates a signal. Choose INCLUDE and verify Android permission plus the
+   15-second owner screen arm are still required. A banking/OTP app must remain
+   blocked in every mode.
 
 
 ## New owner-controlled privacy, neural and retention tests

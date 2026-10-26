@@ -4,7 +4,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.shiv.assistant.data.ShivRepository
 import com.shiv.assistant.domain.SensitiveAppDenylist
-import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.AppSourceAccess
 import com.shiv.assistant.automation.SignalWorker
 import kotlinx.coroutines.*
 
@@ -22,7 +22,7 @@ class ShivNotificationListener:NotificationListenerService() {
         scope.launch {
             if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE)
                     .getBoolean("notifications_enabled",false))return@launch
-            if(SourceExclusions.shouldBlock(applicationContext,sbn.packageName))
+            if(!AppSourceAccess.mayRead(applicationContext,sbn.packageName,"notification"))
                 return@launch
             val title=sbn.notification.extras.getCharSequence("android.title")?.toString()
                 ?:return@launch

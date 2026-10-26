@@ -228,3 +228,54 @@ execution. An Android regression covers a reminder with an invalid time.
 These repairs do not establish complete Phase 1 parity or M11 owner acceptance.
 Remaining gaps and Galaxy S23 OWNER-VERIFY checks in this file, the audit and
 `TESTING.md` remain open. No Phase 2 or optional privileged feature was started.
+
+## Local Phase 1 work awaiting final native verification
+
+Interactive chat now offers STOP while a model/provider reply is in progress.
+Cancellation removes waiting inference requests and cancels cooperative active
+coroutine inference; a late reply is rejected before encrypted chat storage.
+A JVM regression covers active cancellation followed by a successful urgent
+request. LiteRT's native execution may take longer to stop, so this is not a
+claim of immediate hardware cancellation. Native build, JVM tests, lint and
+API 26/35 instrumentation are required on the final commit.
+
+Owner-encrypted per-app source modes now distinguish INCLUDE, NOTIFICATIONS
+ONLY and EXCLUDE. The notification listener and one-shot Accessibility service
+check mode before reading content; the encrypted signal repository checks it
+again before storage. Default INCLUDE preserves existing opt-in behavior, while
+Android grants, one-shot arming, global owner exclusions and the built-in
+sensitive-app denylist remain independent gates. Malformed encrypted policy
+denies capture. JVM and Android regressions cover these boundaries. This still
+does not establish universal access to third-party screens or S23 One UI behavior.
+
+Explicit owner memory now deduplicates exact repeated facts inside a SQLCipher
+transaction and updates the encrypted chat-note index in that same transaction.
+Eight concurrent repeat saves are covered by an Android regression. Observed
+non-owner repetitions remain separate evidence for the pattern learner.
+
+Local Windows verification exposed and fixed a malformed Gradle wrapper URL;
+the checked-in wrapper can now launch Gradle 9.7.0. The initial local build,
+JVM tests and lint passed after that fix. Kotlin warnings also exposed seven
+UI buttons whose click lambdas returned method references without invoking
+them (model cancel, calendar discard, Usage Access settings/clear, contact
+clear, mic stop, feedback refresh). Their handlers now call the intended
+controller methods. The native build, JVM tests and lint passed again after
+this UI repair; API 26/35 instrumentation remains for final CI.
+
+Local LiteRT requests now receive a bounded snapshot of encrypted owner
+events, explicit memories, rules, recent conversation and redacted action
+outcomes. The context is constructed only inside `ShivBrainHub`, so the
+existing cloud transport in `ShivIntelligence.kt` is unchanged and receives
+no automatic snapshot. The prompt marks stored content as untrusted data,
+limits its size, and excludes action arguments. JVM tests cover bounds and
+argument exclusion. Real model quality remains OWNER-VERIFY.
+
+The owner reported that Phase 1 M11 Galaxy S23 acceptance is still pending.
+The explicit Phase 2 entry condition therefore remains unmet; no Phase 2
+implementation or privileged access is claimed here.
+
+Failed encrypted signals are now counted in AI Status and can be returned to
+the retry queue by the owner. Retrying resets the attempt counter and records
+no signal content in a plaintext log. An Android regression verifies retained
+failure state and retry; it does not prove that a repeatedly failing source
+will eventually process successfully.
