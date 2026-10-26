@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
+import com.shiv.assistant.ai.LocalInferenceMetrics
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.automation.ShivSignalWorker
@@ -28,6 +29,8 @@ class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
     private val localNeural: Brain = LiteRtBrain(context)
+    var localMetrics by mutableStateOf<LocalInferenceMetrics?>(null)
+        private set
     var neuralReady by mutableStateOf(false)
         private set
     val knowledge = ShivKnowledge(vault)
@@ -192,6 +195,9 @@ class ShivController(private val context: Context) {
             notice = "Local model could not be loaded: " + (e.message ?: "unknown error")
         } finally { working = false }
     }
+    suspend fun interruptInference() {
+        localNeural.cancel()
+    }
     suspend fun unloadModel() {
         localNeural.unload()
         neuralReady = false
@@ -226,6 +232,7 @@ class ShivController(private val context: Context) {
             if (config.mode == IntelligenceMode.LOCAL && localNeural.modelId != null) {
                 val start = System.nanoTime()
                 val answer = localNeural.infer(question, 256)
+                localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
                 energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
                 append("assistant", when (answer) {
                     is BrainResult.Text -> answer.value

@@ -285,6 +285,14 @@ fun ShivInterface(
                         Text(mode.name, color = Color.White)
                     }
                 }
+                Header("MEASURED LOCAL INFERENCE", "First chunk is not necessarily the first token; no token counts are estimated.")
+                val inference = controller.localMetrics
+                Text("First response chunk: " + (inference?.firstChunkLatencyMs?.toString()?.plus(" ms") ?: "NOT MEASURED"),
+                    color = Muted, fontSize = 12.sp)
+                Text("Total response: " + (inference?.totalLatencyMs?.toString()?.plus(" ms") ?: "NOT MEASURED"),
+                    color = Muted, fontSize = 12.sp)
+                Text("Output characters: " + (inference?.outputCharacters?.toString() ?: "NOT MEASURED"),
+                    color = Muted, fontSize = 12.sp)
                 Header("ENERGY LEDGER", "Only recorded activity is shown; no invented battery usage numbers.")
                 Text(runCatching { controller.energy.report() }.getOrDefault("No measurements"), color = Muted, fontSize = 11.sp)
             }

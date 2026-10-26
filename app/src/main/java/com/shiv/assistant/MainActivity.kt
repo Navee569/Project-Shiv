@@ -155,12 +155,18 @@ class MainActivity : FragmentActivity() {
                 ShivInterface(
                     controller = controller,
                     onVoice = {
+                        if (controller.sensingPaused || controller.guestMode || controller.privacyZone) {
+                            controller.speechMessage("Sensing is paused. Switch it back on in Privacy.")
+                        } else {
+                            tts.stop()
+                            scope.launch { controller.interruptInference() }
                         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED) {
                             startOnDeviceRecognition(controller.speechLocale,
                                 onText = { scope.launch { controller.submit(it) } },
                                 onError = { controller.speechMessage(it) })
                         } else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     },
                     onPhoto = { photo.launch("image/*") },
                     onDocument = { document.launch("text/*") },

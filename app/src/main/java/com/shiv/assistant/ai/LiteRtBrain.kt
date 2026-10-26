@@ -21,7 +21,14 @@ import kotlinx.coroutines.withContext
  * One engine and one active inference at a time. Any unsupported model fails explicitly.
  * The caller must provide a file-system path in app-private storage.
  */
+data class LocalInferenceMetrics(
+    val firstChunkLatencyMs: Long,
+    val totalLatencyMs: Long,
+    val outputCharacters: Int
+)
 class LiteRtBrain(private val context: Context) : Brain {
+    @Volatile var lastMetrics: LocalInferenceMetrics? = null
+        private set
     private val gate = Mutex()
     private var engine: Engine? = null
     @Volatile private var conversation: Conversation? = null
@@ -69,12 +76,20 @@ class LiteRtBrain(private val context: Context) : Brain {
             if (prompt.isBlank()) return@withLock BrainResult.Failed("Empty prompt")
             if (maxTokens !in 1..2048) return@withLock BrainResult.Failed("Invalid output budget")
             val output = StringBuilder()
+            val started = System.nanoTime()
+            var firstChunkNs = 0L
             try {
                 chat.sendMessageAsync(prompt.take(12000)).collect { part ->
+                    if (firstChunkNs == 0L) firstChunkNs = System.nanoTime()
                     // Bound the UI-visible result. LiteRT owns the actual generation lifecycle.
                     val chunk = part.toString()
                     if (output.length < maxTokens * 8) output.append(chunk.take(maxTokens * 8 - output.length))
                 }
+                val finished = System.nanoTime()
+                lastMetrics = LocalInferenceMetrics(
+                    if (firstChunkNs == 0L) -1 else (firstChunkNs - started) / 1_000_000,
+                    (finished - started) / 1_000_000, output.length
+                )
                 BrainResult.Text(output.toString().ifBlank { "Model returned an empty response" })
             } catch (e: CancellationException) {
                 throw e

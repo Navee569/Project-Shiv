@@ -19,20 +19,20 @@ data class SignalItem(
  * This is deliberately not yet a Room/SQLCipher queue; migration is required before release.
  */
 class ShivSignalQueue(private val vault: ShivVault) {
-    @Synchronized
-    fun enqueue(source: String, title: String?, extraDenylist: Set<String> = emptySet()): String? {
+    companion object { private val processLock = Any() }
+    fun enqueue(source: String, title: String?, extraDenylist: Set<String> = emptySet()): String? = synchronized(processLock) {
         if (vault.get("sensing_paused") == "yes" ||
             vault.get("guest_mode") == "yes" ||
-            vault.get("privacy_zone") == "yes") return null
-        val safe = PrivacyPolicy.safeNotificationTitle(source, title, extraDenylist) ?: return null
+            vault.get("privacy_zone") == "yes") return@synchronized null
+        val safe = PrivacyPolicy.safeNotificationTitle(source, title, extraDenylist) ?: return@synchronized null
         val records = records()
         if ((0 until records.length()).any { i ->
                 val row = records.getJSONObject(i)
                 row.optString("source") == source && row.optString("title") == safe &&
                     row.optString("state") != "done"
-            }) return null
+            }) return@synchronized null
         val important = Regex("(?i)\\b(meet|meeting|deadline|due|appointment|tomorrow|today|remind)\\b").containsMatchIn(safe)
-        if (records.length() >= 500 && !important) return null
+        if (records.length() >= 500 && !important) return@synchronized null
         val id = UUID.randomUUID().toString()
         records.put(JSONObject()
             .put("id", id).put("source", source.take(150))
@@ -40,26 +40,24 @@ class ShivSignalQueue(private val vault: ShivVault) {
             .put("priority", if (important) 90 else 20).put("important", important)
             .put("attempts", 0).put("state", "pending"))
         vault.put("signal_queue", records.toString())
-        return id
+        return@synchronized id
     }
-    @Synchronized
-    fun next(): SignalItem? {
+    fun next(): SignalItem? = synchronized(processLock) {
         val array = records()
         val pending = (0 until array.length()).map { array.getJSONObject(it) }
             .filter { it.optString("state") == "pending" }
             .sortedWith(compareByDescending<JSONObject> { it.optInt("priority") }.thenBy { it.optLong("created") })
-        val row = pending.firstOrNull() ?: return null
+        val row = pending.firstOrNull() ?: return@synchronized null
         return SignalItem(row.getString("id"), row.getString("source"), row.getString("title"),
             row.getLong("created"), row.getInt("priority"), row.getBoolean("important"),
             row.getInt("attempts"))
     }
-    @Synchronized
-    fun finish(id: String, success: Boolean): Boolean {
+    fun finish(id: String, success: Boolean): Boolean = synchronized(processLock) {
         val array = records()
         for (i in 0 until array.length()) {
             val row = array.getJSONObject(i)
             if (row.optString("id") != id) continue
-            if (row.optString("state") == "done") return true
+            if (row.optString("state") == "done") return@synchronized true
             val attempts = row.optInt("attempts") + 1
             row.put("attempts", attempts)
             row.put("state", if (success) "done" else "pending")
@@ -73,12 +71,13 @@ class ShivSignalQueue(private val vault: ShivVault) {
                 compact.put(current)
             }
             vault.put("signal_queue", compact.toString())
-            return true
+            return@synchronized true
         }
-        return false
+        return@synchronized false
     }
-    fun pendingCount(): Int = (0 until records().length()).count {
-        records().getJSONObject(it).optString("state") == "pending"
+    fun pendingCount(): Int = synchronized(processLock) {
+        val items = records()
+        (0 until items.length()).count { i -> items.getJSONObject(i).optString("state") == "pending" }
     }
     private fun records(): JSONArray = JSONArray(vault.get("signal_queue") ?: "[]")
 }
