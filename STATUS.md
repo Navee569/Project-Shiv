@@ -95,3 +95,22 @@ Do not use this app as a production financial automation or call recorder.
   deterministic validation. Structured tool outputs from cloud remain untouched.
 - WorkManager reminders are approximate; real timing, time-zone transitions and
   permissions still need Galaxy S23 testing.
+
+## Latest audited local AI follow-up (PR #3; CI pending for branch tip)
+- Local model inference now obtains a fresh device resource lease before chat;
+  measured encrypted local model time is charged against a user-selected daily
+  budget (1 / 5 / 10 / 30 minutes). Actual inference is canceled at lease timeout.
+  This is a safety budget, **not** a measured battery percentage.
+- Small router and conversation model may now be assigned explicitly by the
+  owner. The one-engine LiteRT implementation swaps as resources allow, with
+  local-router fallback if the selected conversation model cannot load. The
+  switch may require additional local disk space. No automatic cloud fallback.
+- Native inference cancellation no longer automatically strands queued local
+  jobs. Regression tests cover the scheduler recovery and deterministic routing.
+- Removing a model reference also removes its Shiv-owned staged copy; the
+  owner's original picked file is preserved.
+- **Still incomplete:** dedicated persistent router plus idle large-model
+  eviction, actual performance/energy calibration, accessibility and broader
+  integrations, passive routines, multilingual improvements and hardware QA.
+- This scope does not alter `ShivIntelligence.kt` or cloud/hybrid behavior.
+- See [feature audit](docs/FEATURE_AUDIT_2026-10-26.md) for requirement-level gaps.
