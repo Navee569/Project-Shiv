@@ -137,6 +137,14 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Text(event.title+" • "+java.time.Instant.ofEpochMilli(event.startAt).toString(),
                         color=Color.White)
                 }
+                Text("ENCRYPTED OPEN TASKS",color=accent)
+                if(controller.upcomingTasks.isEmpty())
+                    Text("No unfinished tasks in Shiv's private agenda.",color=Color.LightGray)
+                controller.upcomingTasks.forEach { task ->
+                    Text(task.title+" • "+(task.dueAt?.let {
+                        java.time.Instant.ofEpochMilli(it).toString()
+                    } ?: "No due date"),color=Color.White)
+                }
             }
             "Beliefs" -> {
                 Text("What Shiv thinks he knows about you. These are hypotheses, not confirmed facts. You can remove any entry.",
