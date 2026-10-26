@@ -43,7 +43,7 @@ class ShivEnergyLedger(private val vault: ShivVault) {
 
     fun report(): String {
         val json = JSONObject(vault.get("energy_ledger") ?: "{}")
-        return if (json.length() == 0) "No recorded activity today."
+        return if (json.optString("date") != LocalDate.now().toString()) "No recorded activity today."
         else json.toString(2)
     }
 }
