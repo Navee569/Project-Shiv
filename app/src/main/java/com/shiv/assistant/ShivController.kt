@@ -301,6 +301,29 @@ class ShivController(private val context: Context) {
         }
     }
 
+    /**
+     * UI refresh after owner-initiated portable restore. Existing sessions and
+     * cloud grants must not survive import of another device's encrypted data.
+     * The imported cloud API secret remains encrypted but is NOT enabled.
+     */
+    suspend fun afterPortableRestore(count:Int) {
+        phase.hub.clearSessions()
+        messages.clear()
+        notes.clear()
+        macros.clear()
+        pending=null
+        visionCandidate=null
+        apiKey=""
+        config=AssistantConfiguration()
+        reminderTier=AuthorityTier.ASK_FIRST
+        notificationSummaries=false
+        speechLocale="en-IN"
+        phase.discardCalendarPreview()
+        phase.clearContactNames()
+        phase.reload()
+        notice="Restored "+count+" encrypted records. Cloud and old reminders remain disabled; restart Shiv to review settings."
+    }
+
     fun clearHistory() {
         kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
             val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
