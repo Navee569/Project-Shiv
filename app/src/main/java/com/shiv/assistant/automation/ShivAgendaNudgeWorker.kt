@@ -50,7 +50,7 @@ class ShivAgendaNudgeWorker(context:Context, params:WorkerParameters):
             fun stableKey(eventId:String):String {
                 val digest=MessageDigest.getInstance("SHA-256")
                     .digest(eventId.toByteArray(Charsets.UTF_8))
-                return "agenda:"+digest.take(12).joinToString(""){"%02x".format(it)}
+                return "agenda:"+digest.take(12).joinToString(""){"%02x".format(it.toInt() and 0xff)}
             }
             val event=imminent.firstOrNull {
                 AgendaNudgePolicy.decide(AgendaNudge(stableKey(it.id),it.startAt),
