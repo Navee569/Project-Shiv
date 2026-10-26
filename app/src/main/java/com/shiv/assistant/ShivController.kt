@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.Settings
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
 import android.view.accessibility.AccessibilityManager
 import android.accessibilityservice.AccessibilityServiceInfo
 import com.shiv.assistant.integrations.ShivAccessibilityReader
@@ -137,6 +139,8 @@ class ShivController(private val context: Context) {
     var notice by mutableStateOf("Local-first • Encrypted • You control every action")
         private set
     var notificationSummaries by mutableStateOf(false)
+    var postCallOptIn by mutableStateOf(false)
+        private set
     var proactiveOptIn by mutableStateOf(false)
         private set
     var passiveLearningOptIn by mutableStateOf(false)
@@ -156,6 +160,7 @@ class ShivController(private val context: Context) {
             )
             apiKey = vault.get("api_secret").orEmpty()
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            postCallOptIn = vault.get("post_call_opt_in") == "yes"
             proactiveOptIn = vault.get("proactive_opt_in") == "yes"
             passiveLearningOptIn = vault.get("passive_learning_opt_in") == "yes"
             reminderTier = runCatching {
@@ -183,6 +188,20 @@ class ShivController(private val context: Context) {
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
+    }
+    fun updatePostCallOptIn(enabled: Boolean) {
+        if (enabled && context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED) {
+            notice = "Android phone-state permission is required first"
+            return
+        }
+        vault.put("post_call_opt_in", if (enabled) "yes" else "no")
+        postCallOptIn = enabled
+        if (!enabled) vault.put("call_phase", "IDLE")
+        audit.add("POST_CALL_CONSENT", if (enabled) "Owner enabled generic call-ended prompts"
+            else "Owner disabled call-ended prompts", "FREE", true)
+        notice = if (enabled) "Generic call-ended check-ins enabled; no audio or number is recorded"
+            else "Call-ended check-ins disabled"
     }
     fun openAccessibilitySettings() {
         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
