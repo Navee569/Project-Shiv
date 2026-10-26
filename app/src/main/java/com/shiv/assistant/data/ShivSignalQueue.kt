@@ -26,8 +26,11 @@ class ShivSignalQueue(private val vault: ShivVault) {
             vault.get("privacy_zone") == "yes") return null
         val safe = PrivacyPolicy.safeNotificationTitle(source, title, extraDenylist) ?: return null
         val records = records()
-        if (records.any { it.optString("source") == source && it.optString("title") == safe &&
-                    it.optString("state") != "done" }) return null
+        if ((0 until records.length()).any { i ->
+                val row = records.getJSONObject(i)
+                row.optString("source") == source && row.optString("title") == safe &&
+                    row.optString("state") != "done"
+            }) return null
         val important = Regex("(?i)\\b(meet|meeting|deadline|due|appointment|tomorrow|today|remind)\\b").containsMatchIn(safe)
         if (records.length() >= 500 && !important) return null
         val id = UUID.randomUUID().toString()
