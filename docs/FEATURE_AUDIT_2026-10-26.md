@@ -36,12 +36,13 @@ exempted from the Phase 1 no-network rule by owner instruction and is unchanged.
   ledger usage are read before a local chat; model loading expenses force a second check.
 - Owner-selectable small router versus conversation model; one local engine swaps on demand,
   with no auto-fallback to cloud and no runtime self-authorization.
-- Adjustable 1/5/10/30 minute daily budget, time-bounded inference, cancellation queue
-  recovery and staged-model cleanup.
+- Adjustable 1/5/10/30 minute daily budget, time-bounded inference cancellation requests, cancellation queue
+  recovery, two-minute idle release of the large model and staged-model cleanup.
 - Pure regression tests for budget boundaries, urgent bypass, role selection, and interrupted
   native inference; CI build/lint/tests, when completed, are the only automated validation.
-- Full simultaneous two-model residency, idle eviction and calibrated energy use are **not**
-  verified or complete. Cloud implementation remains unchanged.
+- Full simultaneous two-model residency is **not** implemented; two-minute
+  idle eviction and power budgets are coded but still require real-device
+  verification and energy calibration. Cloud implementation remains unchanged.
 
 ## Release blockers
 
