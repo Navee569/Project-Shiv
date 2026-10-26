@@ -74,3 +74,21 @@
 - Audited final source commit `8e48ed0` passed APK assembly/JVM tests/Android lint (run 40259210693) plus 14/14 instrumented tests on both API26 and API35 (run 40259210606). See `DEFECT_LOG.md`.
 - A passing Android emulator **does not** establish that a Gemma model file loads on an S23, Kannada or Telugu actually works offline, One UI allows the intended Accessibility access, nor that the battery/heat target is met.
 - The cloud exception has network permission in the current manifest. A private build with no INTERNET permission is **not** implemented; never claim offline network isolation merely because LOCAL mode is selected.
+
+
+## Addendum: parity branch completion from screenshot's 8e48ed0
+
+This addendum belongs to a development child of the original audited branch,
+not to the unrelated main implementation. Original 8e48ed0 API26/API35
+evidence remains historical baseline and must not be applied to later commits
+until their CI passes.
+
+Closed *source implementation* gaps: owner-reviewed calendar import (M8),
+per-app short Accessibility filtering (M8/M9/N7), owner reminder tier and
+cancellation (M8/N8), atomic approved event undo (N8/scenario A),
+read-only Contacts name search (M8), and mixed-case privacy denylist
+hardening (M9). Added unit/instrumented coverage.
+
+Major remaining milestone work in the table above remains open; most
+importantly M11 has **not** been owner accepted on the S23. PHASE2_GATE.md
+continues to apply. The configured cloud AI exception remains untouched.

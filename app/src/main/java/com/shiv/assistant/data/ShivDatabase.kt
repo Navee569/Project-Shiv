@@ -67,6 +67,7 @@ interface ShivDao {
     @Query("SELECT * FROM memories WHERE id=:id") suspend fun memory(id: String): MemoryRecord?
     @Query("DELETE FROM memories WHERE id=:id") suspend fun removeMemory(id: String)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putEvent(value: EventRecord)
+    @Query("DELETE FROM events WHERE id=:id") suspend fun deleteEvent(id:String)
     @Query("SELECT * FROM events WHERE startAt BETWEEN :start AND :end ORDER BY startAt")
     suspend fun events(start: Long, end: Long): List<EventRecord>
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putTask(value: TaskRecord)
@@ -108,6 +109,16 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun trace(value: DecisionTraceRecord)
     @Query("SELECT * FROM decision_traces WHERE id=:id") suspend fun decision(id:String):DecisionTraceRecord?
     @Query("SELECT * FROM decision_traces ORDER BY createdAt DESC LIMIT :limit") suspend fun traces(limit: Int): List<DecisionTraceRecord>
+    @Query("UPDATE decision_traces SET decision='UNDONE', reason='Owner reversed approved event' WHERE id=:id AND decision='APPROVED'")
+    suspend fun markApprovedUndone(id:String):Int
+    @Transaction suspend fun undoApprovedEvent(decisionId:String, eventId:String,
+        audit:ActionLogRecord):Boolean {
+        if(markApprovedUndone(decisionId)!=1)return false
+        deleteEvent(eventId)
+        reminderStatus("event-"+eventId,"CANCELLED")
+        logAction(audit)
+        return true
+    }
     @Transaction suspend fun confirmEvent(event:EventRecord, reminder:ReminderRecord,
         updated:DecisionTraceRecord, audit:ActionLogRecord) {
         putEvent(event)

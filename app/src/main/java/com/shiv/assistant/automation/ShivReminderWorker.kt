@@ -62,6 +62,7 @@ object ShivReminders {
     fun enqueueId(context:Context,id:String,delaySeconds:Long) {
         val task=OneTimeWorkRequestBuilder<ShivReminderWorker>()
             .setInputData(Data.Builder().putString("reminder_id",id).build())
+            .addTag("shiv-reminder-"+id)
             .setInitialDelay(delaySeconds,TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueue(task)
     }
@@ -69,10 +70,21 @@ object ShivReminders {
         val delay=((dueAtMillis-System.currentTimeMillis())/1000L).coerceAtLeast(1L)
         val task=OneTimeWorkRequestBuilder<ShivReminderWorker>()
             .setInputData(Data.Builder().putString("reminder_id",reminderId).build())
+            .addTag("shiv-reminder-"+reminderId)
             .setInitialDelay(delay,TimeUnit.SECONDS).build()
         // Keep is idempotent for repeated approval or a retried command.
         WorkManager.getInstance(context).enqueueUniqueWork(
             "shiv-approved-"+reminderId,ExistingWorkPolicy.KEEP,task)
+    }
+    /** Returns whether a still-pending reminder was marked canceled; already shown
+     * notifications cannot be recalled. The DB status is checked at delivery. */
+    suspend fun undo(context:Context,id:String):Boolean = withContext(Dispatchers.IO) {
+        val dao=EncryptedDatabase.open(context).dao()
+        val record=dao.reminder(id) ?: return@withContext false
+        if(record.status !in setOf("SCHEDULED","DEFERRED"))return@withContext false
+        dao.reminderStatus(id,"CANCELLED")
+        WorkManager.getInstance(context).cancelAllWorkByTag("shiv-reminder-"+id)
+        true
     }
     fun schedule(context:Context,text:String):UUID? {
         val secs=parseSeconds(text)?:return null

@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import com.shiv.assistant.PhaseOneController
+import com.shiv.assistant.ShivController
+import com.shiv.assistant.domain.AuthorityTier
 import kotlinx.coroutines.launch
 
 /**
@@ -19,10 +21,15 @@ import kotlinx.coroutines.launch
  * imported metadata, and pending approvals are never shown as complete actions.
  */
 @Composable
-fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->Unit) {
+fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
+    var contactQuery by remember { mutableStateOf("") }
+    val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
+    }
+    val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
     }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         controller.enablePostCallCheckIn(granted)
@@ -30,6 +37,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
     var role by remember { mutableStateOf("router") }
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
+    var allowedScreenPackage by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -126,6 +134,11 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                         Column(Modifier.padding(10.dp)) {
                             Text(t.decision,color=accent)
                             Text(t.reason,color=Color.White)
+                            if(t.decision=="APPROVED" && t.reason.contains("approved event",true)) {
+                                TextButton(onClick={scope.launch { controller.undoApprovedCommitment(t) }}) {
+                                    Text("UNDO APPROVED EVENT + REMINDER")
+                                }
+                            }
                             if(t.decision=="ASK") {
                                 Row {
                                     if(t.reason.startsWith("Possible event:")) {
@@ -148,12 +161,71 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, onModelPick:()->U
                 Text("To enable optional Accessibility: Settings > Accessibility > Installed apps > Shiv. On some Galaxy phones, first open Settings > Apps > Shiv > three dots > Allow restricted settings.",
                     color=Color.White)
                 OutlinedButton(onClick={controller.openAccessibilitySettings()}) { Text("OPEN ACCESSIBILITY SETTINGS") }
-                Button(onClick={controller.requestOneShotAwareness()}) { Text("CAPTURE ONE ALLOWED SCREEN FACT (15s)") }
-                OutlinedButton(onClick={permissionCalendar.launch(Manifest.permission.READ_CALENDAR)}) {
-                    Text("ALLOW READ-ONLY CALENDAR SYNC")
+                OutlinedTextField(value=allowedScreenPackage,
+                    onValueChange={allowedScreenPackage=it.take(150)},
+                    label={Text("Allowed app package (exact)")},singleLine=true)
+                Button(enabled=allowedScreenPackage.isNotBlank(),
+                    onClick={controller.requestOneShotAwareness(allowedScreenPackage)}) {
+                    Text("ARM ONLY THIS APP FOR 15 SECONDS")
                 }
+                OutlinedButton(onClick={controller.stopOneShotAwareness()}) {
+                    Text("STOP SCREEN AWARENESS")
+                }
+                OutlinedButton(onClick={
+                    if(screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        scope.launch { controller.readPhoneCalendar() }
+                    else permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
+                }) { Text("PREVIEW CALENDAR — DON'T IMPORT YET") }
+                controller.calendarCandidates.forEach { candidate ->
+                    Surface(shape=MaterialTheme.shapes.medium) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                            Text(candidate.title.take(180),color=Color.White)
+                            Text(java.time.Instant.ofEpochMilli(candidate.startAt).toString(),
+                                color=Color.LightGray,fontSize=11.sp)
+                            TextButton(onClick={scope.launch{controller.confirmCalendarImport(candidate.id)}}) {
+                                Text("APPROVE IMPORT")
+                            }
+                        }
+                    }
+                }
+                if(controller.calendarCandidates.isNotEmpty())
+                    TextButton(onClick={controller::discardCalendarPreview}) {
+                        Text("DISCARD ALL PREVIEWS")
+                    }
+                Text("CONTACTS — NAME SEARCH ONLY",color=accent)
+                OutlinedTextField(value=contactQuery,
+                    onValueChange={contactQuery=it.take(60)},
+                    label={Text("Contact name to search")},singleLine=true)
+                OutlinedButton(enabled=contactQuery.trim().length>=2,
+                    onClick={
+                        if(screenContext.checkSelfPermission(Manifest.permission.READ_CONTACTS)==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            scope.launch { controller.lookupContactNames(contactQuery) }
+                        else permissionContacts.launch(Manifest.permission.READ_CONTACTS)
+                    }) { Text("SEARCH ON DEVICE (NO NUMBERS SAVED)") }
+                controller.contactNameMatches.forEach { match ->
+                    Text(match,color=Color.White)
+                }
+                if(controller.contactNameMatches.isNotEmpty())
+                    TextButton(onClick={controller::clearContactNames}) { Text("CLEAR CONTACT RESULTS") }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
+                }
+                Text("OWNER REMINDER AUTHORITY",color=accent)
+                Row {
+                    FilterChip(owner.reminderTier==AuthorityTier.ASK_FIRST,
+                        onClick={scope.launch{owner.changeReminderTier(AuthorityTier.ASK_FIRST)}},
+                        label={Text("Ask first")})
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(owner.reminderTier==AuthorityTier.ACT_THEN_TELL,
+                        onClick={scope.launch{owner.changeReminderTier(AuthorityTier.ACT_THEN_TELL)}},
+                        label={Text("Schedule, then tell")})
+                }
+                Text("Only explicit local reminders may use act-then-tell. Payments and messages still require review.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedButton(onClick={scope.launch{owner.undoLatestReminder()}}) {
+                    Text("UNDO LATEST PENDING REMINDER")
                 }
                 OutlinedButton(onClick={controller.setPatternLearning(true)}) {
                     Text("ENABLE CHARGING-ONLY PATTERN LEARNING")

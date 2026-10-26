@@ -10,7 +10,8 @@ object ActionAuthorization {
     private val irreversible = setOf(ActionKind.UPI,ActionKind.SMS,ActionKind.EMAIL,
         ActionKind.TELEGRAM,ActionKind.WHATSAPP,ActionKind.SHARE)
     private val ownerOnlyOverrides = setOf(ActionKind.DIAL, ActionKind.MAPS,
-        ActionKind.SETTINGS, ActionKind.CAMERA, ActionKind.CALENDAR, ActionKind.ALARM, ActionKind.TIMER)
+        ActionKind.SETTINGS, ActionKind.CAMERA, ActionKind.CALENDAR, ActionKind.ALARM, ActionKind.TIMER,
+        ActionKind.REMINDER)
     /**
      * No model tool can set authority; only independently persisted owner preference
      * is accepted. Financial actions have a hard ASK_FIRST floor.
@@ -51,8 +52,13 @@ object SensitiveAppDenylist {
         "lastpass", "otp", "secureid", "creditcard"
     )
     fun excluded(packageName: String, extraOwnerDenylist: Set<String> = emptySet()): Boolean {
-        val lower = packageName.lowercase()
-        return lower.isBlank() || lower in blocked || lower in extraOwnerDenylist ||
+        val lower = packageName.trim().lowercase(java.util.Locale.ROOT)
+        return lower.isBlank() ||
+            blocked.any { known ->
+                val denied=known.lowercase(java.util.Locale.ROOT)
+                lower==denied || lower.startsWith(denied+".")
+            } ||
+            extraOwnerDenylist.any { lower==it.trim().lowercase(java.util.Locale.ROOT) } ||
             criticalTokens.any { it in lower }
     }
 }

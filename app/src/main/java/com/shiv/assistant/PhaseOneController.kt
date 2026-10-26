@@ -2,6 +2,14 @@ package com.shiv.assistant
 
 import android.content.Context
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
+import com.shiv.assistant.integrations.CalendarAdapter
+import com.shiv.assistant.integrations.CalendarCandidate
+import com.shiv.assistant.integrations.CalendarImportPolicy
+import com.shiv.assistant.integrations.ContactsAdapter
+import com.shiv.assistant.domain.SensitiveAppDenylist
+import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
@@ -19,6 +27,8 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val upcoming=mutableStateListOf<EventRecord>()
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
+    val calendarCandidates=mutableStateListOf<CalendarCandidate>()
+    val contactNameMatches=mutableStateListOf<String>()
     var candidate by mutableStateOf<Uri?>(null)
         private set
     var progress by mutableStateOf("No model import in progress")
@@ -33,18 +43,75 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
-    fun requestOneShotAwareness() {
-        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
+    fun requestOneShotAwareness(packageName:String) {
+        val allowed=packageName.trim().lowercase()
+        if(!ScreenInspectionPolicy.permits(allowed, allowed)) {
+            issue="Enter one non-sensitive, fully qualified Android package"
+            return
+        }
+        // The exact allowed source is persisted encrypted; a broad Accessibility
+        // grant does not authorize Shiv to traverse other apps.
+        ShivVault(context).put("screen_allowed_package", allowed)
+        check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",true).putBoolean("paused",false)
-            .putLong("capture_until",System.currentTimeMillis()+15_000L).apply()
-        progress="One-shot permission active for 15 seconds. Open the allowed screen."
+            .putLong("capture_until",System.currentTimeMillis()+15_000L).commit())
+        issue=null
+        progress="One-shot capture armed for 15 seconds, ONLY for "+allowed
+    }
+    fun stopOneShotAwareness() {
+        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
+            .remove("capture_until").putBoolean("paused",true).commit()
+        ShivVault(context).put("screen_allowed_package","")
+        progress="One-shot screen inspection stopped"
     }
     suspend fun readPhoneCalendar() {
-        val events=com.shiv.assistant.integrations.CalendarAdapter(context).inspectNext48Hours()
-        val database=EncryptedDatabase.open(context).dao()
-        for(event in events)database.putEvent(event)
+        calendarCandidates.clear()
+        try {
+            val preview=CalendarAdapter(context).inspectNext48Hours()
+            calendarCandidates.addAll(preview)
+            progress=preview.size.toString()+" candidate(s) previewed. Nothing imported until you approve."
+        } catch(e:Exception) {
+            issue="Calendar preview unavailable; check permission"
+        }
+    }
+    suspend fun confirmCalendarImport(id:String) {
+        val candidate=calendarCandidates.firstOrNull { it.id==id } ?: run {
+            issue="Calendar selection expired; preview again"
+            return
+        }
+        if(context.checkSelfPermission(Manifest.permission.READ_CALENDAR)!=PackageManager.PERMISSION_GRANTED) {
+            issue="Calendar permission revoked; import stopped"
+            calendarCandidates.clear()
+            return
+        }
+        val approved=CalendarImportPolicy.accept(candidate,System.currentTimeMillis()) ?: run {
+            calendarCandidates.remove(candidate)
+            issue="Invalid or expired calendar candidate"
+            return
+        }
+        withContext(Dispatchers.IO) {
+            val database=EncryptedDatabase.open(context)
+            database.dao().putEvent(approved)
+            database.dao().logAction(ActionLogRecord("calendar-"+approved.id,
+                "IMPORT_CALENDAR","[REDACTED]","ASK_FIRST","OWNER_APPROVED",
+                true,"ENCRYPTED_EVENT_IMPORTED",null))
+        }
+        calendarCandidates.remove(candidate)
+        progress="Owner-approved calendar event saved in encrypted Shiv storage"
         reload()
     }
+    fun discardCalendarPreview() { calendarCandidates.clear();progress="Calendar preview discarded" }
+    suspend fun lookupContactNames(query:String) {
+        contactNameMatches.clear()
+        try {
+            val found=ContactsAdapter(context).matchNames(query)
+            contactNameMatches.addAll(found)
+            progress=found.size.toString()+" matching display name(s); never saved or sent to AI"
+        } catch (_:Exception) {
+            issue="Contact lookup unavailable or permission denied"
+        }
+    }
+    fun clearContactNames() { contactNameMatches.clear() }
     fun setPatternLearning(on:Boolean) {
         context.getSharedPreferences("shiv_learning",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",on).apply()
@@ -154,6 +221,19 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             progress="Approved event and scheduled reminder"
             reload()
         } catch(e:Exception) { issue=e.message?:"Approval failed" }
+    }
+    suspend fun undoApprovedCommitment(trace:DecisionTraceRecord) {
+        val current=dao.decision(trace.id) ?: run { issue="Decision not found";return }
+        val eventId=current.signalId ?: run { issue="Source event unavailable";return }
+        val audit=ActionLogRecord("undo-"+eventId,"UNDO_EVENT","[REDACTED]",
+            "ASK_FIRST","OWNER_REQUESTED",true,"EVENT_REMINDER_CANCELLED",null)
+        val success=dao.undoApprovedEvent(current.id,eventId,audit)
+        if(success) {
+            androidx.work.WorkManager.getInstance(context).cancelUniqueWork(
+                "shiv-approved-event-"+eventId)
+            progress="Local approved event and pending reminder reversed; delivered alerts remain"
+        } else issue="This approval has already been reversed or is no longer pending"
+        reload()
     }
     suspend fun declineCommitment(trace:DecisionTraceRecord) {
         val current=dao.decision(trace.id)?:return

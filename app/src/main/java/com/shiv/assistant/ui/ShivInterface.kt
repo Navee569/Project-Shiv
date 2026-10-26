@@ -218,7 +218,7 @@ fun ShivInterface(
                 OutlinedButton(onClick = { controller.clearHistory() }) { Text("ERASE CHAT HISTORY") }
             }
             "Memories", "Models", "AI Status", "Events", "Beliefs", "Decisions", "Permissions" ->
-                PhaseOneScreen(tab, controller.phase, onModelPick)
+                PhaseOneScreen(tab, controller.phase, controller, onModelPick)
             "Settings" -> ShivSettings(controller, onNotificationPermission)
         }
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
