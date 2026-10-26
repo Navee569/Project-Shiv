@@ -130,6 +130,7 @@ class PortableOwnerArchive(
                     if(table=="vault_entries") {
                         val name=values.getAsString("name")
                         if(name=="cloud_consent")values.put("value","no")
+                        if(name=="proactive_opt_in")values.put("value","no")
                         if(name=="brain_mode")values.put("value","LOCAL")
                         if(name=="post_call_opt_in" || name=="notification_opt_in" ||
                             name=="screen_allowed_package")values.put("value","")
@@ -169,6 +170,7 @@ class PortableOwnerArchive(
         }
         work.cancelUniqueWork("shiv-durable-signals")
         work.cancelUniqueWork("shiv-opt-in-pattern-learning")
+        work.cancelUniqueWork("shiv-opt-in-agenda-nudges")
         snapshot.values.sumOf { it.size }
     }
 
