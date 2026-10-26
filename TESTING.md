@@ -29,6 +29,9 @@
    Language > Text-to-speech > Preferred engine > Speech Services by Google >
    gear > Install voice data. Repeat with network disabled.
 9. Save a memory, correct it, delete another, restart the app and check results.
+   Under Tasks, add an event tomorrow at 17:00, restart and ask "What's on tomorrow?".
+   Verify the answer matches the actual encrypted agenda; test deleting the event.
+   With Guest Mode active, verify Chat, Memory, Settings and Tasks are concealed.
 10. Keep the phone unplugged for a normal day, compare Samsung Settings > Battery >
     Battery usage and note whether Shiv is a significant source of battery drain.
 11. Test notification permission denied, airplane mode, thermal throttling,

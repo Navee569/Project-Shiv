@@ -15,6 +15,9 @@ exception to the no-network policy in the original Phase 1 specification.
 - New 4-layer memory facts with owner corrections, deletion, evidence/provenance and safe deduplication.
 - Deterministic app-package/OTP filters **before** notification content is stored;
   configurable extra denylist; guest mode, manual privacy-zone flag and sensing pause.
+- Owner-entered events/tasks with strict local dates, encrypted agenda storage,
+  editable completion/deletion and factual "What's on tomorrow?" answers from real
+  saved records (owner/device verification pending).
 - Encrypted, crash-resumable sanitized signal queue with WorkManager processing.
   Low-confidence possible-event extraction from permitted notification titles, including
   basic Kannada/Telugu keywords. Does NOT pretend to understand arbitrary messages.

@@ -164,7 +164,10 @@ fun ShivInterface(
                     }
                 }
             }
-            "Tasks" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+            "Tasks" -> if (controller.guestMode)
+                Column(Modifier.weight(1f).padding(18.dp)) {
+                    Header("PRIVATE AGENDA LOCKED", "Disable Guest Mode in Privacy to see scheduled items.")
+                } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Header("EVENTS & TASKS", "Owner-entered dates. No events are invented or created from uncertain speech.")
                 var itemTitle by remember { mutableStateOf("") }

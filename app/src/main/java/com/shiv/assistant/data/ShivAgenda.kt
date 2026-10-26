@@ -8,6 +8,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 import java.util.UUID
 
 enum class AgendaKind { EVENT, TASK }
@@ -23,6 +24,7 @@ data class AgendaItem(
 /** Deterministic date parsing and local encrypted agenda; no guessed event creation. */
 object AgendaDates {
     private val format = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
+        .withResolverStyle(ResolverStyle.STRICT)
     fun parseLocal(text: String, zone: ZoneId = ZoneId.systemDefault()): Long? {
         return try {
             LocalDateTime.parse(text.trim(), format).atZone(zone).toInstant().toEpochMilli()
