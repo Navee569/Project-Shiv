@@ -48,6 +48,26 @@ class LocalInferenceSchedulerTest {
         assertEquals(listOf("block", "urgent", "background"), brain.order.toList())
         scheduler.close()
     }
+    @Test fun cancelledActiveInferenceDoesNotStrandPendingWork() = runBlocking {
+        val brain = FakeBrain()
+        val scheduler = LocalInferenceScheduler(brain, this)
+        val active = async(Dispatchers.Default) {
+            runCatching { scheduler.infer("block") }.exceptionOrNull()
+        }
+        withTimeout(2000) { brain.started.await() }
+        val queued = async(Dispatchers.Default) {
+            scheduler.infer("after", urgency = InferenceUrgency.URGENT)
+        }
+        withTimeout(2000) { while (scheduler.waitingCount < 1) delay(2) }
+        // Mimics an inference cancelled by the native runtime while the
+        // scheduler coroutine itself is still alive.
+        brain.unblock.cancel()
+        assertTrue(active.await() is kotlinx.coroutines.CancellationException)
+        assertEquals(BrainResult.Text("after"), withTimeout(2000) { queued.await() })
+        assertEquals(listOf("block", "after"), brain.order.toList())
+        scheduler.close()
+    }
+
     @Test fun invalidInputNeverReachesBrain() = runBlocking {
         val brain = FakeBrain()
         val scheduler = LocalInferenceScheduler(brain, this)
