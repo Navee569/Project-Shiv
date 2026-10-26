@@ -7,6 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.net.Uri
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+import com.shiv.assistant.integrations.ShivAccessibilityReader
+import com.shiv.assistant.integrations.ShivUsageReader
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.biometric.BiometricManager
@@ -16,6 +20,18 @@ data class PermissionReading(val title: String, val status: String, val revokeHe
 /** Reads real Android grants. Never implies that optional, unsupported services exist. */
 object ShivPermissionInspector {
     fun read(context: Context): List<PermissionReading> {
+        fun granted(permission: String) =
+            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        val calendar = granted(Manifest.permission.READ_CALENDAR)
+        val contacts = granted(Manifest.permission.READ_CONTACTS)
+        val phone = granted(Manifest.permission.READ_PHONE_STATE)
+        val accessMgr = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val accessibility = accessMgr.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK).any {
+                it.resolveInfo.serviceInfo.packageName == context.packageName &&
+                    it.resolveInfo.serviceInfo.name == ShivAccessibilityReader::class.java.name
+            }
+        val usage = ShivUsageReader(context).hasGrant()
         val mic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         val notifications = Build.VERSION.SDK_INT < 33 ||
@@ -40,10 +56,20 @@ object ShivPermissionInspector {
                 "Galaxy Settings > Security and privacy > Biometrics. Shiv cannot change system biometrics."),
             PermissionReading("Internet (cloud AI exception)", "MANIFEST-DECLARED",
                 "Not a runtime grant; only select Cloud/Hybrid and explicitly consent in Shiv Settings."),
-            PermissionReading("Accessibility and screen capture", "NOT IMPLEMENTED / NOT ENABLED",
-                "Shiv does not declare an AccessibilityService or request MediaProjection."),
-            PermissionReading("Contacts, SMS, location, call log", "NOT REQUESTED",
-                "Those optional integrations are not active in this build."),
+            entry("Calendar (on-demand read)", calendar,
+                "Galaxy Settings > Apps > Shiv > Permissions > Calendar > Don't allow"),
+            entry("Contacts (on-demand names)", contacts,
+                "Galaxy Settings > Apps > Shiv > Permissions > Contacts > Don't allow"),
+            entry("Phone state (generic after-call prompt)", phone,
+                "Galaxy Settings > Apps > Shiv > Permissions > Phone > Don't allow"),
+            entry("Usage Access (special access)", usage,
+                "Galaxy Settings > Apps > Special access > Usage data access > Shiv > Off"),
+            entry("Accessibility (15-second owner-armed)", accessibility,
+                "Galaxy Settings > Accessibility > Installed apps > Shiv > Off"),
+            PermissionReading("Live screen capture", "NOT REQUESTED",
+                "MediaProjection is not enabled; no raw screenshots are stored."),
+            PermissionReading("SMS, location, call log", "NOT REQUESTED",
+                "These broader sensitive providers are not active."),
             PermissionReading("Privileged shell / Shizuku", "NOT INCLUDED",
                 "No ADB or Shizuku shell control is installed by Shiv.")
         )
