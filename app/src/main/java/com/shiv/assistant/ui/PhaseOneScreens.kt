@@ -130,6 +130,11 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         Column(Modifier.padding(10.dp)) {
                             Text(t.decision,color=accent)
                             Text(t.reason,color=Color.White)
+                            if(t.decision=="APPROVED" && t.reason.contains("approved event",true)) {
+                                TextButton(onClick={scope.launch { controller.undoApprovedCommitment(t) }}) {
+                                    Text("UNDO APPROVED EVENT + REMINDER")
+                                }
+                            }
                             if(t.decision=="ASK") {
                                 Row {
                                     if(t.reason.startsWith("Possible event:")) {
