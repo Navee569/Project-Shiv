@@ -10,8 +10,9 @@
   Unit tests added for common sources and OTP patterns. Owner phone test pending.
 
 ## Open
-- D-004 HIGH: Room + SQLCipher integration has been coded, but requires
-  owner validation of legacy migration, wrong-key behaviour, and export/restore.
+- D-004 HIGH: Room + SQLCipher plus password-encrypted backup are coded,
+  but require on-device validation of legacy migration, wrong-key behavior,
+  backup reopening, restore and key loss.
 - D-005 HIGH: full sensitive-source denylist review for Android providers
   including Accessibility, SMS, OCR and screenshots before granting access.
 - D-006 HIGH: owner-controlled two-model queue and performance gating.

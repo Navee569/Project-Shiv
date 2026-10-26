@@ -102,8 +102,20 @@ class ShivVault(context: Context) {
         if (preferences.contains(name))
             check(preferences.edit().remove(name).commit()) { "Legacy cleanup failed" }
     }
+    /**
+     * Move remaining legacy ciphertext into SQLCipher before exporting.
+     * A backup must not silently omit older records that the current UI hasn't read.
+     * The wrapped database secret itself is not part of the portable backup.
+     */
     @Synchronized
-    fun backupRecords(): List<SecureEntry> = secureEntries.all()
+    fun backupRecords(): List<SecureEntry> {
+        val legacyKeys = preferences.all.keys.filter { it != "__sqlcipher_passphrase_v1" }
+        for (name in legacyKeys) {
+            if (name.matches(Regex("[a-zA-Z0-9_]{1,100}"))) get(name)
+            else throw IllegalStateException("Invalid legacy record name; export refused")
+        }
+        return secureEntries.all()
+    }
 
     @Synchronized
     fun mergeBackupRecords(items: List<SecureEntry>) {

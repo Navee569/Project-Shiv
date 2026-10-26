@@ -146,18 +146,26 @@ class MainActivity : FragmentActivity() {
             var pendingBackupPhrase by remember { mutableStateOf("") }
             val backupExport = rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-                if (uri != null) scope.launch {
-                    val phrase = pendingBackupPhrase
-                    pendingBackupPhrase = ""
-                    controller.exportEncryptedBackup(uri, phrase)
+                val phrase = pendingBackupPhrase
+                pendingBackupPhrase = ""
+                if (uri != null && phrase.length >= 12) {
+                    // File picker can stop the activity, which correctly relocks memory.
+                    // Explicit reauthentication is required before any data export.
+                    authenticate {
+                        controller.onBiometricAuthenticated()
+                        scope.launch { controller.exportEncryptedBackup(uri, phrase) }
+                    }
                 }
             }
             val backupRestore = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) scope.launch {
-                    val phrase = pendingBackupPhrase
-                    pendingBackupPhrase = ""
-                    controller.restoreEncryptedBackup(uri, phrase)
+                val phrase = pendingBackupPhrase
+                pendingBackupPhrase = ""
+                if (uri != null && phrase.length >= 12) {
+                    authenticate {
+                        controller.onBiometricAuthenticated()
+                        scope.launch { controller.restoreEncryptedBackup(uri, phrase) }
+                    }
                 }
             }
             val model = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
