@@ -303,6 +303,7 @@ class ShivController(private val context: Context) {
             phase.discardCalendarPreview()
             phase.clearContactNames()
             phase.reload()
+            phase.refreshPrivacyAfterOwnerReset()
             notice="Owner data erased from Shiv's encrypted database; imported model files remain."
         } finally {
             working=false
@@ -334,6 +335,7 @@ class ShivController(private val context: Context) {
         phase.discardCalendarPreview()
         phase.clearContactNames()
         phase.reload()
+        phase.refreshPrivacyAfterOwnerReset()
         notice="Restored "+count+" encrypted records. Cloud and old reminders remain disabled; restart Shiv to review settings."
     }
 
