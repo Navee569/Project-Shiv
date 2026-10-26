@@ -159,3 +159,10 @@ portable binary model weights, independent provider action undo, measured
 delegate/energy benchmarks, all app UX/accessibility checks and M11 owner
 signoff. Android emulators cannot settle those facts. The source requirements
 explicitly gate **Phase 2** on M11 acceptance; no Phase 2 claim is made.
+
+
+- Bundled Latin ML Kit offline OCR for explicit owner-chosen images, with
+  transient preview, credential-text suppression and strictly parsed ISO
+  due-date suggestions. The owner must provide a task title and exact 24-hour
+  time before encrypted agenda creation. The selected image is not copied or
+  transmitted. Kannada/Telugu OCR is still missing.
