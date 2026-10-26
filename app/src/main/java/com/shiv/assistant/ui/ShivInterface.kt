@@ -44,6 +44,7 @@ fun ShivInterface(
     onBackupExport: (String) -> Unit,
     onBackupRestore: (String) -> Unit,
     onSpeak: (String) -> Unit,
+    onPostCallPermission: () -> Unit,
     onCalendarPreview: () -> Unit,
     onContactLookup: (String) -> Unit,
     onNotificationPermission: () -> Unit
@@ -241,6 +242,19 @@ fun ShivInterface(
                     "create unconfirmed beliefs only; review or delete them under Memory.",
                     color = Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(16.dp))
+                Header("POST-CALL CHECK-IN",
+                    "Optional generic Android call-ended prompt; no caller details or audio.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ask whether a call produced a commitment", Modifier.weight(1f),
+                        color = Color.White, fontSize = 12.sp)
+                    Switch(checked = controller.postCallOptIn, onCheckedChange = {
+                        if (it) onPostCallPermission() else controller.updatePostCallOptIn(false)
+                    })
+                }
+                Text("Android may delay or suppress background call-state broadcasts. " +
+                    "Shiv never records the other caller's audio.",
+                    color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.height(12.dp))
                 Header("ANDROID CALENDAR • OWNER PREVIEW",
                     "Read next 14 days only when requested. Review the temporary list before encrypted import.")
                 Button(onClick = onCalendarPreview, enabled = !controller.guestMode &&
