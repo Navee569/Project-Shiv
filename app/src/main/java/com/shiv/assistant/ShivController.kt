@@ -242,17 +242,22 @@ class ShivController(private val context: Context) {
             energy.modelSecondsToday(), dailyComputeBudgetSeconds)
     }
     fun assignModelRole(id: String, conversation: Boolean) {
-        val selected = models.firstOrNull { it.id == id }
-            ?: throw IllegalArgumentException("Unknown imported model")
+        val selected = models.firstOrNull { it.id == id } ?: run {
+            notice = "Unknown imported model"
+            return
+        }
         if (!conversation) {
-            require(selected.sizeBytes <= 2_000_000_000L) {
-                "Router role requires a model no larger than 2 GB"
+            if (selected.sizeBytes > 2_000_000_000L || id == conversationModelId) {
+                notice = "Router must be at most 2 GB and different from the conversation model"
+                return
             }
-            require(id != conversationModelId) { "Choose separate files for router and conversation" }
             vault.put("router_model_id", id)
             routerModelId = id
         } else {
-            require(id != routerModelId) { "Choose separate files for router and conversation" }
+            if (id == routerModelId) {
+                notice = "Choose separate files for router and conversation"
+                return
+            }
             vault.put("conversation_model_id", id)
             conversationModelId = id
         }
@@ -302,7 +307,11 @@ class ShivController(private val context: Context) {
         val path = modelCatalog.stageForLoad(id)
         val started = System.nanoTime()
         val outcome = try { localNeural.load(path) }
-        finally { energy.record("local_model_load", (System.nanoTime() - started) / 1_000_000) }
+        catch (e: Exception) {
+            neuralReady = false
+            activeModelId = null
+            throw e
+        } finally { energy.record("local_model_load", (System.nanoTime() - started) / 1_000_000) }
         neuralReady = outcome is BrainResult.Text
         activeModelId = if (neuralReady) id else null
         return outcome
@@ -470,9 +479,13 @@ class ShivController(private val context: Context) {
                     // swap, never re-use a pre-load lease for generation.
                     refreshDeviceStats()
                     val refreshed = leaseForConversation()
-                    if (refreshed == null || !refreshed.allowed) {
+                    val activeIsLarge = models.any {
+                        it.id == activeModelId && it.sizeBytes > 2_000_000_000L
+                    }
+                    if (refreshed == null || !refreshed.allowed ||
+                        (activeIsLarge && !refreshed.allowLargeModel)) {
                         append("assistant", "Local inference paused after model loading: " +
-                            (refreshed?.reason ?: "device readings unavailable"))
+                            (refreshed?.reason ?: "device readings unavailable or large model disallowed"))
                     } else {
                     val start = System.nanoTime()
                     val answer = try {
