@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
+    val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
     }
@@ -162,8 +163,10 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Text("STOP SCREEN AWARENESS")
                 }
                 OutlinedButton(onClick={
-                    scope.launch { controller.readPhoneCalendar() }
-                    permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
+                    if(screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        scope.launch { controller.readPhoneCalendar() }
+                    else permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
                 }) { Text("PREVIEW CALENDAR — DON'T IMPORT YET") }
                 controller.calendarCandidates.forEach { candidate ->
                     Surface(shape=MaterialTheme.shapes.medium) {
