@@ -42,6 +42,8 @@ class ShivController(private val context: Context) {
         private set
     var telemetry by mutableStateOf<DeviceStats?>(null)
         private set
+    var privateUnlocked by mutableStateOf(false)
+        private set
     var speechLocale by mutableStateOf("en-IN")
         private set
     var powerMode by mutableStateOf(PowerMode.BALANCED)
@@ -113,6 +115,7 @@ class ShivController(private val context: Context) {
             "ASK_FIRST", true)
     }
     fun updateGuestMode(value: Boolean) {
+        if (value) privateUnlocked = false
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
@@ -131,6 +134,10 @@ class ShivController(private val context: Context) {
         notice = "App added to the denylist; content from it is not stored"
     }
     fun extraDeniedPackages() = vault.get("denied_packages").orEmpty()
+    fun onBiometricAuthenticated() {
+        if (!guestMode) privateUnlocked = true
+    }
+    fun lockPrivate() { privateUnlocked = false }
     fun changeSpeechLocale(tag: String) {
         require(tag in setOf("en-IN", "kn-IN", "te-IN")) { "Unsupported speech locale" }
         speechLocale = tag

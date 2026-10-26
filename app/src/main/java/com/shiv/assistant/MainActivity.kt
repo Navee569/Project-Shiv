@@ -10,7 +10,10 @@ import android.speech.SpeechRecognizer
 import java.util.Locale
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +28,9 @@ import com.shiv.assistant.automation.ShivConsolidation
 import com.shiv.assistant.ui.ShivInterface
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+    private var ownerController: ShivController? = null
+    private var afterAuthentication: (() -> Unit)? = null
     private var recognizer: SpeechRecognizer? = null
 
     private fun startOnDeviceRecognition(locale: String, onText: (String) -> Unit,
@@ -70,7 +75,13 @@ class MainActivity : ComponentActivity() {
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true))
     }
 
+    override fun onStop() {
+        ownerController?.lockPrivate()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        afterAuthentication = null
         recognizer?.destroy()
         recognizer = null
         super.onDestroy()
@@ -84,6 +95,39 @@ class MainActivity : ComponentActivity() {
         ShivConsolidation.schedule(this)
         setContent {
             val controller = remember { ShivController(applicationContext) }
+            ownerController = controller
+            val prompt = remember {
+                BiometricPrompt(this, ContextCompat.getMainExecutor(this),
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            super.onAuthenticationSucceeded(result)
+                            val callback = afterAuthentication
+                            afterAuthentication = null
+                            callback?.invoke()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            afterAuthentication = null
+                            controller.speechMessage("Authentication canceled or unavailable")
+                        }
+                    })
+            }
+            val authenticate: (() -> Unit) -> Unit = { approved ->
+                val authenticators = if (Build.VERSION.SDK_INT >= 30)
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                else BiometricManager.Authenticators.BIOMETRIC_WEAK
+                if (BiometricManager.from(this).canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+                    controller.speechMessage("Set up a phone lock screen and fingerprint to unlock private actions.")
+                } else {
+                    afterAuthentication = approved
+                    val info = BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("Shiv private verification")
+                        .setSubtitle("Confirm access to your private data or high-risk action")
+                        .setAllowedAuthenticators(authenticators)
+                    if (Build.VERSION.SDK_INT < 30) info.setNegativeButtonText("CANCEL")
+                    prompt.authenticate(info.build())
+                }
+            }
             val scope = rememberCoroutineScope()
             val tts = remember { TextToSpeech(applicationContext, null, "com.google.android.tts") }
             DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
@@ -121,6 +165,8 @@ class MainActivity : ComponentActivity() {
                     onPhoto = { photo.launch("image/*") },
                     onDocument = { document.launch("text/*") },
                     onModel = { model.launch(arrayOf("application/octet-stream", "*/*")) },
+                    onUnlockMemory = { authenticate { controller.onBiometricAuthenticated() } },
+                    onApproveHighRisk = { authenticate { controller.approve() } },
                     onSpeak = { spoken ->
                         val locale = Locale.forLanguageTag(controller.speechLocale)
                         val available = tts.isLanguageAvailable(locale)

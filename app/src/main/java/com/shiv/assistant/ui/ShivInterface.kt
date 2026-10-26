@@ -35,6 +35,8 @@ fun ShivInterface(
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
     onModel: () -> Unit,
+    onUnlockMemory: () -> Unit,
+    onApproveHighRisk: () -> Unit,
     onSpeak: (String) -> Unit,
     onNotificationPermission: () -> Unit
 ) {
@@ -116,7 +118,9 @@ fun ShivInterface(
                     }
                 }
             }
-            "Chat" -> Column(Modifier.weight(1f)) {
+            "Chat" -> if (controller.guestMode) Column(Modifier.weight(1f).padding(18.dp)) {
+                Header("GUEST MODE", "Chat history is hidden. Disable guest mode in Privacy.")
+            } else Column(Modifier.weight(1f)) {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(controller.messages) { entry ->
@@ -199,7 +203,12 @@ fun ShivInterface(
                 Text("Reminders: type “remind me in 10 minutes to take a break” in Chat.",
                     color = Muted, fontSize = 12.sp)
             }
-            "Memory" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
+            "Memory" -> if (controller.guestMode || !controller.privateUnlocked)
+                Column(Modifier.weight(1f).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Header("PRIVATE MEMORY LOCKED", "Biometric/device credential authentication required.")
+                    if (!controller.guestMode) Button(onClick = onUnlockMemory) { Text("UNLOCK PRIVATE MEMORY") }
+                    else Text("Turn off Guest Mode in Privacy first.", color = Muted)
+                } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) {
                 Header("PRIVATE MEMORY", "All local records are encrypted with Android Keystore AES-GCM.")
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(note, { note = it.take(8192) }, label = { Text("Save an explicit memory") },
@@ -304,7 +313,7 @@ fun ShivInterface(
                 Text("Additional excluded apps: " + controller.extraDeniedPackages().ifBlank { "None" },
                     color = Muted, fontSize = 11.sp)
                 Header("DECISION AUDIT LOG", "Why did Shiv perform or reject an action?")
-                controller.audit.recent().take(15).forEach { trace ->
+                if (!controller.guestMode && controller.privateUnlocked) controller.audit.recent().take(15).forEach { trace ->
                     GlassCard {
                         Text(trace.action + " • " + (if (trace.accepted) "ACCEPTED" else "DENIED"),
                             color = Color.White, fontWeight = FontWeight.Bold)
@@ -313,7 +322,10 @@ fun ShivInterface(
                     }
                 }
             }
-            "Settings" -> ShivSettings(controller, onNotificationPermission)
+            "Settings" -> if (controller.guestMode)
+                Column(Modifier.weight(1f).padding(18.dp)) {
+                    Header("SETTINGS LOCKED", "Disable guest mode in Privacy before changing credentials.")
+                } else ShivSettings(controller, onNotificationPermission)
         }
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp))
@@ -323,7 +335,9 @@ fun ShivInterface(
         title = { Text("REVIEW ACTION • " + pending.kind.name) },
         text = { Text("Target: " + pending.argument + "\n\n" + pending.explanation +
             "\n\nShiv will open the relevant Android app. Sending or paying remains your decision.") },
-        confirmButton = { Button(onClick = controller::approve) { Text("CONTINUE") } },
+        confirmButton = { Button(onClick = {
+            if (pending.kind == ActionKind.UPI) onApproveHighRisk() else controller.approve()
+        }) { Text("CONTINUE") } },
         dismissButton = { TextButton(onClick = controller::reject) { Text("CANCEL") } }
     )
     if (photo != null) AlertDialog(

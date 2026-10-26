@@ -13,7 +13,7 @@ assert a.attrib.get(ns+"usesCleartextTraffic")=="false"
 services=a.findall("service")
 assert len(services)==1 and services[0].attrib.get(ns+"permission")=="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
-assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO"},permissions
+assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.USE_BIOMETRIC"},permissions
 gradle=(app/"build.gradle").read_text()
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
 sources=list((app/"src/main/java").rglob("*.kt"))
