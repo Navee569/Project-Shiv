@@ -241,6 +241,11 @@ class ShivBrainHub(private val context: Context) {
                 prompt, InferencePriority.INTERACTIVE))
         } finally { armIdleRelease() }
     }
+    suspend fun clearSessions() = lifecycle.withLock {
+        idleRelease?.cancel()
+        conversation.unload()
+        router.unload()
+    }
     suspend fun shutdown() = lifecycle.withLock {
         idleRelease?.cancel()
         inference.shutdown()
