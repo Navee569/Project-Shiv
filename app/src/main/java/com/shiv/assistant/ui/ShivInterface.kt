@@ -271,15 +271,15 @@ fun ShivInterface(
                 Header("PRIVACY & SENSING KILL SWITCH", "Controls optional notification and future sensing, without disabling offline reminders.")
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("PAUSE SENSING", Modifier.weight(1f), color = Color.White)
-                    Switch(controller.sensingPaused, onCheckedChange = controller::setSensingPaused)
+                    Switch(controller.sensingPaused, onCheckedChange = controller::updateSensingPaused)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("GUEST MODE", Modifier.weight(1f), color = Color.White)
-                    Switch(controller.guestMode, onCheckedChange = controller::setGuestMode)
+                    Switch(controller.guestMode, onCheckedChange = controller::updateGuestMode)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("PRIVACY ZONE (MANUAL)", Modifier.weight(1f), color = Color.White)
-                    Switch(controller.privacyZone, onCheckedChange = controller::setPrivacyZone)
+                    Switch(controller.privacyZone, onCheckedChange = controller::updatePrivacyZone)
                 }
                 var denied by remember { mutableStateOf("") }
                 OutlinedTextField(denied, { denied = it }, modifier = Modifier.fillMaxWidth(),

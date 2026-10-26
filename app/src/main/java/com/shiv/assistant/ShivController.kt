@@ -92,18 +92,18 @@ class ShivController(private val context: Context) {
         apiKey = secret
         notice = "Intelligence configuration saved securely"
     }
-    fun setSensingPaused(value: Boolean) {
+    fun updateSensingPaused(value: Boolean) {
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
         audit.add("SENSING", if (value) "Owner paused all optional sensing" else "Owner resumed sensing",
             "ASK_FIRST", true)
     }
-    fun setGuestMode(value: Boolean) {
+    fun updateGuestMode(value: Boolean) {
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
     }
-    fun setPrivacyZone(value: Boolean) {
+    fun updatePrivacyZone(value: Boolean) {
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
         audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
