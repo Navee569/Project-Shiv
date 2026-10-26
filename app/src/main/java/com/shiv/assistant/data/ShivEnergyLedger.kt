@@ -21,9 +21,29 @@ class ShivEnergyLedger(private val vault: ShivVault) {
         features.put(feature, item)
         vault.put("energy_ledger", json.toString())
     }
+    /** Measured local model usage recorded on this phone today, rounded up to seconds.
+     * Load time is included because it also consumes compute resources.
+     * A new day always starts with zero usage; stale ledger entries never leak forward.
+     */
+    @Synchronized
+    fun modelSecondsToday(): Int {
+        val json = JSONObject(vault.get("energy_ledger") ?: "{}")
+        if (json.optString("date") != LocalDate.now().toString()) return 0
+        val features = json.optJSONObject("features") ?: return 0
+        var milliseconds = 0L
+        for (key in listOf("local_inference", "local_model_load")) {
+            val value = features.optJSONObject(key)?.optLong("measuredMs") ?: 0L
+            if (value > 0L) milliseconds =
+                if (Long.MAX_VALUE - milliseconds < value) Long.MAX_VALUE
+                else milliseconds + value
+        }
+        return ((milliseconds / 1000L) + if (milliseconds % 1000L > 0L) 1L else 0L)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
     fun report(): String {
         val json = JSONObject(vault.get("energy_ledger") ?: "{}")
-        return if (json.length() == 0) "No recorded activity today."
+        return if (json.optString("date") != LocalDate.now().toString()) "No recorded activity today."
         else json.toString(2)
     }
 }

@@ -14,6 +14,11 @@ import com.shiv.assistant.vision.ShivOfflineOcr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withTimeoutOrNull
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.automation.ShivSignalWorker
@@ -35,12 +40,44 @@ class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
     private val localNeural: Brain = LiteRtBrain(context)
-    private val localScheduler = LocalInferenceScheduler(localNeural,
-        CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val localScheduler = LocalInferenceScheduler(localNeural, localScope)
+    private var largeIdleRelease: Job? = null
+    /**
+     * The conversation model must not occupy device RAM indefinitely. The local
+     * LiteRT engine serializes unloads against model inference and loading.
+     */
+    private fun armLargeIdleRelease() {
+        largeIdleRelease?.cancel()
+        if (activeModelId == null || activeModelId != conversationModelId) return
+        largeIdleRelease = localScope.launch {
+            delay(120_000L)
+            if (!working && activeModelId == conversationModelId) {
+                localNeural.unload()
+                neuralReady = false
+                activeModelId = null
+                lastResourceDecision = "Large conversation model released after two idle minutes"
+            }
+        }
+    }
+    /** Called by Activity destruction, preventing stale infer/idle tasks surviving recreation. */
+    fun dispose() {
+        largeIdleRelease?.cancel()
+        localScope.launch {
+            localScheduler.close()
+            localScope.cancel()
+        }
+    }
     val localQueueLength: Int get() = localScheduler.waitingCount
     var localMetrics by mutableStateOf<LocalInferenceMetrics?>(null)
         private set
     var neuralReady by mutableStateOf(false)
+        private set
+    var activeModelId by mutableStateOf<String?>(null)
+        private set
+    var routerModelId by mutableStateOf<String?>(null)
+        private set
+    var conversationModelId by mutableStateOf<String?>(null)
         private set
     val knowledge = ShivKnowledge(vault)
     val agenda = ShivAgenda(vault)
@@ -63,6 +100,10 @@ class ShivController(private val context: Context) {
     var speechLocale by mutableStateOf("en-IN")
         private set
     var powerMode by mutableStateOf(PowerMode.BALANCED)
+        private set
+    var dailyComputeBudgetSeconds by mutableIntStateOf(600)
+        private set
+    var lastResourceDecision by mutableStateOf("Not yet evaluated")
         private set
     var sensingPaused by mutableStateOf(false)
         private set
@@ -110,11 +151,16 @@ class ShivController(private val context: Context) {
             speechLocale = vault.get("speech_locale") ?: "en-IN"
             powerMode = runCatching { PowerMode.valueOf(vault.get("power_mode") ?: "BALANCED") }
                 .getOrDefault(PowerMode.BALANCED)
+            dailyComputeBudgetSeconds = vault.get("daily_compute_budget_seconds")?.toIntOrNull()
+                ?.takeIf { it in 60..3600 } ?: 600
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
             notes.addAll(vault.notes())
             val persisted = JSONArray(vault.get("macros") ?: "[]")
             for (i in 0 until persisted.length()) macros.add(persisted.getString(i))
             models = modelCatalog.all()
+            routerModelId = vault.get("router_model_id")?.takeIf { id -> models.any { it.id == id } }
+            conversationModelId = vault.get("conversation_model_id")
+                ?.takeIf { id -> models.any { it.id == id } }
             agendaItems.addAll(agenda.list())
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
@@ -208,6 +254,12 @@ class ShivController(private val context: Context) {
         powerMode = mode
         vault.put("power_mode", mode.name)
     }
+    fun changeDailyComputeBudgetSeconds(seconds: Int) {
+        require(seconds in 60..3600) { "Daily model budget must be 1 to 60 minutes" }
+        vault.put("daily_compute_budget_seconds", seconds.toString())
+        dailyComputeBudgetSeconds = seconds
+        notice = "Daily local-model budget updated; urgent reminders are never blocked"
+    }
     fun refreshPermissions() {
         permissionReadings.clear()
         permissionReadings.addAll(ShivPermissionInspector.read(context))
@@ -216,7 +268,30 @@ class ShivController(private val context: Context) {
     fun refreshDeviceStats() { telemetry = ShivDeviceMonitor.read(context) }
     fun leaseForConversation(): ComputeLease? {
         val stats = telemetry?.asSnapshot(false) ?: return null
-        return ResourceGovernor.decide(stats, WorkClass.CONVERSATION, powerMode, 0, 600)
+        return ResourceGovernor.decide(stats, WorkClass.CONVERSATION, powerMode,
+            energy.modelSecondsToday(), dailyComputeBudgetSeconds)
+    }
+    fun assignModelRole(id: String, conversation: Boolean) {
+        val selected = models.firstOrNull { it.id == id } ?: run {
+            notice = "Unknown imported model"
+            return
+        }
+        if (!conversation) {
+            if (selected.sizeBytes > 2_000_000_000L || id == conversationModelId) {
+                notice = "Router must be at most 2 GB and different from the conversation model"
+                return
+            }
+            vault.put("router_model_id", id)
+            routerModelId = id
+        } else {
+            if (id == routerModelId) {
+                notice = "Choose separate files for router and conversation"
+                return
+            }
+            vault.put("conversation_model_id", id)
+            conversationModelId = id
+        }
+        notice = "Model role saved. Shiv can stage and load it on demand; local copies may use extra storage."
     }
     suspend fun registerModel(uri: Uri) {
         working = true
@@ -230,43 +305,109 @@ class ShivController(private val context: Context) {
     }
     suspend fun loadModel(id: String) {
         if (working) return
+        largeIdleRelease?.cancel()
         val item = models.firstOrNull { it.id == id } ?: return
         working = true
         try {
             refreshDeviceStats()
             val stats = telemetry?.asSnapshot(false)
-            if (item.sizeBytes > 2_000_000_000L && stats != null) {
-                val lease = ResourceGovernor.decide(stats, WorkClass.CONVERSATION,
-                    powerMode, 0, 600)
+            val lease = stats?.let {
+                ResourceGovernor.decide(it, WorkClass.CONVERSATION,
+                    powerMode, energy.modelSecondsToday(), dailyComputeBudgetSeconds)
+            } ?: error("Device resource readings unavailable; model loading stopped safely")
+            lastResourceDecision = lease.reason
+            require(lease.allowed) { lease.reason }
+            if (item.sizeBytes > 2_000_000_000L) {
                 require(lease.allowLargeModel) { "Device resources insufficient for large model. Try while charging." }
             }
             notice = "Preparing model (large files require a private copy) ..."
-            val path = modelCatalog.stageForLoad(id)
-            val start = System.nanoTime()
-            val outcome = localNeural.load(path)
-            energy.record("local_model_load", (System.nanoTime() - start) / 1_000_000)
-            neuralReady = outcome is BrainResult.Text
+            val outcome = loadModelInternal(id)
             notice = when (outcome) {
                 is BrainResult.Text -> "Offline neural model loaded. Local chat can now use it."
                 is BrainResult.Unavailable -> outcome.reason
                 is BrainResult.Failed -> outcome.reason
             }
-            models = modelCatalog.all()
         } catch (e: Exception) {
             neuralReady = false
+            activeModelId = null
             notice = "Local model could not be loaded: " + (e.message ?: "unknown error")
-        } finally { working = false }
+        } finally {
+            working = false
+            armLargeIdleRelease()
+        }
+    }
+    /** Only run after resource admission. All local model swaps are serial to chat. */
+    private suspend fun loadModelInternal(id: String): BrainResult {
+        val path = modelCatalog.stageForLoad(id)
+        val started = System.nanoTime()
+        val outcome = try { localNeural.load(path) }
+        catch (e: Exception) {
+            neuralReady = false
+            activeModelId = null
+            throw e
+        } finally { energy.record("local_model_load", (System.nanoTime() - started) / 1_000_000) }
+        neuralReady = outcome is BrainResult.Text
+        activeModelId = if (neuralReady) id else null
+        return outcome
+    }
+    private suspend fun chooseChatModel(lease: ComputeLease): String? {
+        largeIdleRelease?.cancel()
+        val chosen = LocalModelRouting.choose(lease, routerModelId, conversationModelId,
+            models.map { it.id }.toSet())
+        val targetId = chosen.modelId
+        if (targetId == null) {
+            val loaded = models.firstOrNull { it.id == activeModelId }
+            if (loaded != null && localNeural.modelId != null &&
+                (loaded.sizeBytes <= 2_000_000_000L || lease.allowLargeModel)) return null
+            return chosen.reason
+        }
+        if (targetId == activeModelId && localNeural.modelId != null) return null
+        suspend fun tryLoad(id: String): String? = try {
+            when (val result = loadModelInternal(id)) {
+                is BrainResult.Text -> null
+                is BrainResult.Failed -> result.reason
+                is BrainResult.Unavailable -> result.reason
+            }
+        } catch (e: Exception) { e.message ?: "Local model failed to stage or load" }
+        val failure = tryLoad(targetId)
+        if (failure == null) return null
+        // No fallback to a cloud endpoint. The only fallback is the owner's own
+        // explicitly selected small local model, also governed by the lease.
+        val fallback = routerModelId?.takeIf { it != targetId && it in models.map { m -> m.id } }
+        if (fallback != null) {
+            val secondary = tryLoad(fallback)
+            if (secondary == null) {
+                lastResourceDecision = "Conversation model failed; fell back to owner-selected router"
+                return null
+            }
+            return "Both local models failed: " + failure + "; router: " + secondary
+        }
+        return failure
     }
     suspend fun interruptInference() {
         localScheduler.interrupt()
     }
     suspend fun unloadModel() {
+        largeIdleRelease?.cancel()
         localNeural.unload()
         neuralReady = false
+        activeModelId = null
         notice = "Local model unloaded"
     }
     fun removeModel(id: String) {
+        if (id == activeModelId) {
+            notice = "Unload this model before removing its reference"
+            return
+        }
         modelCatalog.remove(id)
+        if (routerModelId == id) {
+            routerModelId = null
+            vault.put("router_model_id", "")
+        }
+        if (conversationModelId == id) {
+            conversationModelId = null
+            vault.put("conversation_model_id", "")
+        }
         models = modelCatalog.all()
         notice = "Model reference removed (original file remains untouched)"
     }
@@ -354,15 +495,59 @@ class ShivController(private val context: Context) {
         }
         working = true
         try {
-            if (config.mode == IntelligenceMode.LOCAL && localNeural.modelId != null) {
-                val start = System.nanoTime()
-                val answer = localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
-                localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
-                energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
-                when (answer) {
-                    is BrainResult.Text -> handleLocalNeuralText(answer.value)
-                    is BrainResult.Unavailable -> append("assistant", answer.reason)
-                    is BrainResult.Failed -> append("assistant", answer.reason)
+            if (config.mode == IntelligenceMode.LOCAL &&
+                (localNeural.modelId != null || routerModelId != null || conversationModelId != null)) {
+                // Never treat the displayed Status snapshot as a live permission to run.
+                // Re-measure immediately before inference, enforcing actual daily use.
+                refreshDeviceStats()
+                val lease = leaseForConversation()
+                lastResourceDecision = lease?.reason ?: "Device readings unavailable"
+                if (lease == null || !lease.allowed) {
+                    append("assistant", if (lease == null)
+                        "Local inference paused: device resource readings are unavailable."
+                    else "Local inference paused: " + lease.reason)
+                } else {
+                    val routingError = chooseChatModel(lease)
+                    if (routingError != null) {
+                        append("assistant", "Local model unavailable: " + routingError)
+                    } else {
+                    // Loading also spends the daily budget. Re-evaluate after the
+                    // swap, never re-use a pre-load lease for generation.
+                    refreshDeviceStats()
+                    val refreshed = leaseForConversation()
+                    val activeIsLarge = models.any {
+                        it.id == activeModelId && it.sizeBytes > 2_000_000_000L
+                    }
+                    if (refreshed == null || !refreshed.allowed ||
+                        (activeIsLarge && !refreshed.allowLargeModel)) {
+                        append("assistant", "Local inference paused after model loading: " +
+                            (refreshed?.reason ?: "device readings unavailable or large model disallowed"))
+                    } else {
+                    val start = System.nanoTime()
+                    val answer = try {
+                        // Bound wall time as well as output size; an unresponsive model
+                        // must never consume an unlimited discretionary compute lease.
+                        withTimeoutOrNull(refreshed.maxModelSeconds.toLong() * 1000L) {
+                            localScheduler.infer(question, 256, InferenceUrgency.CONVERSATION)
+                        }
+                    } finally {
+                        energy.record("local_inference",
+                            (System.nanoTime() - start) / 1_000_000)
+                    }
+                    if (answer == null) {
+                        localScheduler.interrupt()
+                        append("assistant", "Local inference exceeded its " +
+                            refreshed.maxModelSeconds + "-second resource lease and was interrupted.")
+                    } else {
+                        localMetrics = (localNeural as? LiteRtBrain)?.lastMetrics
+                        when (answer) {
+                            is BrainResult.Text -> handleLocalNeuralText(answer.value)
+                            is BrainResult.Unavailable -> append("assistant", answer.reason)
+                            is BrainResult.Failed -> append("assistant", answer.reason)
+                        }
+                    }
+                    }
+                    }
                 }
             } else {
                 val response = brain.respond(question, notes, config, apiKey)
@@ -370,7 +555,10 @@ class ShivController(private val context: Context) {
             }
         } catch (e: Exception) {
             append("assistant", "I could not process that request: " + (e.message ?: "unknown error"))
-        } finally { working = false }
+        } finally {
+            working = false
+            armLargeIdleRelease()
+        }
     }
     private fun handleLocalNeuralText(reply: String) {
         val trimmed = reply.trim()

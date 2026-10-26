@@ -15,9 +15,11 @@
   backup reopening, restore and key loss.
 - D-005 HIGH: full sensitive-source denylist review for Android providers
   including Accessibility, SMS, OCR and screenshots before granting access.
-- D-006 HIGH: single-model prioritized inference queue is implemented,
-  but two-model hot/cold residency, stale-job cancellation and calibrated power
-  gating are not complete.
+- D-006 PARTIAL/HIGH: owner-selected router/conversation model swapping,
+  measured daily compute admissions, best-effort inference timeout and large
+  model idle unloading are now implemented (PR #3). Full simultaneous
+  small-router residency, delegate/performance calibration and real-device
+  cancellation behavior are still unverified/incomplete.
 - D-007 HIGH: full Android permission-aware action types and undo.
 - D-008 MEDIUM: actual offline STT support for Kannada/Telugu unverified.
 - D-009 MEDIUM: end-to-end notification-delivery and process-kill tests.
@@ -32,3 +34,18 @@
 - D-015 (fixed in follow-up): mixed-case bank package identifiers could bypass exact denylist checks; normalize both sides and unit-test.
 - D-016 (fixed in follow-up): reminder rule from scenario C was not retained or enforced; deterministic parser and delivery guard added.
 - D-017 (partial): queue cap drops now have an encrypted, content-free audit; unbounded audit retention and normalized queue tables remain open.
+
+## 26 October targeted fixes (PR #3; phone verification pending)
+- D-018 (fixed in code): conversation model usage previously called the
+  governor only from UI/model load while chat inference ran without any
+  lease. Chat now samples device state and encrypted daily usage before
+  sending a local request, rechecks after staging and requests timeout.
+- D-019 (fixed in code): independent native inference cancellation could
+  terminate the scheduler drain and strand priority queue entries. The
+  scheduler now continues on inference-only cancellations; regression added.
+- D-020 (fixed in code): removing a model reference did not reclaim
+  multi-GB app-private staged model bytes. Staged copies are now deleted,
+  with the owner's original document left untouched.
+- D-021 OPEN: native LiteRT cancellation may not halt CPU computation
+  instantly. Wall-time timeout requests cancellation but is not proof of
+  immediate engine termination; test on S23 before power claims.

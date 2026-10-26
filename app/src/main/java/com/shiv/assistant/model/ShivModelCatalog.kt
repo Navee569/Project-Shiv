@@ -97,10 +97,36 @@ class ShivModelCatalog(private val context: Context, private val vault: ShivVaul
                 obj.getLong("size"), obj.getString("status"))
         }
     }
+    /**
+     * Remove Shiv-owned staged bytes as well as the encrypted catalog reference.
+     * The owner's original SAF document is never deleted.
+     */
     fun remove(id: String) {
+        require(id.matches(Regex("[a-f0-9-]{36}"))) { "Invalid model reference" }
         val current = JSONArray(vault.get("model_catalog") ?: "[]")
+        val row = (0 until current.length()).map { current.getJSONObject(it) }
+            .firstOrNull { it.optString("id") == id } ?: return
         val updated = JSONArray()
-        for (i in 0 until current.length()) if (current.getJSONObject(i).getString("id") != id) updated.put(current.get(i))
+        for (i in 0 until current.length()) {
+            val candidate = current.getJSONObject(i)
+            if (candidate.optString("id") != id) updated.put(candidate)
+        }
+        val directory = File(context.filesDir, "Shiv AI Models")
+        for (extension in listOf(".litertlm", ".partial")) {
+            val staged = File(directory, id + extension)
+            check(!staged.exists() || staged.delete()) {
+                "Unable to delete model copy from Shiv private storage"
+            }
+        }
         vault.put("model_catalog", updated.toString())
+        val originalUri = Uri.parse(row.getString("uri"))
+        // Multiple registered entries may reference the same original document.
+        val stillUsed = (0 until updated.length()).any {
+            updated.getJSONObject(it).optString("uri") == originalUri.toString()
+        }
+        if (!stillUsed) runCatching {
+            context.contentResolver.releasePersistableUriPermission(
+                originalUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
 }

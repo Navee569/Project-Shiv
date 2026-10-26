@@ -326,11 +326,30 @@ fun ShivInterface(
                         Text(model.name, color = Color.White, fontWeight = FontWeight.Bold)
                         Text(model.status + " • " + (model.sizeBytes / 1_000_000) + " MB",
                             color = Muted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { controller.assignModelRole(model.id, false) },
+                                enabled = !controller.working && model.sizeBytes <= 2_000_000_000L) {
+                                Text(if (controller.routerModelId == model.id) "ROUTER ✓" else "SET ROUTER",
+                                    fontSize = 11.sp)
+                            }
+                            OutlinedButton(onClick = { controller.assignModelRole(model.id, true) },
+                                enabled = !controller.working) {
+                                Text(if (controller.conversationModelId == model.id) "CHAT ✓" else "SET CHAT",
+                                    fontSize = 11.sp)
+                            }
+                        }
                         Button(onClick = { scope.launch { controller.loadModel(model.id) } },
                             enabled = !controller.working) { Text("LOAD OFFLINE MODEL") }
-                        TextButton(onClick = { controller.removeModel(model.id) }) { Text("REMOVE REFERENCE") }
+                        TextButton(onClick = { controller.removeModel(model.id) },
+                            enabled = !controller.working) { Text("REMOVE REFERENCE") }
                     }
                 }
+                Text("Roles load on demand: ROUTER is a model up to 2 GB; CHAT is the larger conversation model. " +
+                    "Only one local LiteRT engine stays loaded at a time. Large files may be copied to private storage.",
+                    color = Muted, fontSize = 12.sp)
+                Text("Active model: " + (controller.activeModelId?.let { id ->
+                    controller.models.firstOrNull { it.id == id }?.name
+                } ?: "NONE"), color = Neon)
                 Text("Local neural model loaded: " + controller.neuralReady, color = Neon)
                 Button(onClick = { scope.launch { controller.unloadModel() } }, enabled = controller.neuralReady) { Text("UNLOAD MODEL") }
                 Text("Android runtime validates model compatibility at load; import does not mean it is running.",
@@ -352,6 +371,19 @@ fun ShivInterface(
                         ?: "NOT EVALUATED"), color = Muted)
                 }
                 Header("RESOURCE POLICY", "Heavy work is limited by power, temperature, RAM and user budget.")
+                Text("Daily local-model compute limit: " + controller.dailyComputeBudgetSeconds / 60 +
+                    " minutes • measured use: " + controller.energy.modelSecondsToday() / 60 +
+                    " whole minutes", color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(60, 300, 600, 1800).forEach { seconds ->
+                        OutlinedButton(onClick = { controller.changeDailyComputeBudgetSeconds(seconds) },
+                            modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp)) {
+                            Text((seconds / 60).toString() + "m", fontSize = 11.sp)
+                        }
+                    }
+                }
+                Text("Last local admission: " + controller.lastResourceDecision,
+                    color = Muted, fontSize = 12.sp)
                 PowerMode.entries.forEach { mode ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = controller.powerMode == mode, onClick = { controller.changePowerMode(mode) })

@@ -3,6 +3,8 @@ package com.shiv.assistant.ai
 import com.shiv.assistant.domain.Brain
 import com.shiv.assistant.domain.BrainResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -75,7 +77,11 @@ class LocalInferenceScheduler(private val brain: Brain, private val scope: Corou
             val answer = try { brain.infer(ticket.prompt, ticket.maxTokens) }
             catch (e: CancellationException) {
                 ticket.reply.cancel()
-                throw e
+                // A canceled *inference* is recoverable; abandoning the drain here
+                // would strand all higher-priority pending tickets indefinitely.
+                // A canceled scheduler scope, however, must still shut down.
+                if (!currentCoroutineContext().isActive) throw e
+                continue
             } catch (e: Exception) {
                 BrainResult.Failed("Local inference failure: " + (e.message ?: "unknown error"))
             }
