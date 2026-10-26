@@ -52,3 +52,17 @@ would risk privacy, and live speech/thermal/battery/call/permissions need real A
 behavior. The principal blockers are listed in STATUS.md and TESTING.md. The `ACTIVE`
 labels in the public capability matrix describe bounded entrypoints, not end-to-end
 functional parity with external apps.
+
+## Follow-up: development pass on branch development/shiv-complete-pending-20261026
+
+This initial audit described the baseline before PR #4. The newly implemented
+bounded, opt-in paths are described in STATUS.md and SHIV_CAPABILITY_MATRIX.md.
+They include deterministic event anticipation, owner feedback, inferred routines
+from completed events, Calendar/Contacts/Usage previews, one-shot app-allowlisted
+Accessibility, generic call-ended check-ins and reviewed OCR due-date tasks.
+
+**Do not reinterpret this appendix as full Phase 1/2 milestone acceptance.**
+The Android-only instrumentation APK is compiled in CI but has not been executed
+on the Galaxy S23. Full simultaneous router residence, speech/wake word,
+geofencing, many app providers, multilingual OCR, complete privileged device
+control and broader real-device QA still remain. Cloud AI is unchanged.
