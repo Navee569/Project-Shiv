@@ -25,6 +25,8 @@ exception to the no-network policy in the original Phase 1 specification.
   notification, listener and biometric status (OWNER-VERIFY).
 - Charging-and-idle-constrained daily consolidation worker, resource-governor policy,
   action authority hard floors, audit traces and on-device resource readings.
+- Bounded, priority-aware local inference scheduler (32 pending slots,
+  urgent > conversation > background; cancellation and queue diagnostics).
 - LiteRT-LM 0.18.0 runtime loading from app-private model path, real local
   neural inference when the phone actually loads a supported .litertlm model.
   Model references registered via SAF; large file is copied only before running
@@ -39,16 +41,19 @@ exception to the no-network policy in the original Phase 1 specification.
 - End-to-end Room + SQLCipher migration validation and future schema migrations.
   Passphrase-encrypted export/merge-restore is coded; migration and restore
   behavior are BUILT - OWNER-VERIFY, not yet cleared for production.
-- Two-model resident router / on-demand large model scheduling, priority inference
-  queue, structured JSON tool schemas, token metrics and measured power budget.
+- Two-model resident router / on-demand large model scheduling, structured
+  JSON tool schemas, actual token-rate metrics and calibrated power budget.
+  A single-model bounded priority inference queue is built but device verification
+  and stale-request tests remain open.
 - Legitimate full-scope app awareness: accessibility denylist, UI extraction, contacts,
   usage stats, SMS, call-log check-ins, location/geofencing.
 - Automatic anticipation from owner-verified routines, proactive morning/evening
   briefs, social graph, trust ladder, weekly self-evaluation and real-world outcomes.
 - Offline OCR, camera understanding, mixed-language golden-set accuracy, wake word,
   speaker recognition, mic foreground-service sessions and streaming barge-in.
-- ASK_FIRST biometric gating, encrypted backup/recovery, full undo, sandboxed
-  privileged allowlist and owner-approved ADB grants. Shizuku needs separate approval.
+- Full reversible undo and owner-approved privileged ADB grants; any Shizuku
+  integration needs separate owner approval. Biometric memory/payment gates and
+  encrypted export/restore are coded but require device verification.
 - CI security/instrumentation, Android API 26–35 device matrix, real-phone testing,
   benchmark and battery measurement. Code existence is not device verification.
 
