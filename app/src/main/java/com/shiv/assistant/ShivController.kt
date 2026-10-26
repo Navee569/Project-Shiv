@@ -200,6 +200,8 @@ class ShivController(private val context: Context) {
             val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
             database.withTransaction {
                 database.dao().clearChats()
+                database.dao().clearOwnerChatSignals()
+                database.dao().clearOrphanDecisions()
                 database.dao().putVault(com.shiv.assistant.data.VaultEntry("history","[]"))
             }
         }

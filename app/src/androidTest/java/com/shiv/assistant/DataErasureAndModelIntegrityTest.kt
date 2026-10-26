@@ -41,7 +41,12 @@ class DataErasureAndModelIntegrityTest {
         vault.addChat("user",marker)
         val dao=EncryptedDatabase.open(context).dao()
         dao.putChat(ChatRecord(UUID.randomUUID().toString(),"user",marker))
+        val signalId=UUID.randomUUID().toString()
+        dao.enqueue(SignalRecord(signalId,"owner_input",marker,5,status="PROCESSED"))
+        dao.trace(DecisionTraceRecord(signalId,signalId,"ASK","potential personal commitment","ASK_FIRST"))
         controller.clearHistory()
+        assertNull(dao.signal(signalId))
+        assertNull(dao.decision(signalId))
         assertEquals(0,vault.history().size)
         assertEquals(0,dao.recentChats(1000).size)
     }

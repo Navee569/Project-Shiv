@@ -45,6 +45,7 @@ class PhaseOneWorkflowInstrumentedTest {
         assertEquals("APPROVED",dao.decision(id)?.decision)
         assertEquals(1,dao.events(0,Long.MAX_VALUE).count{it.id==id})
         assertNotNull(dao.reminder("event-$id"))
+        assertEquals(1,dao.actions(100).count{it.id=="approval-$id" && it.confirmed})
         controller.approveCommitment(trace)
         assertEquals(1,dao.events(0,Long.MAX_VALUE).count{it.id==id})
     }

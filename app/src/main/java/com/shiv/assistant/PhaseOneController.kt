@@ -147,7 +147,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             dao.confirmEvent(event,ReminderRecord(reminderId,
                 "Upcoming: "+proposal.title.take(180),reminderAt,event.id),
                 current.copy(decision="APPROVED",reason="Owner reviewed and approved event; "+
-                    "notification queued",policyTier="ASK_FIRST"))
+                    "notification queued",policyTier="ASK_FIRST"),
+                ActionLogRecord("approval-"+incoming.id,"CREATE_EVENT","[REDACTED]",
+                    "ASK_FIRST","OWNER_APPROVED",true,"EVENT_AND_REMINDER_SAVED",null))
             com.shiv.assistant.automation.ShivReminders.scheduleApprovedEvent(context,reminderId,reminderAt)
             progress="Approved event and scheduled reminder"
             reload()

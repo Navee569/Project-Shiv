@@ -96,6 +96,9 @@ interface ShivDao {
     @Query("UPDATE signals SET status=CASE WHEN attempts >= 8 THEN 'FAILED' ELSE 'RETRY' END, lastError=:error WHERE id=:id")
     suspend fun markRetry(id: String, error: String)
     @Query("SELECT * FROM signals WHERE id=:id") suspend fun signal(id:String): SignalRecord?
+    @Query("DELETE FROM signals WHERE source='owner_input'") suspend fun clearOwnerChatSignals()
+    @Query("DELETE FROM decision_traces WHERE signalId IS NOT NULL AND signalId NOT IN (SELECT id FROM signals)")
+    suspend fun clearOrphanDecisions()
     @Query("UPDATE signals SET status='RETRY' WHERE status='PROCESSING'")
     suspend fun recoverInFlight()
     @Query("SELECT COUNT(*) FROM signals WHERE status IN ('PENDING','RETRY') AND attempts < 8") suspend fun pendingCount(): Int
@@ -105,10 +108,12 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun trace(value: DecisionTraceRecord)
     @Query("SELECT * FROM decision_traces WHERE id=:id") suspend fun decision(id:String):DecisionTraceRecord?
     @Query("SELECT * FROM decision_traces ORDER BY createdAt DESC LIMIT :limit") suspend fun traces(limit: Int): List<DecisionTraceRecord>
-    @Transaction suspend fun confirmEvent(event:EventRecord, reminder:ReminderRecord, updated:DecisionTraceRecord) {
+    @Transaction suspend fun confirmEvent(event:EventRecord, reminder:ReminderRecord,
+        updated:DecisionTraceRecord, audit:ActionLogRecord) {
         putEvent(event)
         putReminder(reminder)
         trace(updated)
+        logAction(audit)
     }
 }
 
