@@ -8,24 +8,40 @@ import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
-import com.shiv.assistant.data.ShivVault
+import com.shiv.assistant.data.*
+import com.shiv.assistant.diagnostics.*
 import com.shiv.assistant.domain.*
+import com.shiv.assistant.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
 data class ChatEntry(val role: String, val text: String)
 
-/**
- * State and behavior belong to Shiv, not a renamed third-party App class.
- * External operations are always placed in a review queue first.
- */
+/** Owner-controlled app state. The existing cloud AI implementation is left intact. */
 class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
+    val knowledge = ShivKnowledge(vault)
+    val audit = ShivAuditTrail(vault)
+    val energy = ShivEnergyLedger(vault)
+    val signalQueue = ShivSignalQueue(vault)
+    private val modelCatalog = ShivModelCatalog(context, vault)
     val messages = mutableStateListOf<ChatEntry>()
     val notes = mutableStateListOf<String>()
     val macros = mutableStateListOf<String>()
+    var models by mutableStateOf<List<ModelCandidate>>(emptyList())
+        private set
+    var telemetry by mutableStateOf<DeviceStats?>(null)
+        private set
+    var powerMode by mutableStateOf(PowerMode.BALANCED)
+        private set
+    var sensingPaused by mutableStateOf(false)
+        private set
+    var guestMode by mutableStateOf(false)
+        private set
+    var privacyZone by mutableStateOf(false)
+        private set
     var config by mutableStateOf(AssistantConfiguration())
         private set
     var apiKey by mutableStateOf("")
@@ -50,12 +66,19 @@ class ShivController(private val context: Context) {
             )
             apiKey = vault.get("api_secret").orEmpty()
             notificationSummaries = vault.get("notification_opt_in") == "yes"
+            sensingPaused = vault.get("sensing_paused") == "yes"
+            guestMode = vault.get("guest_mode") == "yes"
+            privacyZone = vault.get("privacy_zone") == "yes"
+            powerMode = runCatching { PowerMode.valueOf(vault.get("power_mode") ?: "BALANCED") }
+                .getOrDefault(PowerMode.BALANCED)
             messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
             notes.addAll(vault.notes())
             val persisted = JSONArray(vault.get("macros") ?: "[]")
             for (i in 0 until persisted.length()) macros.add(persisted.getString(i))
+            models = modelCatalog.all()
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
-        if (messages.isEmpty()) messages.add(ChatEntry("assistant", "SHIV ONLINE. Local intelligence is active. Choose cloud or hybrid mode in Settings if you want an API-powered assistant."))
+        if (messages.isEmpty()) messages.add(ChatEntry("assistant",
+            "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
     }
     fun settings(mode: IntelligenceMode, endpoint: String, model: String, secret: String, consent: Boolean) {
         require(CloudSafety.endpointAllowed(endpoint)) { "Use an HTTPS endpoint or explicit local loopback address" }
@@ -68,6 +91,55 @@ class ShivController(private val context: Context) {
         vault.put("api_secret", secret)
         apiKey = secret
         notice = "Intelligence configuration saved securely"
+    }
+    fun setSensingPaused(value: Boolean) {
+        vault.put("sensing_paused", if (value) "yes" else "no")
+        sensingPaused = value
+        audit.add("SENSING", if (value) "Owner paused all optional sensing" else "Owner resumed sensing",
+            "ASK_FIRST", true)
+    }
+    fun setGuestMode(value: Boolean) {
+        vault.put("guest_mode", if (value) "yes" else "no")
+        guestMode = value
+        audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
+    }
+    fun setPrivacyZone(value: Boolean) {
+        vault.put("privacy_zone", if (value) "yes" else "no")
+        privacyZone = value
+        audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
+            "FREE", true)
+    }
+    fun denyPackage(packageName: String) {
+        val name = packageName.trim().lowercase()
+        require(name.matches(Regex("[a-z0-9_]+(?:[.][a-z0-9_]+)+"))) { "Enter a valid Android package identifier" }
+        val old = vault.get("denied_packages").orEmpty().lineSequence().filter { it.isNotBlank() }.toSet()
+        vault.put("denied_packages", (old + name).sorted().joinToString("\n"))
+        notice = "App added to the denylist; content from it is not stored"
+    }
+    fun extraDeniedPackages() = vault.get("denied_packages").orEmpty()
+    fun changePowerMode(mode: PowerMode) {
+        powerMode = mode
+        vault.put("power_mode", mode.name)
+    }
+    fun refreshDeviceStats() { telemetry = ShivDeviceMonitor.read(context) }
+    fun leaseForConversation(): ComputeLease? {
+        val stats = telemetry?.asSnapshot(false) ?: return null
+        return ResourceGovernor.decide(stats, WorkClass.CONVERSATION, powerMode, 0, 600)
+    }
+    suspend fun registerModel(uri: Uri) {
+        working = true
+        try {
+            val item = modelCatalog.register(uri)
+            models = modelCatalog.all()
+            notice = "Model '" + item.name + "' registered, but runtime compatibility is NOT verified"
+        } catch (e: Exception) {
+            notice = "Model selection failed: " + (e.message ?: "unknown error")
+        } finally { working = false }
+    }
+    fun removeModel(id: String) {
+        modelCatalog.remove(id)
+        models = modelCatalog.all()
+        notice = "Model reference removed (original file remains untouched)"
     }
     private fun append(role: String, text: String) {
         messages.add(ChatEntry(role, text))
@@ -97,25 +169,57 @@ class ShivController(private val context: Context) {
         } finally { working = false }
     }
     fun propose(action: ActionProposal) { pending = action }
-    fun reject() { pending = null; notice = "Action cancelled" }
+    fun reject() {
+        pending?.let { audit.add(it.kind.name, "Owner declined proposed action", "ASK_FIRST", false) }
+        pending = null
+        notice = "Action cancelled"
+    }
+    private fun actionAuthority(kind: ActionKind): String = when(kind) {
+        ActionKind.UPI -> "PAYMENT"
+        ActionKind.SMS, ActionKind.EMAIL, ActionKind.TELEGRAM, ActionKind.WHATSAPP -> "SEND_MESSAGE"
+        ActionKind.SHARE -> "SOCIAL_PUBLISH"
+        else -> kind.name
+    }
     fun approve() {
         val action = pending ?: return
         pending = null
-        when (action.kind) {
-            ActionKind.NOTES -> saveNote(action.argument)
-            ActionKind.REMINDER -> {
-                val id = ShivReminders.schedule(context, action.argument)
-                notice = if (id == null) "Use: remind me in 10 minutes to ..." else "Reminder scheduled locally"
-            }
-            else -> notice = if (ShivActions.launch(context, action)) "Opened external app for review"
-                else "No compatible app installed, or action unavailable"
+        val decision = AuthorityPolicy.authorize(actionAuthority(action.kind),
+            AuthorityTier.ASK_FIRST, true, true)
+        if (decision.decision != ActionAuthority.EXECUTE) {
+            audit.add(action.kind.name, decision.reason, decision.tier.name, false)
+            notice = decision.reason
+            return
+        }
+        val accepted = when (action.kind) {
+            ActionKind.NOTES -> { saveNote(action.argument); true }
+            ActionKind.REMINDER -> ShivReminders.schedule(context, action.argument) != null
+            else -> ShivActions.launch(context, action)
+        }
+        audit.add(action.kind.name,
+            if (accepted) "Owner confirmed; action handed to Android (external completion unverified)"
+            else "Owner confirmed; action failed or unsupported",
+            decision.tier.name, accepted)
+        notice = when {
+            !accepted -> "Action could not be scheduled or opened"
+            action.kind == ActionKind.REMINDER -> "Reminder scheduled locally"
+            else -> "External app opened for owner review; completion not verified"
         }
     }
     fun saveNote(value: String) {
         if (value.trim().isEmpty()) return
         vault.addNote(value.trim())
+        knowledge.save(value.trim().take(2048))
         notes.clear(); notes.addAll(vault.notes())
         notice = "Encrypted note saved"
+    }
+    fun deleteStructuredMemory(id: String) {
+        knowledge.remove(id)
+        notice = "Selected structured memory deleted"
+    }
+    fun correctStructuredMemory(id: String, correction: String) {
+        if (correction.isBlank()) return
+        knowledge.correct(id, correction)
+        notice = "Explicit correction saved; older belief superseded"
     }
     fun saveMacro(goal: String) {
         if (goal.isBlank()) return
@@ -127,6 +231,7 @@ class ShivController(private val context: Context) {
     fun clearHistory() {
         vault.clearHistory()
         messages.clear()
+        audit.add("CHAT_DELETE", "Owner cleared conversation history", "ASK_FIRST", true)
         notice = "Chat history erased"
     }
     fun notifications(on: Boolean) {

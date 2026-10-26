@@ -34,6 +34,7 @@ fun ShivInterface(
     onVoice: () -> Unit,
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
+    onModel: () -> Unit,
     onSpeak: (String) -> Unit,
     onNotificationPermission: () -> Unit
 ) {
@@ -61,7 +62,7 @@ fun ShivInterface(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Core", "Chat", "Automate", "Memory", "Settings").forEach {
+                listOf("Core", "Chat", "Automate", "Memory", "Models", "Status", "Privacy", "Settings").forEach {
                     val active = tab == it
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -207,6 +208,16 @@ fun ShivInterface(
                 }
                 Spacer(Modifier.height(20.dp))
                 Text("SAVED NOTES", color = Violet, fontSize = 12.sp)
+                Text("CORRECTABLE FACTS & EVIDENCE", color = Violet, fontSize = 12.sp)
+                controller.knowledge.active().takeLast(20).asReversed().forEach { fact ->
+                    GlassCard {
+                        Text(fact.text, color = Color.White)
+                        Text("Source: " + fact.source + " • Confidence: " + fact.confidence,
+                            color = Muted, fontSize = 11.sp)
+                        TextButton(onClick = { controller.deleteStructuredMemory(fact.id) }) { Text("DELETE FACT") }
+                    }
+                }
+                Text("LEGACY SAVED NOTES", color = Violet, fontSize = 12.sp)
                 controller.notes.asReversed().take(30).forEach { memory ->
                     GlassCard { Text(memory, color = Color.White, fontSize = 13.sp) }
                     Spacer(Modifier.height(8.dp))
@@ -215,6 +226,79 @@ fun ShivInterface(
                 Text("Notification summaries: " + runCatching { controller.vault.notificationCount() }.getOrDefault(0),
                     color = Muted)
                 OutlinedButton(onClick = { controller.clearHistory() }) { Text("ERASE CHAT HISTORY") }
+            }
+            "Models" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Header("LOCAL MODEL MANAGER", "Import files without copying multi-GB weights. Runtime validation and inference are not available yet.")
+                Button(onClick = onModel) { Text("SELECT MODEL FILE") }
+                controller.models.forEach { model ->
+                    GlassCard {
+                        Text(model.name, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(model.status + " • " + (model.sizeBytes / 1_000_000) + " MB",
+                            color = Muted, fontSize = 11.sp)
+                        TextButton(onClick = { controller.removeModel(model.id) }) { Text("REMOVE REFERENCE") }
+                    }
+                }
+                Text("Actual local AI needs an Android runtime compatible with the chosen model. Import does not mean the model is running.",
+                    color = Muted, fontSize = 12.sp)
+            }
+            "Status" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Header("LIVE DEVICE DIAGNOSTICS", "Readings originate on this device, never from CI benchmarks.")
+                Button(onClick = controller::refreshDeviceStats) { Text("MEASURE NOW") }
+                val stats = controller.telemetry
+                GlassCard {
+                    Text("Battery: " + (stats?.batteryPercent?.toString()?.plus("%") ?: "NOT MEASURED"), color = Color.White)
+                    Text("Charging: " + (stats?.charging?.toString() ?: "NOT MEASURED"), color = Color.White)
+                    Text("Thermal state: " + (stats?.thermalStatus?.toString() ?: "NOT MEASURED"), color = Color.White)
+                    Text("Free RAM: " + (stats?.availableRamMb?.toString()?.plus(" MB") ?: "NOT MEASURED"), color = Color.White)
+                    Text("Queued signals: " + runCatching { controller.signalQueue.pendingCount() }.getOrDefault(0), color = Color.White)
+                    Text("Large model: " + (controller.leaseForConversation()?.allowLargeModel?.toString()
+                        ?: "NOT EVALUATED"), color = Muted)
+                }
+                Header("RESOURCE POLICY", "Heavy work is limited by power, temperature, RAM and user budget.")
+                PowerMode.entries.forEach { mode ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = controller.powerMode == mode, onClick = { controller.changePowerMode(mode) })
+                        Text(mode.name, color = Color.White)
+                    }
+                }
+                Header("ENERGY LEDGER", "Only recorded activity is shown; no invented battery usage numbers.")
+                Text(runCatching { controller.energy.report() }.getOrDefault("No measurements"), color = Muted, fontSize = 11.sp)
+            }
+            "Privacy" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Header("PRIVACY & SENSING KILL SWITCH", "Controls optional notification and future sensing, without disabling offline reminders.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("PAUSE SENSING", Modifier.weight(1f), color = Color.White)
+                    Switch(controller.sensingPaused, onCheckedChange = controller::setSensingPaused)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("GUEST MODE", Modifier.weight(1f), color = Color.White)
+                    Switch(controller.guestMode, onCheckedChange = controller::setGuestMode)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("PRIVACY ZONE (MANUAL)", Modifier.weight(1f), color = Color.White)
+                    Switch(controller.privacyZone, onCheckedChange = controller::setPrivacyZone)
+                }
+                var denied by remember { mutableStateOf("") }
+                OutlinedTextField(denied, { denied = it }, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Add an excluded app package") })
+                Button(onClick = {
+                    runCatching { controller.denyPackage(denied) }
+                    denied = ""
+                }, enabled = denied.isNotBlank()) { Text("EXCLUDE APP") }
+                Text("Additional excluded apps: " + controller.extraDeniedPackages().ifBlank { "None" },
+                    color = Muted, fontSize = 11.sp)
+                Header("DECISION AUDIT LOG", "Why did Shiv perform or reject an action?")
+                controller.audit.recent().take(15).forEach { trace ->
+                    GlassCard {
+                        Text(trace.action + " • " + (if (trace.accepted) "ACCEPTED" else "DENIED"),
+                            color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(trace.reason, color = Muted, fontSize = 12.sp)
+                        Text("Authority: " + trace.tier, color = Violet, fontSize = 11.sp)
+                    }
+                }
             }
             "Settings" -> ShivSettings(controller, onNotificationPermission)
         }
