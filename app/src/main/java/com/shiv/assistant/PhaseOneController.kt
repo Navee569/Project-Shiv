@@ -15,6 +15,10 @@ import com.shiv.assistant.integrations.CalendarImportPolicy
 import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.DueDateProposal
+import java.time.LocalTime
+import java.time.ZoneId
+import java.util.UUID
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
@@ -31,6 +35,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val models=mutableStateListOf<ModelRecord>()
     val memories=mutableStateListOf<MemoryRecord>()
     val upcoming=mutableStateListOf<EventRecord>()
+    val upcomingTasks=mutableStateListOf<TaskRecord>()
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
@@ -193,9 +198,31 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         }
     }
     fun cancelModel() { candidate=null }
+    suspend fun saveOwnerReviewedOcrTask(
+        proposal:DueDateProposal, title:String,clock:String
+    ) {
+        require(title.trim().length in 3..180) { "Task title must contain 3–180 characters" }
+        require(clock.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]"))) {
+            "Choose an explicit 24-hour time"
+        }
+        val time=LocalTime.parse(clock)
+        val dueAt=proposal.date.atTime(time).atZone(ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
+        require(dueAt>System.currentTimeMillis()) { "Task time must be in the future" }
+        withContext(Dispatchers.IO) {
+            val id=UUID.randomUUID().toString()
+            dao.putTask(TaskRecord(id,title.trim(),"OPEN",dueAt))
+            dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),
+                "OCR_TASK","[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,
+                "ENCRYPTED_TASK_SAVED",null))
+        }
+        progress="Owner-confirmed offline OCR task saved to encrypted Shiv agenda"
+        reload()
+    }
     suspend fun reload() = withContext(Dispatchers.IO) {
         val stored=dao.models()
         val events=repository.upcoming(System.currentTimeMillis(),System.currentTimeMillis()+48*3600_000L)
+        val tasks=dao.pendingTasks()
         val storedBeliefs=dao.beliefs()
         val traces=dao.traces(30)
         val count=dao.pendingCount()
@@ -205,6 +232,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             models.clear();models.addAll(stored)
             memories.clear();memories.addAll(savedMemories)
             upcoming.clear();upcoming.addAll(events)
+            upcomingTasks.clear();upcomingTasks.addAll(tasks)
             beliefs.clear();beliefs.addAll(storedBeliefs)
             decisions.clear();decisions.addAll(traces)
             notificationCount=count
