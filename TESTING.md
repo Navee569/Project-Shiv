@@ -132,3 +132,11 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
    instrumentation on the **exact same commit**, and record observed S23
    thermal, power, voice latency and compatible model performance separately.
    No passing emulator test counts as physical S23 release acceptance.
+
+
+7. Offline OCR: select a harmless local image with `Due date: 2026-11-30`
+   while Wi-Fi/mobile data are off, use LOCAL OCR, inspect the temporary text,
+   then explicitly provide a title and 24-hour time. Verify only an approved
+   task appears in Events. Test invalid past/ambiguous dates, DISCARD, app
+   restart and images containing OTP or long account numbers. Kannada/Telugu
+   OCR must not be claimed from the Latin-only model.
