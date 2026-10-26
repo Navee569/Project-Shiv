@@ -50,6 +50,9 @@ class ShivAwareness : AccessibilityService() {
             if(facts.isEmpty())return
             lastCaptured=System.currentTimeMillis()
             scope.launch {
+                val active=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
+                if(!active.getBoolean("owner_enabled",false) ||
+                    active.getBoolean("paused",true))return@launch
                 val id=ShivRepository(applicationContext).incoming("accessibility",facts.distinct().take(5).joinToString("; "),
                     priority=3,packageName=name)
                 if(id!=null)SignalWorker.schedule(applicationContext)
