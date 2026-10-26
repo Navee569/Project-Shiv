@@ -66,6 +66,42 @@ interface ShivDao {
     suspend fun recentMemories(now: Long, limit: Int = 50): List<MemoryRecord>
     @Query("SELECT * FROM memories WHERE id=:id") suspend fun memory(id: String): MemoryRecord?
     @Query("DELETE FROM memories WHERE id=:id") suspend fun removeMemory(id: String)
+    @Query("DELETE FROM memories WHERE expiresAt IS NOT NULL AND expiresAt <= :now")
+    suspend fun purgeExpiredMemories(now: Long): Int
+    @Query("DELETE FROM signals WHERE status IN ('PROCESSED','FAILED') AND processedAt IS NOT NULL AND processedAt < :before")
+    suspend fun purgeOldProcessedSignals(before: Long): Int
+    @Query("DELETE FROM decision_traces WHERE signalId IS NOT NULL AND signalId NOT IN (SELECT id FROM signals)")
+    suspend fun purgeUnreferencedTraces(): Int
+    @Query("DELETE FROM chat_history") suspend fun eraseAllChats()
+    @Query("DELETE FROM memories") suspend fun eraseAllMemories()
+    @Query("DELETE FROM events") suspend fun eraseAllEvents()
+    @Query("DELETE FROM tasks") suspend fun eraseAllTasks()
+    @Query("DELETE FROM reminders") suspend fun eraseAllReminders()
+    @Query("DELETE FROM saved_rules") suspend fun eraseAllRules()
+    @Query("DELETE FROM beliefs") suspend fun eraseAllBeliefs()
+    @Query("DELETE FROM signals") suspend fun eraseAllSignals()
+    @Query("DELETE FROM decision_traces") suspend fun eraseAllTraces()
+    @Query("DELETE FROM action_log") suspend fun eraseAllActions()
+    @Query("DELETE FROM vault_entries") suspend fun eraseAllVault()
+    @Query("DELETE FROM profiles") suspend fun eraseAllProfiles()
+    @Query("DELETE FROM permission_tiers") suspend fun eraseAllTiers()
+    @Transaction suspend fun eraseOwnerRecords() {
+        eraseAllChats()
+        eraseAllMemories()
+        eraseAllEvents()
+        eraseAllTasks()
+        eraseAllReminders()
+        eraseAllRules()
+        eraseAllBeliefs()
+        eraseAllSignals()
+        eraseAllTraces()
+        eraseAllActions()
+        eraseAllVault()
+        eraseAllProfiles()
+        eraseAllTiers()
+        // Models are intentionally preserved. Model files contain public weights,
+        // not personal records; retaining them avoids stranding GB of staged files.
+    }
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putEvent(value: EventRecord)
     @Query("DELETE FROM events WHERE id=:id") suspend fun deleteEvent(id:String)
     @Query("SELECT * FROM events WHERE startAt BETWEEN :start AND :end ORDER BY startAt")
