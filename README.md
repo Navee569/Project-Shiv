@@ -38,8 +38,9 @@ resource-governed on-demand switching (PR #3). In Models select SET ROUTER and
 SET CHAT after importing separate files. On the Status screen, select a daily
 model-compute budget and press MEASURE NOW. Real model loading, performance,
 privacy and energy measurements still need S23 device acceptance. This build
-does **not** keep two neural engines resident simultaneously and does not provide
-complete idle eviction or measured energy calibration.
+does **not** keep two neural engines resident simultaneously and does not keep two models resident; the owner-selected large conversation model
+is set to release after two idle minutes, a behavior still requiring device testing.
+Energy and battery calibration remain unverified.
 
 Full learned knowledge graphs, habitual autonomy, live third-party UI automation,
 authenticated social publishing/analytics, complex bookings, privileged tools,
