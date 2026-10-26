@@ -325,7 +325,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Text("Optional agenda nudges",Modifier.weight(1f),color=Color.White)
                     Switch(checked=controller.proactiveOptIn,
-                        onCheckedChange={controller.setProactiveOptIn(it)})
+                        onCheckedChange={controller.changeProactiveOptIn(it)})
                 }
                 Text("Weekly self-review: "+controller.proactiveFeedback,
                     color=Color.LightGray,fontSize=11.sp)
