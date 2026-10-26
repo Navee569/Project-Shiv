@@ -35,6 +35,7 @@ fun ShivInterface(
     controller: ShivController,
     onVoice: () -> Unit,
     onPhoto: () -> Unit,
+    onOfflineOcr: () -> Unit,
     onDocument: () -> Unit,
     onModel: () -> Unit,
     onUnlockMemory: () -> Unit,
@@ -155,10 +156,20 @@ fun ShivInterface(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)
                     ) { Text("SEND") }
                 }
+                if (controller.ocrPreview.isNotBlank()) {
+                    GlassCard {
+                        Text("LOCAL OCR PREVIEW — NOT SAVED", color = Neon, fontSize = 11.sp)
+                        Text(controller.ocrPreview, color = Color.White, fontSize = 12.sp)
+                        Text("Latin script only. Kannada and Telugu scripts are not supported by this bundled OCR model.",
+                            color = Muted, fontSize = 11.sp)
+                        TextButton(onClick = controller::clearOcrPreview) { Text("CLEAR PREVIEW") }
+                    }
+                }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onVoice) { Text("🎙 Voice", color = Neon) }
-                    TextButton(onClick = onPhoto) { Text("◈ Vision", color = Neon) }
+                    TextButton(onClick = onPhoto) { Text("◈ Cloud Vision", color = Neon) }
+                    TextButton(onClick = onOfflineOcr) { Text("◈ Offline OCR", color = Neon) }
                     TextButton(onClick = { controller.messages.lastOrNull { it.role == "assistant" }?.let { onSpeak(it.text) } }) {
                         Text("◉ Speak", color = Neon)
                     }

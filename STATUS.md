@@ -31,6 +31,8 @@ exception to the no-network policy in the original Phase 1 specification.
   neural inference when the phone actually loads a supported .litertlm model.
   Model references registered via SAF; large file is copied only before running
   because LiteRT-LM needs a file-system path. Format compatibility is runtime-verified.
+- Optional owner-selected offline Latin OCR preview using bundled ML Kit; no
+  automatic storage or cloud transmission; Kannada/Telugu script OCR absent.
 - Explicit on-device STT (Android 31+) and Google TTS selection; en-IN/kn-IN/te-IN
   availability must be checked on the device. No silent cloud-recognizer fallback.
 - Tests for denial rules, power governor, authority, interruption logic and signal
@@ -49,7 +51,8 @@ exception to the no-network policy in the original Phase 1 specification.
   usage stats, SMS, call-log check-ins, location/geofencing.
 - Automatic anticipation from owner-verified routines, proactive morning/evening
   briefs, social graph, trust ladder, weekly self-evaluation and real-world outcomes.
-- Offline OCR, camera understanding, mixed-language golden-set accuracy, wake word,
+- Kannada/Telugu-script OCR, camera understanding, mixed-language golden-set
+  accuracy, wake word,
   speaker recognition, mic foreground-service sessions and streaming barge-in.
 - Full reversible undo and owner-approved privileged ADB grants; any Shizuku
   integration needs separate owner approval. Biometric memory/payment gates and

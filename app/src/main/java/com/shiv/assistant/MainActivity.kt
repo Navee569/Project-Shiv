@@ -145,6 +145,9 @@ class MainActivity : FragmentActivity() {
             val photo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 controller.chooseImage(it)
             }
+            val offlineOcr = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                if (uri != null) scope.launch { controller.scanOfflineImage(uri) }
+            }
             val document = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
                 if (it != null) scope.launch { controller.importText(it) }
             }
@@ -199,6 +202,7 @@ class MainActivity : FragmentActivity() {
                         }
                     },
                     onPhoto = { photo.launch("image/*") },
+                    onOfflineOcr = { offlineOcr.launch("image/*") },
                     onDocument = { document.launch("text/*") },
                     onModel = { model.launch(arrayOf("application/octet-stream", "*/*")) },
                     onUnlockMemory = { authenticate { controller.onBiometricAuthenticated() } },

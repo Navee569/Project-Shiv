@@ -10,6 +10,7 @@ import com.shiv.assistant.ai.LiteRtBrain
 import com.shiv.assistant.ai.LocalInferenceMetrics
 import com.shiv.assistant.ai.LocalInferenceScheduler
 import com.shiv.assistant.ai.InferenceUrgency
+import com.shiv.assistant.vision.ShivOfflineOcr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,6 +65,8 @@ class ShivController(private val context: Context) {
     var powerMode by mutableStateOf(PowerMode.BALANCED)
         private set
     var sensingPaused by mutableStateOf(false)
+        private set
+    var ocrPreview by mutableStateOf("")
         private set
     var guestMode by mutableStateOf(false)
         private set
@@ -122,6 +125,7 @@ class ShivController(private val context: Context) {
         notice = "Intelligence configuration saved securely"
     }
     fun updateSensingPaused(value: Boolean) {
+        if (value) ocrPreview = ""
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
         if (!value) WorkManager.getInstance(context).enqueueUniqueWork(
@@ -131,12 +135,13 @@ class ShivController(private val context: Context) {
             "ASK_FIRST", true)
     }
     fun updateGuestMode(value: Boolean) {
-        if (value) privateUnlocked = false
+        if (value) { privateUnlocked = false; ocrPreview = "" }
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
     }
     fun updatePrivacyZone(value: Boolean) {
+        if (value) ocrPreview = ""
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
         audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
@@ -414,6 +419,33 @@ class ShivController(private val context: Context) {
         notificationSummaries = on
         vault.put("notification_opt_in", if (on) "yes" else "no")
         if (!on) vault.clearNotifications()
+    }
+    fun clearOcrPreview() { ocrPreview = "" }
+    suspend fun scanOfflineImage(uri: Uri) {
+        if (working || sensingPaused || guestMode || privacyZone) {
+            notice = "Sensing is paused; local OCR was not started"
+            return
+        }
+        working = true
+        ocrPreview = ""
+        try {
+            val start = System.nanoTime()
+            val original = ShivOfflineOcr.scan(context, uri)
+            energy.record("offline_ocr", (System.nanoTime() - start) / 1_000_000)
+            // SAF providers do not identify the original source app; never persist,
+            // learn, send or infer from an image without a verifiable source.
+            val safe = PrivacyPolicy.safeExtractedFact("owner.selected.ocr", original)
+            if (safe == null) {
+                notice = "No safe Latin text found (or sensitive/OTP content rejected)"
+            } else {
+                ocrPreview = safe
+                notice = "Temporary on-device Latin OCR preview; NOT stored, NOT sent"
+            }
+        } catch (e: Exception) {
+            notice = "Offline OCR failed: " + (e.message ?: "unsupported image")
+        } finally {
+            working = false
+        }
     }
     fun chooseImage(uri: Uri?) { visionCandidate = uri }
     fun cancelImage() { visionCandidate = null }
