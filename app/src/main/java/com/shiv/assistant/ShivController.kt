@@ -12,6 +12,7 @@ import com.shiv.assistant.data.ShivVault
 import com.shiv.assistant.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
 import org.json.JSONArray
 
 data class ChatEntry(val role: String, val text: String)
@@ -91,7 +92,7 @@ class ShivController(private val context: Context) {
         val question = message.trim()
         if (question.isEmpty() || working) return
         append("user", question)
-        // Durable, encrypted signal is saved BEFORE any model inference.
+        // Refresh after owner edits from the Memories screen; never use stale facts.\n        notes.clear(); notes.addAll(vault.notes())\n        // Durable, encrypted signal is saved BEFORE any model inference.
         phase.submitSignal("owner_input", question, 5)
         // Precise scheduling/DB questions never require model hallucination.
         val lower=question.lowercase().trimEnd('?', '.', '!')
@@ -195,7 +196,13 @@ class ShivController(private val context: Context) {
         notice = "Routine saved — execution always requires review"
     }
     fun clearHistory() {
-        vault.clearHistory()
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
+            database.withTransaction {
+                database.dao().clearChats()
+                database.dao().putVault(com.shiv.assistant.data.VaultEntry("history","[]"))
+            }
+        }
         messages.clear()
         notice = "Chat history erased"
     }

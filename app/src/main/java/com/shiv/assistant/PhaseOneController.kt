@@ -103,6 +103,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             // E2B and 1B cannot coexist when RAM pressure is high.
             if(record.role=="conversation" && lease.freeRamBytes<4_000_000_000L)
                 hub.router.unload()
+            require(com.shiv.assistant.ai.ModelIntegrity.valid(File(record.uri),record.bytes,record.sha256)) {
+                "Imported model checksum or size changed. Reimport a trusted model file."
+            }
             val brain=if(record.role=="router")hub.router else hub.conversation
             brain.load(File(record.uri))
             progress="Model loaded: "+record.name

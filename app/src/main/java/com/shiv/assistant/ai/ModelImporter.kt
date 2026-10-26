@@ -75,3 +75,21 @@ class ModelImporter(private val context: Context) {
         EncryptedDatabase.open(context).dao().deleteModel(model.id)
     }
 }
+
+/** A file's display name is untrusted. Recheck bytes and hash at load time. */
+object ModelIntegrity {
+    fun valid(file:File,expectedBytes:Long,expectedSha256:String):Boolean {
+        if(!file.isFile || file.length()!=expectedBytes || expectedBytes<4096) return false
+        if(!Regex("[0-9a-f]{64}").matches(expectedSha256))return false
+        val digest=MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer=ByteArray(256*1024)
+            while(true) {
+                val read=input.read(buffer)
+                if(read==-1)break
+                digest.update(buffer,0,read)
+            }
+        }
+        return digest.digest().joinToString(""){"%02x".format(it)}==expectedSha256
+    }
+}
