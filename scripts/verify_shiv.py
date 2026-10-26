@@ -11,7 +11,11 @@ assert a is not None
 assert a.attrib.get(ns+"allowBackup")=="false"
 assert a.attrib.get(ns+"usesCleartextTraffic")=="false"
 services=a.findall("service")
-assert len(services)==1 and services[0].attrib.get(ns+"permission")=="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+assert len(services)==2,services
+by_name={service.attrib.get(ns+"name"): service for service in services}
+assert by_name[".notifications.ShivNotificationListener"].attrib.get(ns+"permission")=="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+assert by_name[".integrations.ShivAccessibilityReader"].attrib.get(ns+"permission")=="android.permission.BIND_ACCESSIBILITY_SERVICE"
+assert all(s.attrib.get(ns+"exported") == "true" for s in services)
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
 assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.USE_BIOMETRIC","android.permission.READ_CALENDAR","android.permission.READ_CONTACTS"},permissions
 gradle=(app/"build.gradle").read_text()
