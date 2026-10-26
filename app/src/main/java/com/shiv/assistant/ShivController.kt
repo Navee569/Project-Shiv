@@ -91,6 +91,7 @@ class ShivController(private val context: Context) {
     val agenda = ShivAgenda(vault)
     val agendaItems = mutableStateListOf<AgendaItem>()
     val audit = ShivAuditTrail(vault)
+    val feedback = ShivFeedbackLedger(vault)
     val energy = ShivEnergyLedger(vault)
     private val backup = ShivEncryptedBackup(context, vault)
     val signalQueue = ShivSignalQueue(vault)
@@ -232,6 +233,17 @@ class ShivController(private val context: Context) {
         } catch (_: Exception) { notice = "Usage statistics are unavailable" }
     }
     fun clearUsagePreview() { usagePreview.clear() }
+    fun reactToTrace(traceId: String, reaction: OwnerReaction) {
+        if (guestMode || !privateUnlocked) {
+            notice = "Unlock private memory before recording feedback"
+            return
+        }
+        try {
+            require(audit.recent().any { it.id == traceId && it.action == "PROACTIVE" })
+            feedback.record(traceId, reaction)
+            notice = "Your feedback was saved encrypted; only deterministic nudge caps may adapt"
+        } catch (_: Exception) { notice = "Feedback could not be saved" }
+    }
     fun updateProactiveOptIn(enabled: Boolean) {
         vault.put("proactive_opt_in", if (enabled) "yes" else "no")
         proactiveOptIn = enabled
