@@ -282,7 +282,7 @@ class ShivController(private val context: Context) {
     fun updateProactiveOptIn(enabled: Boolean) {
         vault.put("proactive_opt_in", if (enabled) "yes" else "no")
         proactiveOptIn = enabled
-        if (enabled) ShivProactive.schedule(context)
+        ShivProactive.schedule(context)
         audit.add("PROACTIVE_CONSENT", if (enabled) "Owner enabled scheduled agenda nudges"
             else "Owner disabled scheduled agenda nudges", "FREE", true)
         notice = if (enabled) "Private agenda reminders and daily briefs enabled"
@@ -396,6 +396,7 @@ class ShivController(private val context: Context) {
         }
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
+        ShivProactive.schedule(context)
         if (!value) WorkManager.getInstance(context).enqueueUniqueWork(
             "shiv_encrypted_signal_worker", ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<ShivSignalWorker>().build())
@@ -412,6 +413,7 @@ class ShivController(private val context: Context) {
         }
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
+        ShivProactive.schedule(context)
         audit.add("GUEST_MODE", if (value) "Guest mode enabled" else "Guest mode disabled", "FREE", true)
     }
     fun updatePrivacyZone(value: Boolean) {
@@ -423,6 +425,7 @@ class ShivController(private val context: Context) {
         }
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
+        ShivProactive.schedule(context)
         audit.add("PRIVACY_ZONE", if (value) "Privacy zone manually enabled" else "Privacy zone disabled",
             "FREE", true)
     }
