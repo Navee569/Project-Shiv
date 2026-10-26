@@ -25,7 +25,10 @@ class ShivEncryptedStorageInstrumentedTest {
         assertEquals(text,loaded?.text)
         val db=app().getDatabasePath("shiv-private-v1.db")
         assertTrue("SQLCipher file should be created",db.isFile)
-        val bytes=db.inputStream().use { it.readNBytes(16) }
+        val bytes=db.inputStream().use { input -> ByteArray(16).also { buffer ->
+            val read=input.read(buffer)
+            assertEquals("Expected encrypted database header",16,read)
+        } }
         val plain="SQLite format 3".toByteArray()
         assertFalse("DB header must not be plain SQLite",bytes.take(plain.size)==plain.toList())
         dao.removeMemory(id)
