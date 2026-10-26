@@ -16,8 +16,10 @@ by_name={service.attrib.get(ns+"name"): service for service in services}
 assert by_name[".notifications.ShivNotificationListener"].attrib.get(ns+"permission")=="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
 assert by_name[".integrations.ShivAccessibilityReader"].attrib.get(ns+"permission")=="android.permission.BIND_ACCESSIBILITY_SERVICE"
 assert all(s.attrib.get(ns+"exported") == "true" for s in services)
+receivers=a.findall("receiver")
+assert len(receivers)==1 and receivers[0].attrib.get(ns+"permission")=="android.permission.READ_PHONE_STATE"
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
-assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.USE_BIOMETRIC","android.permission.READ_CALENDAR","android.permission.READ_CONTACTS","android.permission.PACKAGE_USAGE_STATS"},permissions
+assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.USE_BIOMETRIC","android.permission.READ_CALENDAR","android.permission.READ_CONTACTS","android.permission.PACKAGE_USAGE_STATS","android.permission.READ_PHONE_STATE"},permissions
 gradle=(app/"build.gradle").read_text()
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
 assert "net.zetetic:sqlcipher-android" in gradle and "androidx.room:room-runtime" in gradle
