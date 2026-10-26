@@ -326,11 +326,28 @@ fun ShivInterface(
                         Text(model.name, color = Color.White, fontWeight = FontWeight.Bold)
                         Text(model.status + " • " + (model.sizeBytes / 1_000_000) + " MB",
                             color = Muted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { controller.assignModelRole(model.id, false) },
+                                enabled = model.sizeBytes <= 2_000_000_000L) {
+                                Text(if (controller.routerModelId == model.id) "ROUTER ✓" else "SET ROUTER",
+                                    fontSize = 11.sp)
+                            }
+                            OutlinedButton(onClick = { controller.assignModelRole(model.id, true) }) {
+                                Text(if (controller.conversationModelId == model.id) "CHAT ✓" else "SET CHAT",
+                                    fontSize = 11.sp)
+                            }
+                        }
                         Button(onClick = { scope.launch { controller.loadModel(model.id) } },
                             enabled = !controller.working) { Text("LOAD OFFLINE MODEL") }
                         TextButton(onClick = { controller.removeModel(model.id) }) { Text("REMOVE REFERENCE") }
                     }
                 }
+                Text("Roles load on demand: ROUTER is a model up to 2 GB; CHAT is the larger conversation model. " +
+                    "Only one local LiteRT engine stays loaded at a time. Large files may be copied to private storage.",
+                    color = Muted, fontSize = 12.sp)
+                Text("Active model: " + (controller.activeModelId?.let { id ->
+                    controller.models.firstOrNull { it.id == id }?.name
+                } ?: "NONE"), color = Neon)
                 Text("Local neural model loaded: " + controller.neuralReady, color = Neon)
                 Button(onClick = { scope.launch { controller.unloadModel() } }, enabled = controller.neuralReady) { Text("UNLOAD MODEL") }
                 Text("Android runtime validates model compatibility at load; import does not mean it is running.",
