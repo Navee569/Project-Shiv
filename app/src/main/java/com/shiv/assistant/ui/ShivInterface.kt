@@ -236,10 +236,14 @@ fun ShivInterface(
                         Text(model.name, color = Color.White, fontWeight = FontWeight.Bold)
                         Text(model.status + " • " + (model.sizeBytes / 1_000_000) + " MB",
                             color = Muted, fontSize = 11.sp)
+                        Button(onClick = { scope.launch { controller.loadModel(model.id) } },
+                            enabled = !controller.working) { Text("LOAD OFFLINE MODEL") }
                         TextButton(onClick = { controller.removeModel(model.id) }) { Text("REMOVE REFERENCE") }
                     }
                 }
-                Text("Actual local AI needs an Android runtime compatible with the chosen model. Import does not mean the model is running.",
+                Text("Local neural model loaded: " + controller.neuralReady, color = Neon)
+                Button(onClick = { scope.launch { controller.unloadModel() } }, enabled = controller.neuralReady) { Text("UNLOAD MODEL") }
+                Text("Android runtime validates model compatibility at load; import does not mean it is running.",
                     color = Muted, fontSize = 12.sp)
             }
             "Status" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),

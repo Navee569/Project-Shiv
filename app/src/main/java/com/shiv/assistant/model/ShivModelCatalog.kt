@@ -1,6 +1,10 @@
 package com.shiv.assistant.model
 
 import android.content.Context
+import android.content.Intent
+import android.os.StatFs
+import java.io.File
+import java.security.MessageDigest
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.shiv.assistant.data.ShivVault
@@ -18,6 +22,7 @@ data class ModelCandidate(val id: String, val name: String, val sizeBytes: Long,
 class ShivModelCatalog(private val context: Context, private val vault: ShivVault) {
     suspend fun register(uri: Uri): ModelCandidate = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
+        resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         val metadata = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
             null, null, null)?.use { cursor ->
             if (!cursor.moveToFirst()) null else {
@@ -40,6 +45,49 @@ class ShivModelCatalog(private val context: Context, private val vault: ShivVaul
             .put("uri", uri.toString()))
         vault.put("model_catalog", records.toString())
         candidate
+    }
+    suspend fun stageForLoad(id: String): String = withContext(Dispatchers.IO) {
+        val current = JSONArray(vault.get("model_catalog") ?: "[]")
+        val row = (0 until current.length()).map { current.getJSONObject(it) }
+            .firstOrNull { it.getString("id") == id }
+            ?: throw IllegalArgumentException("Unknown model")
+        val size = row.getLong("size")
+        val directory = File(context.filesDir, "Shiv AI Models")
+        require(directory.exists() || directory.mkdirs()) { "Cannot create private model directory" }
+        val destination = File(directory, id + ".litertlm")
+        if (destination.exists() && destination.length() == size) return@withContext destination.absolutePath
+        val space = StatFs(directory.absolutePath).availableBytes
+        require(space > size + 100_000_000L) {
+            "Insufficient free storage: model must be copied into app-private storage for LiteRT-LM"
+        }
+        val temporary = File(directory, id + ".partial")
+        val digest = MessageDigest.getInstance("SHA-256")
+        var written = 0L
+        try {
+            context.contentResolver.openInputStream(Uri.parse(row.getString("uri")))?.use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        written += count
+                        require(written <= size) { "Model changed during import" }
+                        digest.update(buffer, 0, count)
+                        output.write(buffer, 0, count)
+                    }
+                }
+            } ?: error("Cannot reopen model URI")
+            require(written == size) { "Model copy incomplete" }
+            if (destination.exists()) require(destination.delete()) { "Cannot replace staged model" }
+            require(temporary.renameTo(destination)) { "Could not finalize staged model" }
+            row.put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
+            row.put("status", "STAGED - RUNTIME NOT VERIFIED")
+            vault.put("model_catalog", current.toString())
+            destination.absolutePath
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
     }
     fun all(): List<ModelCandidate> {
         val records = JSONArray(vault.get("model_catalog") ?: "[]")

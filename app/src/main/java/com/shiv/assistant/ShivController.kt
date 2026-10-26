@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.content.Intent
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
+import com.shiv.assistant.ai.LiteRtBrain
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.data.*
@@ -22,6 +23,9 @@ data class ChatEntry(val role: String, val text: String)
 class ShivController(private val context: Context) {
     val vault = ShivVault(context)
     private val brain = ShivIntelligence(context)
+    private val localNeural: Brain = LiteRtBrain(context)
+    var neuralReady by mutableStateOf(false)
+        private set
     val knowledge = ShivKnowledge(vault)
     val audit = ShivAuditTrail(vault)
     val energy = ShivEnergyLedger(vault)
@@ -136,6 +140,40 @@ class ShivController(private val context: Context) {
             notice = "Model selection failed: " + (e.message ?: "unknown error")
         } finally { working = false }
     }
+    suspend fun loadModel(id: String) {
+        if (working) return
+        val item = models.firstOrNull { it.id == id } ?: return
+        working = true
+        try {
+            refreshDeviceStats()
+            val stats = telemetry?.asSnapshot(false)
+            if (item.sizeBytes > 2_000_000_000L && stats != null) {
+                val lease = ResourceGovernor.decide(stats, WorkClass.CONVERSATION,
+                    powerMode, 0, 600)
+                require(lease.allowLargeModel) { "Device resources insufficient for large model. Try while charging." }
+            }
+            notice = "Preparing model (large files require a private copy) ..."
+            val path = modelCatalog.stageForLoad(id)
+            val start = System.nanoTime()
+            val outcome = localNeural.load(path)
+            energy.record("local_model_load", (System.nanoTime() - start) / 1_000_000)
+            neuralReady = outcome is BrainResult.Text
+            notice = when (outcome) {
+                is BrainResult.Text -> "Offline neural model loaded. Local chat can now use it."
+                is BrainResult.Unavailable -> outcome.reason
+                is BrainResult.Failed -> outcome.reason
+            }
+            models = modelCatalog.all()
+        } catch (e: Exception) {
+            neuralReady = false
+            notice = "Local model could not be loaded: " + (e.message ?: "unknown error")
+        } finally { working = false }
+    }
+    suspend fun unloadModel() {
+        localNeural.unload()
+        neuralReady = false
+        notice = "Local model unloaded"
+    }
     fun removeModel(id: String) {
         modelCatalog.remove(id)
         models = modelCatalog.all()
@@ -162,8 +200,19 @@ class ShivController(private val context: Context) {
         }
         working = true
         try {
-            val response = brain.respond(question, notes, config, apiKey)
-            append("assistant", response)
+            if (config.mode == IntelligenceMode.LOCAL && localNeural.modelId != null) {
+                val start = System.nanoTime()
+                val answer = localNeural.infer(question, 256)
+                energy.record("local_inference", (System.nanoTime() - start) / 1_000_000)
+                append("assistant", when (answer) {
+                    is BrainResult.Text -> answer.value
+                    is BrainResult.Unavailable -> answer.reason
+                    is BrainResult.Failed -> answer.reason
+                })
+            } else {
+                val response = brain.respond(question, notes, config, apiKey)
+                append("assistant", response)
+            }
         } catch (e: Exception) {
             append("assistant", "I could not process that request: " + (e.message ?: "unknown error"))
         } finally { working = false }
