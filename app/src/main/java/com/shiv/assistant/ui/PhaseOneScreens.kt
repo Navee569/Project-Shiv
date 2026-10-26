@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
+    var contactQuery by remember { mutableStateOf("") }
     val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
@@ -37,7 +38,6 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
-    var contactQuery by remember { mutableStateOf("") }
     val accent=Color(0xFF65F5F0)
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
