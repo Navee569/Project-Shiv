@@ -52,7 +52,6 @@ class ShivController(private val context: Context) {
         private set
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
         private set
-        private set
     init {
         runCatching {
             config = AssistantConfiguration(
