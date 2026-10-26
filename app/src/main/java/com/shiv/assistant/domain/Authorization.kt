@@ -92,13 +92,39 @@ object StructuredToolParser {
             require(keys.all { it in allowedArguments.getValue(type) })
             val params = keys.associateWith {
                 require(argsJson.get(it) is String)
-                argsJson.getString(it).take(500)
+                val value=argsJson.getString(it)
+                require(value.length in 1..500 && value.isNotBlank() &&
+                    !value.any { char -> char=='\\u0000' })
+                value
             }
-            if (type == ToolAction.CREATE_EVENT || type == ToolAction.SET_REMINDER) {
-                require(!params["title"].isNullOrBlank())
-                java.time.OffsetDateTime.parse(params.getValue("datetime"))
+            // Validate each operation's full contract. Returning STAY_QUIET on
+            // any malformed proposal is safer than approving incomplete tools.
+            fun requireArgs(vararg required:String) {
+                require(required.all { params.containsKey(it) })
             }
-            if (type == ToolAction.ASK_USER) require(!params["question"].isNullOrBlank())
+            fun parseTime(field:String)=java.time.OffsetDateTime.parse(params.getValue(field))
+            when(type) {
+                ToolAction.CREATE_EVENT -> {
+                    requireArgs("title","datetime")
+                    val start=parseTime("datetime")
+                    if("end" in params) require(!parseTime("end").isBefore(start))
+                }
+                ToolAction.UPDATE_EVENT -> {
+                    requireArgs("id")
+                    require(params.getValue("id").length<=128)
+                    require("title" in params || "datetime" in params)
+                    if("datetime" in params) parseTime("datetime")
+                }
+                ToolAction.SET_REMINDER -> {
+                    requireArgs("title","datetime")
+                    parseTime("datetime")
+                }
+                ToolAction.SAVE_MEMORY -> requireArgs("text","category")
+                ToolAction.SAVE_RULE -> requireArgs("rule","value")
+                ToolAction.ASK_USER -> requireArgs("question")
+                ToolAction.SEND_NOTIFICATION -> requireArgs("text")
+                ToolAction.STAY_QUIET -> require(params.isEmpty())
+            }
             return ParsedToolAction(type,params,type != ToolAction.STAY_QUIET)
         } catch (_: Exception) {
             return ParsedToolAction(ToolAction.STAY_QUIET,emptyMap(),false)
