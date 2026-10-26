@@ -75,6 +75,11 @@ class MainActivity : FragmentActivity() {
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true))
     }
 
+    override fun onResume() {
+        super.onResume()
+        ownerController?.refreshPermissions()
+    }
+
     override fun onStop() {
         ownerController?.lockPrivate()
         super.onStop()

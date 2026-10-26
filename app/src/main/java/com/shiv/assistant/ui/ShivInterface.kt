@@ -70,7 +70,7 @@ fun ShivInterface(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Core", "Chat", "Tasks", "Automate", "Memory", "Models", "Status", "Privacy", "Settings").forEach {
+                listOf("Core", "Chat", "Tasks", "Automate", "Memory", "Models", "Status", "Privacy", "Grants", "Settings").forEach {
                     val active = tab == it
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -389,6 +389,21 @@ fun ShivInterface(
                         Text("Authority: " + trace.tier, color = Violet, fontSize = 11.sp)
                     }
                 }
+            }
+            "Grants" -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Header("PERMISSIONS & REVOCATION", "Read-only device status. Shiv cannot secretly grant restricted access.")
+                Button(onClick = controller::refreshPermissions) { Text("REFRESH PERMISSIONS") }
+                OutlinedButton(onClick = controller::openAppPermissions) { Text("OPEN SHIV APP PERMISSIONS") }
+                controller.permissionReadings.forEach { item ->
+                    GlassCard {
+                        Text(item.title, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(item.status, color = Violet, fontSize = 11.sp)
+                        Text(item.revokeHelp, color = Muted, fontSize = 11.sp)
+                    }
+                }
+                Text("Samsung One UI menus may differ by version. No ADB grants, root, or Shizuku integration is enabled.",
+                    color = Muted, fontSize = 11.sp)
             }
             "Settings" -> if (controller.guestMode)
                 Column(Modifier.weight(1f).padding(18.dp)) {

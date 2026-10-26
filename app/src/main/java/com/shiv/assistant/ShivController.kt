@@ -47,6 +47,7 @@ class ShivController(private val context: Context) {
     val macros = mutableStateListOf<String>()
     var models by mutableStateOf<List<ModelCandidate>>(emptyList())
         private set
+    val permissionReadings = mutableStateListOf<PermissionReading>()
     var telemetry by mutableStateOf<DeviceStats?>(null)
         private set
     var privateUnlocked by mutableStateOf(false)
@@ -156,6 +157,11 @@ class ShivController(private val context: Context) {
         powerMode = mode
         vault.put("power_mode", mode.name)
     }
+    fun refreshPermissions() {
+        permissionReadings.clear()
+        permissionReadings.addAll(ShivPermissionInspector.read(context))
+    }
+    fun openAppPermissions() = ShivPermissionInspector.applicationSettings(context)
     fun refreshDeviceStats() { telemetry = ShivDeviceMonitor.read(context) }
     fun leaseForConversation(): ComputeLease? {
         val stats = telemetry?.asSnapshot(false) ?: return null

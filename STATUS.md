@@ -21,6 +21,8 @@ exception to the no-network policy in the original Phase 1 specification.
 - Encrypted, crash-resumable sanitized signal queue with WorkManager processing.
   Low-confidence possible-event extraction from permitted notification titles, including
   basic Kannada/Telugu keywords. Does NOT pretend to understand arbitrary messages.
+- Read-only grants and revocation guidance screen for system microphone,
+  notification, listener and biometric status (OWNER-VERIFY).
 - Charging-and-idle-constrained daily consolidation worker, resource-governor policy,
   action authority hard floors, audit traces and on-device resource readings.
 - LiteRT-LM 0.18.0 runtime loading from app-private model path, real local
