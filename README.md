@@ -93,3 +93,8 @@ The weekly report uses the owner's own reactions, not assumed real-world success
 All collected persistent records remain encrypted. Optional features and actual
 runtime operation still require Galaxy S23 testing. See TESTING.md. The cloud
 AI API, including the previously configured hybrid mode, is unchanged.
+
+
+Offline Latin OCR can now propose a task when the selected document contains an
+explicit ISO due date. The owner must supply the title and clock time, and
+accept the proposal; Shiv does not persist the source image or OCR text.
