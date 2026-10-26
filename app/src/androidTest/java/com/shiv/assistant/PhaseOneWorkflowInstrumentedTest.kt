@@ -50,6 +50,26 @@ class PhaseOneWorkflowInstrumentedTest {
         assertEquals(1,dao.events(0,Long.MAX_VALUE).count{it.id==id})
     }
 
+    @Test fun ownerUndoReversesApprovedEventAndReminderExactlyOnce() = runBlocking {
+        val dao=EncryptedDatabase.open(context).dao()
+        val id=UUID.randomUUID().toString()
+        val command="meet Raj Thursday 5 pm"
+        dao.enqueue(SignalRecord(id,"owner_input",command,5,status="PROCESSED"))
+        val trace=DecisionTraceRecord(id,id,"ASK","Possible event: $command","ASK_FIRST")
+        dao.trace(trace)
+        val controller=PhaseOneController(context,ShivBrainHub(context))
+        controller.approveCommitment(trace)
+        assertEquals("APPROVED",dao.decision(id)?.decision)
+        assertNotNull(dao.reminder("event-$id"))
+        controller.undoApprovedCommitment(trace)
+        assertEquals("UNDONE",dao.decision(id)?.decision)
+        assertEquals("CANCELLED",dao.reminder("event-$id")?.status)
+        assertTrue(dao.events(0L,Long.MAX_VALUE).none{it.id==id})
+        assertEquals(1,dao.actions(100).count{it.id=="undo-$id"})
+        controller.undoApprovedCommitment(trace)
+        assertEquals(1,dao.actions(100).count{it.id=="undo-$id"})
+    }
+
     @Test fun ownerCorrectionOverrulesOldMemoryAndDeletionWorks() = runBlocking {
         val repo=ShivRepository(context)
         val original=repo.remember("The appointment is on Friday")
