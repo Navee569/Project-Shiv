@@ -134,3 +134,20 @@ the mandatory entry gate. Cloud AI API implementation remains untouched.
   strict future due-date task creation. Does not supply Kannada/Telugu OCR,
   continuous screen monitoring, general document reasoning or verified S23
   recognition quality.
+
+
+## Additional verified-by-source implementation candidates — 26 Oct 2026
+
+Previous table reflects older baseline; the later code now includes bounded
+proactive agenda reminders plus owner reactions and cap adaptation; manually
+granted aggregated Usage Access preview, encrypted measured daily LiteRT wall
+time budget, and all-known-tool mandatory JSON schema validation. Actual
+Android API26/API35 and native tests must be green on the final PR head
+before treating these as CI-tested. None of these paths supplies Phase 2
+M11 acceptance, true proactive external-app automation, Kannada/Telugu OCR,
+a wake-word engine, or physical Galaxy S23 energy/thermal measurements.
+
+In particular, source-displayed feature labels must not imply that Android
+privileged behavior is available without the owner's runtime grant, nor that
+AI-text tool proposals can self-authorize irreversible actions. CLOUD/HYBRID
+intelligence was not changed and the Phase 2 requirements remain gated.
