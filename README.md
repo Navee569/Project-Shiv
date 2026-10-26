@@ -33,8 +33,13 @@ A real LiteRT-LM on-device neural runtime is now integrated: import a .litertlm
 file through Models, then choose LOAD OFFLINE MODEL. It requires an app-private copy
 of the model because the runtime expects a filesystem path; allow ample storage
 and verify actual loading on your Galaxy S23. The initial engine uses CPU;
-router residency, larger-model resource arbitration and speed still need
-device acceptance.
+a selectable small ROUTER and conversation CHAT role now offer one-engine
+resource-governed on-demand switching (PR #3). In Models select SET ROUTER and
+SET CHAT after importing separate files. On the Status screen, select a daily
+model-compute budget and press MEASURE NOW. Real model loading, performance,
+privacy and energy measurements still need S23 device acceptance. This build
+does **not** keep two neural engines resident simultaneously and does not provide
+complete idle eviction or measured energy calibration.
 
 Full learned knowledge graphs, habitual autonomy, live third-party UI automation,
 authenticated social publishing/analytics, complex bookings, privileged tools,
@@ -62,3 +67,7 @@ ML Kit Latin text recognizer and displays a short ephemeral preview only;
 recognized text is not automatically saved to the encrypted database or sent
 to cloud AI. Kannada/Telugu-script OCR and secure identification of the source
 app are not supported. Do not enable broad screen scanning.
+
+For a feature-by-feature audit, including unimplemented families and real-phone
+release blockers, see [docs/FEATURE_AUDIT_2026-10-26.md](docs/FEATURE_AUDIT_2026-10-26.md).
+Existing cloud/hybrid AI integration remains unchanged.
