@@ -44,6 +44,8 @@ fun ShivInterface(
     var goal by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Capability?>(null) }
+    var editingFactId by remember { mutableStateOf<String?>(null) }
+    var correctionText by remember { mutableStateOf("") }
     val pending = controller.pending
     val photo = controller.visionCandidate
     Column(
@@ -214,7 +216,14 @@ fun ShivInterface(
                         Text(fact.text, color = Color.White)
                         Text("Source: " + fact.source + " • Confidence: " + fact.confidence,
                             color = Muted, fontSize = 11.sp)
-                        TextButton(onClick = { controller.deleteStructuredMemory(fact.id) }) { Text("DELETE FACT") }
+                        Row {
+                            TextButton(onClick = { editingFactId = fact.id; correctionText = fact.text }) {
+                                Text("CORRECT")
+                            }
+                            TextButton(onClick = { controller.deleteStructuredMemory(fact.id) }) {
+                                Text("DELETE FACT")
+                            }
+                        }
                     }
                 }
                 Text("LEGACY SAVED NOTES", color = Violet, fontSize = 12.sp)
@@ -326,6 +335,21 @@ fun ShivInterface(
                 enabled = CloudSafety.maySend(controller.config)) { Text("SEND IMAGE") }
         },
         dismissButton = { TextButton(onClick = controller::cancelImage) { Text("KEEP PRIVATE") } }
+    )
+    if (editingFactId != null) AlertDialog(
+        onDismissRequest = { editingFactId = null },
+        title = { Text("Correct Shiv's memory") },
+        text = {
+            OutlinedTextField(correctionText, { correctionText = it.take(2048) },
+                label = { Text("Corrected fact") }, modifier = Modifier.fillMaxWidth())
+        },
+        confirmButton = {
+            Button(onClick = {
+                editingFactId?.let { controller.correctStructuredMemory(it, correctionText) }
+                editingFactId = null
+            }, enabled = correctionText.isNotBlank()) { Text("SAVE CORRECTION") }
+        },
+        dismissButton = { TextButton(onClick = { editingFactId = null }) { Text("CANCEL") } }
     )
     if (selected != null) AlertDialog(
         onDismissRequest = { selected = null },
