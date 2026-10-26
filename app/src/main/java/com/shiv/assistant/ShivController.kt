@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.provider.Settings
 import android.content.Intent
+import android.view.accessibility.AccessibilityManager
+import android.accessibilityservice.AccessibilityServiceInfo
+import com.shiv.assistant.integrations.ShivAccessibilityReader
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.ai.LiteRtBrain
@@ -178,6 +181,32 @@ class ShivController(private val context: Context) {
         if (messages.isEmpty()) messages.add(ChatEntry("assistant",
             "SHIV ONLINE. Local command handling is active; neural local inference is not installed. Cloud and hybrid remain optional in Settings."))
     }
+    fun openAccessibilitySettings() {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    fun armScreenInspection() {
+        if (guestMode || sensingPaused || privacyZone) {
+            notice = "Screen inspection unavailable while privacy protection is active"
+            return
+        }
+        val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabled = manager.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK).any {
+            it.resolveInfo.serviceInfo.packageName == context.packageName &&
+                it.resolveInfo.serviceInfo.name == ShivAccessibilityReader::class.java.name
+        }
+        if (!enabled) {
+            notice = "Enable Shiv one-shot screen awareness manually in Android Accessibility settings"
+            return
+        }
+        vault.put("screen_armed_until", (System.currentTimeMillis() + 15_000).toString())
+        notice = "Screen awareness armed for 15 seconds. Open a permitted app now."
+    }
+    fun disarmScreenInspection() {
+        vault.put("screen_armed_until", "0")
+        notice = "Screen awareness disarmed"
+    }
     fun updateProactiveOptIn(enabled: Boolean) {
         vault.put("proactive_opt_in", if (enabled) "yes" else "no")
         proactiveOptIn = enabled
@@ -290,6 +319,7 @@ class ShivController(private val context: Context) {
             ocrPreview = ""
             calendarPreview.clear()
             contactMatches.clear()
+            vault.put("screen_armed_until", "0")
         }
         vault.put("sensing_paused", if (value) "yes" else "no")
         sensingPaused = value
@@ -305,6 +335,7 @@ class ShivController(private val context: Context) {
             ocrPreview = ""
             calendarPreview.clear()
             contactMatches.clear()
+            vault.put("screen_armed_until", "0")
         }
         vault.put("guest_mode", if (value) "yes" else "no")
         guestMode = value
@@ -315,6 +346,7 @@ class ShivController(private val context: Context) {
             ocrPreview = ""
             calendarPreview.clear()
             contactMatches.clear()
+            vault.put("screen_armed_until", "0")
         }
         vault.put("privacy_zone", if (value) "yes" else "no")
         privacyZone = value
