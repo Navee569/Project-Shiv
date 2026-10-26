@@ -21,8 +21,23 @@ class ShivRepository(private val context: Context) {
             val compact = fact.trim().take(1500)
             if (compact.isBlank()) return@withContext null
             val id = UUID.randomUUID().toString()
-            dao.enqueue(SignalRecord(id,source,compact,priority))
-            id
+            val normalized = packageName?.trim()?.lowercase(java.util.Locale.ROOT)
+            val safeSource = if(normalized!=null) source+":"+normalized else source
+            val saved=SignalRecord(id,safeSource,compact,priority)
+            // User-typed commands are intentional and should not be deduplicated.
+            // Background notification and opt-in mic retries are deduped in the
+            // encrypted DB so worker restarts cannot flood owner ASK decisions.
+            val window=when {
+                normalized!=null -> 10 * 60_000L
+                source=="owner_mic_session" -> 30_000L
+                else -> 0L
+            }
+            if(window==0L) {
+                dao.enqueue(saved)
+                id
+            } else {
+                if(dao.enqueueIfNew(saved,saved.receivedAt-window))id else null
+            }
         }
     suspend fun contextSnapshot(now: Long = System.currentTimeMillis()): ContextSnapshot =
         ContextSnapshot(Instant.ofEpochMilli(now).toString(),
