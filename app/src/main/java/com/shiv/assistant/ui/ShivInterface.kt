@@ -352,6 +352,19 @@ fun ShivInterface(
                         ?: "NOT EVALUATED"), color = Muted)
                 }
                 Header("RESOURCE POLICY", "Heavy work is limited by power, temperature, RAM and user budget.")
+                Text("Daily local-model compute limit: " + controller.dailyComputeBudgetSeconds / 60 +
+                    " minutes • measured use: " + controller.energy.modelSecondsToday() / 60 +
+                    " whole minutes", color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(60, 300, 600, 1800).forEach { seconds ->
+                        OutlinedButton(onClick = { controller.changeDailyComputeBudgetSeconds(seconds) },
+                            modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp)) {
+                            Text((seconds / 60).toString() + "m", fontSize = 11.sp)
+                        }
+                    }
+                }
+                Text("Last local admission: " + controller.lastResourceDecision,
+                    color = Muted, fontSize = 12.sp)
                 PowerMode.entries.forEach { mode ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = controller.powerMode == mode, onClick = { controller.changePowerMode(mode) })
