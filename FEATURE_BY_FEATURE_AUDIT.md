@@ -107,3 +107,24 @@ These improvements **do not** constitute M11 acceptance or Phase 2 entry.
 Do not conflate best-effort native cancellation with immediate NPU/CPU
 termination. Do not count characters as model tokens. Cloud AI exception
 remains as configured and unmodified.
+
+
+## Combined development addendum: portable restore, user-started voice and dedup
+
+The audited `development/shiv-feature-parity-audit` source now adds these
+bounded Phase 1 implementation paths, subject to CI and S23 verification:
+- M3/M5/M9: portable authenticated passphrase-encrypted owner data backup,
+  schema-checked atomic restore, safe default reset for cloud/authority and
+  inactive restored reminders. Private portable archives do not include
+  imported `.litertlm` files or system-granted permissions.
+- M6/N5: owner-requested **bounded** Android foreground microphone session
+  using the system's on-device speech API only. It is **not** always-on
+  hotword recognition and has not been validated with kn-IN/te-IN packs on S23.
+- M7/N1: durable duplicate-background-signal prevention at the encrypted DB
+  boundary without removing intentional repeated owner commands.
+
+Outstanding coverage in the original milestone table is not magically
+resolved: model quality/energy, provider integrations, foreground speech
+behavior, encrypted data import from legacy interrupted upgrades, complete
+undo, and physical M11 acceptance remain open. Phase 2 remains deferred per
+the mandatory entry gate. Cloud AI API implementation remains untouched.
