@@ -5,9 +5,9 @@ Legend: **ACTIVE** has an actual bounded Shiv code path; **CONNECT** requires th
 | Family | ACTIVE in this development | CONNECT / PERMISSION / PENDING |
 | --- | --- | --- |
 | Agent | Safe parsing, bounded plans, manual action review and retry | Automatic execution verification and autonomous replanning |
-| Intelligence | Deterministic offline assistant, OpenAI-compatible cloud API, hybrid policy | Embedded LiteRT neural inference, model downloads, full multi-provider catalog |
-| Memory | Encrypted notes, chat and macros | Four-tier semantic knowledge graph and learning |
-| Voice | Platform speech dictation and speech synthesis | Offline wake word, premium voice provider |
+| Intelligence | Deterministic local assistant; LiteRT-LM CPU on-device engine and SAF model staging (OWNER-VERIFY); existing OpenAI-compatible cloud/hybrid modes | Autonomous two-model routing, priority queue, model downloader, full provider catalog |
+| Memory | Room + SQLCipher encryption with Keystore-wrapped key; explicit memory correction, provenance and encrypted facts (OWNER-VERIFY) | Full person/place graph, measured retention, encrypted backup/restore |
+| Voice | On-device SpeechRecognizer API31+, selected en-IN/kn-IN/te-IN, Google TTS validation (OWNER-VERIFY) | Wake word, code-switching golden set, always-ready listening |
 | Vision | Explicitly selected image, explicit transmission consent to cloud vision endpoint | Offline OCR and live screen capture |
 | Communication | Call dialer, SMS/email compose, Telegram/WhatsApp share | Contacts-based disambiguation and verified end-to-end delivery |
 | Productivity | Relative reminders with WorkManager, calendar/alarm/timer intents | Cross-account calendar reads and complex recurring routines |
@@ -19,7 +19,7 @@ Legend: **ACTIVE** has an actual bounded Shiv code path; **CONNECT** requires th
 | Habits / macros | Encrypted manual macro store, reviewable plan actions | Habit detection, unattended event/trigger execution |
 | Notifications | Optional listener, encrypted title + app metadata | Intelligent auto-reply / semantic classification |
 | Workspace | User-selected text import | Sandboxed persistent terminal, MCP server, privileged command execution |
-| Privacy | Keystore AES-GCM, backed-up data disabled, consent-based cloud, safe handoffs | Original Shiv SQLCipher parity (original source unavailable), penetration testing |
+| Privacy | Keystore-wrapped SQLCipher + legacy migration, denylist, privacy pause, guest mode and biometric gate (OWNER-VERIFY) | Hardening, full source policy audit and penetration testing |
 | UI | Original Compose dashboard/chat/automation/memory/settings | Pixel/device/accessibility design QA |
 
 ## Verification stages

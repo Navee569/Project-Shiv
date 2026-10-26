@@ -8,7 +8,9 @@ This is an original Android app in package \`com.shiv.assistant\`, not an APK as
 
 - Futuristic Compose dashboard, aurora backgrounds and original Shiv orbital design.
 - **Configurable intelligence:** LOCAL (deterministic offline), CLOUD (user-selected OpenAI-compatible HTTPS API) or HYBRID (offline commands plus opt-in cloud text). No outbound prompts without opt-in.
-- Encrypted memory, chat history, provider credentials, and macros using Android Keystore AES-GCM; device backup disabled.
+- Encrypted personal records using Room + SQLCipher with a random database key
+  wrapped by Android Keystore AES-GCM. Existing encrypted SharedPreferences are
+  migrated lazily. Device backup remains disabled.
 - Bounded multi-step plans, reviewed external Android handoffs, local relative reminders, audio dictation and TTS, explicit cloud image analysis, document import, and optional notification metadata.
 - No background accessibility automation, silent posts, SMS, financial transfers or root shell.
 
@@ -27,6 +29,27 @@ CI publishes the native Shiv debug APK as the \`shiv-native-debug-apk\` artifact
 
 The in-app feature matrix includes every capability family identified in the reference study, and labels items \`ACTIVE\`, \`CONNECT\`, \`PERMISSION\` or \`PENDING\`. **A visible module is not proof that its complete integration is implemented.**
 
-Full offline neural model execution, model download, semantic knowledge graph, habit inference, full third-party UI automation, authenticated social publishing/analytics, complex bookings, privileged terminal/MCP, wakeword and live screen capture remain outstanding. See [SHIV_CAPABILITY_MATRIX.md](SHIV_CAPABILITY_MATRIX.md).
+A real LiteRT-LM on-device neural runtime is now integrated: import a .litertlm
+file through Models, then choose LOAD OFFLINE MODEL. It requires an app-private copy
+of the model because the runtime expects a filesystem path; allow ample storage
+and verify actual loading on your Galaxy S23. The initial engine uses CPU;
+router residency, larger-model resource arbitration and speed still need
+device acceptance.
+
+Full learned knowledge graphs, habitual autonomy, live third-party UI automation,
+authenticated social publishing/analytics, complex bookings, privileged tools,
+wakeword and live screen capture remain outstanding. See [SHIV_CAPABILITY_MATRIX.md](SHIV_CAPABILITY_MATRIX.md).
 
 A build result is not a complete test or production readiness claim. No emulator/real-device and full third-party acceptance testing has been completed.
+
+
+## New privacy and safety controls
+
+Privacy provides optional sensing pause, Guest Mode, manual privacy zone, app
+package exclusions and an audit log (protected while locked). Memory and payment
+handoffs use a biometric/device-credential gate. Status measures battery,
+thermal state and available RAM on the phone; no CI-generated values are used.
+The cloud and hybrid AI modes are intentionally preserved as the owner's exception.
+
+See STATUS.md, TESTING.md, DEFECT_LOG.md, ARCHITECTURE.md and
+docs/ENCRYPTED_MIGRATION.md. Feature presence is not release acceptance.

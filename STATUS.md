@@ -9,7 +9,10 @@ exception to the no-network policy in the original Phase 1 specification.
 
 - Original Compose UI; secure confirmation before outgoing Android app handoffs.
 - Existing cloud/hybrid routing preserved, not refactored.
-- Android Keystore AES-GCM encrypted records; new 4-layer memory facts with owner corrections, deletion, evidence/provenance and safe deduplication.
+- Room + SQLCipher backed encrypted records with Android Keystore-wrapped random
+  passphrase and lazy migration from legacy encrypted SharedPreferences; migration
+  safety and physical encryption must still be OWNER-VERIFY.
+- New 4-layer memory facts with owner corrections, deletion, evidence/provenance and safe deduplication.
 - Deterministic app-package/OTP filters **before** notification content is stored;
   configurable extra denylist; guest mode, manual privacy-zone flag and sensing pause.
 - Encrypted, crash-resumable sanitized signal queue with WorkManager processing.
@@ -28,8 +31,9 @@ exception to the no-network policy in the original Phase 1 specification.
 
 ## Incomplete — DO NOT MARK COMPLETE
 
-- Room + SQLCipher database migration and encrypted export/restore; SQLCipher
-  requirement is **not met** by encrypted SharedPreferences.
+- End-to-end Room + SQLCipher migration validation, schema migrations and
+  encrypted export/restore. SQLCipher integration is BUILT - OWNER-VERIFY,
+  not yet cleared for production.
 - Two-model resident router / on-demand large model scheduling, priority inference
   queue, structured JSON tool schemas, token metrics and measured power budget.
 - Legitimate full-scope app awareness: accessibility denylist, UI extraction, contacts,

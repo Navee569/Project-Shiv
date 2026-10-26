@@ -10,7 +10,8 @@
   Unit tests added for common sources and OTP patterns. Owner phone test pending.
 
 ## Open
-- D-004 HIGH: Room + SQLCipher, database migrations and data export/restore.
+- D-004 HIGH: Room + SQLCipher integration has been coded, but requires
+  owner validation of legacy migration, wrong-key behaviour, and export/restore.
 - D-005 HIGH: full sensitive-source denylist review for Android providers
   including Accessibility, SMS, OCR and screenshots before granting access.
 - D-006 HIGH: owner-controlled two-model queue and performance gating.
@@ -20,6 +21,6 @@
 - D-010 MEDIUM: on-device LiteRT-LM model import/load not owner verified.
 - D-011 MEDIUM: biometric gates, encrypted backup and recovery missing.
 - D-012 MEDIUM: no full Android integration or instrumentation suite.
-- D-013 MEDIUM: signal queue currently backed by encrypted SharedPreferences,
-  not SQLCipher; 500-item low-priority cap with silent drop when full.
+- D-013 MEDIUM: queue is a JSON record inside SQLCipher's Room store rather
+  than a normalized Room entity; 500-item low-priority cap requires drop log.
 - D-014 LOW: phase2 activity energy ledger is not OS battery accounting.

@@ -16,6 +16,10 @@ permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
 assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.USE_BIOMETRIC"},permissions
 gradle=(app/"build.gradle").read_text()
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
+assert "net.zetetic:sqlcipher-android" in gradle and "androidx.room:room-runtime" in gradle
+db=(app/"src/main/java/com/shiv/assistant/data/ShivRoomDatabase.kt").read_text()
+assert "@Database(" in db and "SupportOpenHelperFactory" in db
+assert "allowMainThreadQueries" in db # known pre-production technical debt, see STATUS
 sources=list((app/"src/main/java").rglob("*.kt"))
 assert len(sources)>=7
 for path in sources:
