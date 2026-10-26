@@ -190,6 +190,10 @@ class MainActivity : FragmentActivity() {
                 else controller.speechMessage("Calendar read permission denied")
             }
             var pendingContactQuery by remember { mutableStateOf("") }
+            val phonePermission = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()) { granted ->
+                controller.updatePostCallOptIn(granted)
+            }
             val contactsPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()) { granted ->
                 if (granted) controller.searchDeviceContacts(pendingContactQuery)
@@ -240,6 +244,11 @@ class MainActivity : FragmentActivity() {
                             "Voice data unavailable for " + controller.speechLocale +
                             ". Install Speech Services by Google voice data in Android Settings > General management > Text-to-speech."
                         )
+                    },
+                    onPostCallPermission = {
+                        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
+                            PackageManager.PERMISSION_GRANTED) controller.updatePostCallOptIn(true)
+                        else phonePermission.launch(Manifest.permission.READ_PHONE_STATE)
                     },
                     onCalendarPreview = {
                         if (checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
