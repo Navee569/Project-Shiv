@@ -30,3 +30,15 @@ Legend: **ACTIVE** has an actual bounded Shiv code path; **CONNECT** requires th
 - Required before release: permission-denied UI tests, device API 26–35 coverage, encryption recoverability tests, mock-cloud injection tests, malicious URI tests, integration contract tests with provider credentials, accessibility audit and manual UI acceptance.
 
 **Unmet entries are not to be reported as complete.**
+
+
+## Audited bounded additions (later than this historical inventory)
+The original ACTIVE/CONNECT rows above describe older entrypoints and are not
+an exhaustive acceptance matrix. The corrected development branch now has:
+- An owner-only portable AES-GCM archive with review-safe restore; model files
+  are excluded and cloud consent is deliberately reset.
+- Opt-in **on-device** Android 13+ foreground voice sessions up to 10 minutes;
+  not a guaranteed continuous wake word or cloud STT fallback.
+- Encrypted source-scoped deduplication for background notification and mic
+  retries, without collapsing intentional owner chat.
+See STATUS.md and TESTING.md. M11 real-phone acceptance and Phase 2 remain open.
