@@ -42,7 +42,7 @@ class ShivAccessibilityReader : AccessibilityService() {
                 Regex("\\d{4,}").containsMatchIn(candidate)) return
             val allowed = PrivacyPolicy.safeExtractedFact(source, candidate, exclusions) ?: return
             val fact = SignalFacts.extract(allowed) ?: return
-            if (fact.confidence < 0.75) return
+            if (fact.confidence < 0.5) return
             val queue = ShivSignalQueue(vault)
             if (queue.enqueue(source, fact.summary, exclusions) != null) {
                 vault.put("screen_armed_until", "0")
