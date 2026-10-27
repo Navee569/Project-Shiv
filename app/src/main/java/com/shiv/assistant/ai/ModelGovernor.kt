@@ -17,7 +17,7 @@ data class ModelLease(val allowed:Boolean,val reason:String,val freeRamBytes:Lon
 
 /** Conservative measured gating, not a fabricated S23 performance benchmark. */
 class ModelGovernor(private val context:Context) {
-    fun lease(role:String):ModelLease {
+    fun lease(role:String,alreadyLoaded:Boolean=false):ModelLease {
         val manager=context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val info=ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
         val power=context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -35,13 +35,15 @@ class ModelGovernor(private val context:Context) {
             ledger.usedMillisecondsToday(),ledger.budgetSeconds()),energyPercent?:0)
         val mode=PowerPolicy.mode(PowerContext(pct,charging,hot,usedPercent))
         val big=role=="conversation"
-        val minimum=if(big) 2_500_000_000L else 450_000_000L
-        val permitted=remaining>0 && energyPercent!=100 && info.availMem>minimum && !hot &&
+        // Loading needs headroom for weights; an already-resident model has paid that cost.
+        val minimum=if(big && !alreadyLoaded) 2_500_000_000L else 450_000_000L
+        val permitted=remaining>0 && energyPercent!=100 && info.availMem>minimum && !info.lowMemory && !hot &&
             (!big || pct>=25 || charging)
         return ModelLease(permitted,when{
             remaining==0->"Daily owner-selected local compute limit exhausted"
             energyPercent==100->"Whole-device energy during Shiv windows reached the owner cap; other activity may contribute"
             hot->"Device too hot; heavy model paused"
+            info.lowMemory->"Device reports low memory; local model paused"
             info.availMem<=minimum->"Not enough free RAM for requested model"
             big && pct<25 && !charging->"Battery too low for E2B; try router model"
             else->"Allowed by memory, battery and thermal gate"

@@ -345,8 +345,8 @@ class ShivBrainHub(private val context: Context) {
         override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = lifecycle.withLock {
             val routingStarted=SystemClock.elapsedRealtime()
             val governor = ModelGovernor(context)
-            val heavy = governor.lease("conversation")
-            val small = governor.lease("router")
+            val heavy = governor.lease("conversation",conversation.status().ready)
+            val small = governor.lease("router",router.status().ready)
             if(!router.status().ready && small.allowed &&
                 (!conversation.status().ready || !heavy.allowed)) restoreRouterLocked(small.freeRamBytes)
             val selectedBrain:Brain
