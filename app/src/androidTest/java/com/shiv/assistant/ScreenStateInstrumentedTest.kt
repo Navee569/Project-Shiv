@@ -41,7 +41,8 @@ class ScreenStateInstrumentedTest {
     }
 
     @Test fun everyPrimaryScreenIsReachableWithSelectedTabSemantics() {
-        for(name in listOf("Core","Chat","Automate","Memory","Memories","Models",
+        compose.onNodeWithContentDescription("Open Core screen").assertIsSelected()
+        for(name in listOf("Chat","Automate","Memory","Memories","Models",
             "AI Status","Events","Beliefs","Decisions","Permissions","Settings")) {
             compose.onNodeWithContentDescription("Open $name screen")
                 .performScrollTo().performClick().assertIsSelected()
