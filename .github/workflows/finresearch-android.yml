@@ -62,14 +62,27 @@ jobs:
           echo "Android SDK: ${ANDROID_HOME}"
           ls "${ANDROID_HOME}/platforms" || true
           ls "${ANDROID_HOME}/build-tools" || true
-      - name: Launch APK on emulator and test
+      - name: Install, launch, inspect UI and test on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 33
           arch: x86_64
           profile: pixel_6
+          ram-size: 3072M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: gradle -p finrobot-mobile :app:connectedDebugAndroidTest --no-daemon
+          script: |
+            set -e
+            mkdir -p finrobot-mobile/app/build/reports/androidTests/diagnostics
+            trap 'adb logcat -d -v time > finrobot-mobile/app/build/reports/androidTests/diagnostics/logcat.txt || true' EXIT
+            gradle -p finrobot-mobile :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+            adb install -r finrobot-mobile/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.finresearch.mobile/.MainActivity
+            sleep 4
+            test -n "$(adb shell pidof com.finresearch.mobile)"
+            adb shell uiautomator dump /sdcard/window.xml
+            adb shell cat /sdcard/window.xml | grep -q "FinResearch Mobile"
+            gradle -p finrobot-mobile :app:connectedDebugAndroidTest --no-daemon
       - uses: actions/upload-artifact@v4
         if: always()
         with:
