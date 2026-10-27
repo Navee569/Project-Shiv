@@ -11,6 +11,7 @@ import androidx.work.WorkManager
 import androidx.work.Data
 import com.shiv.assistant.automation.SignalWorker
 import com.shiv.assistant.data.ShivRepository
+import com.shiv.assistant.data.ShivVault
 import kotlinx.coroutines.*
 /**
  * Optional call-ended metadata only. No audio, recordings, contact number or call-log text.
@@ -33,6 +34,7 @@ class PostCallCheckIn:BroadcastReceiver() {
                     val id=ShivRepository(context.applicationContext).incoming(
                         "call-end","Call ended; ask owner whether anything was agreed",7)
                     if(id!=null) {
+                        ShivVault(context.applicationContext).put("pending_post_call_signal",id)
                         SignalWorker.schedule(context.applicationContext)
                         postCheckIn(context)
                     }

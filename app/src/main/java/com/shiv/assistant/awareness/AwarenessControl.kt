@@ -83,7 +83,16 @@ class AwarenessControlReceiver:BroadcastReceiver() {
                 AwarenessControl.show(context)
                 val pending=goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
-                    try { com.shiv.assistant.automation.SignalWorker.recoverPending(context.applicationContext) }
+                    try {
+                        com.shiv.assistant.automation.SignalWorker.recoverPending(context.applicationContext)
+                        com.shiv.assistant.automation.ShivReminders.recoverPending(context.applicationContext)
+                        val enabled=com.shiv.assistant.data.ShivVault(context)
+                            .get("proactive_opt_in")=="yes"
+                        com.shiv.assistant.automation.ShivAgendaNudgeWorker
+                            .updateRegistration(context.applicationContext,enabled)
+                        com.shiv.assistant.automation.ProactiveTriggerWorker
+                            .updateRegistration(context.applicationContext,enabled)
+                    }
                     finally { pending.finish() }
                 }
             }

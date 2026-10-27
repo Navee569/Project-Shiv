@@ -8,6 +8,7 @@ on:
       - 'settings.gradle'
       - 'gradle.properties'
       - 'scripts/**'
+      - 'ci/**'
       - '.github/workflows/shiv-native.yml'
   pull_request:
     branches: [main]
@@ -24,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Static safety checks
-        run: python3 scripts/verify_shiv.py
+        run: |
+          python3 scripts/verify_shiv.py
+          python3 ci/privacy_release_audit.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,15 +48,17 @@ jobs:
         with:
           gradle-version: '9.7.0'
       - name: Build native Shiv APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon
+        run: gradle :app:assembleCloudDebug :app:assemblePrivateDebug --stacktrace --no-daemon
+      - name: Inspect merged APK permissions and native libraries
+        run: python3 ci/privacy_release_audit.py --private-apk app/build/outputs/apk/private/debug/app-private-debug.apk --cloud-apk app/build/outputs/apk/cloud/debug/app-cloud-debug.apk --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt"
       - uses: actions/upload-artifact@v4
         with:
           name: shiv-native-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/*/debug/*.apk
           if-no-files-found: error
           retention-days: 14
       - name: Test and lint native Shiv
-        run: gradle :app:testDebugUnitTest :app:lintDebug --stacktrace --no-daemon
+        run: gradle :app:testCloudDebugUnitTest :app:testPrivateDebugUnitTest :app:lintCloudDebug :app:lintPrivateDebug --stacktrace --no-daemon
       - uses: actions/upload-artifact@v4
         if: always()
         with:

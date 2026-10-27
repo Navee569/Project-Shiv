@@ -7,10 +7,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Durable encrypted queue, restarted by WorkManager after process death. */
 class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params) {
-    override suspend fun doWork():Result=withContext(Dispatchers.IO) {
+    override suspend fun doWork():Result=processingMutex.withLock { withContext(Dispatchers.IO) {
         val dao=EncryptedDatabase.open(applicationContext).dao()
         dao.recoverInFlight()
         var examined=0
@@ -18,9 +20,23 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
             val signal=dao.nextSignal()?:break
             if(dao.claim(signal.id)==0)continue
             try {
-                val decision=if(signal.source=="calendar-change") {
+                val now=System.currentTimeMillis()
+                val decision=if(!SignalFreshnessPolicy.isFresh(signal.source,signal.receivedAt,now)) {
+                    DecisionTraceRecord(signal.id,signal.id,"STALE",
+                        "Signal expired before review; no action taken","FREE")
+                } else if(signal.source=="calendar-change") {
                     DecisionTraceRecord(signal.id,signal.id,"OBSERVED",
                         "Phone calendar changed; review the Events screen if needed","FREE")
+                } else if(signal.source=="call-end") {
+                    DecisionTraceRecord(signal.id,signal.id,"OBSERVED",
+                        "Post-call check-in offered; only the owner can provide details.","FREE")
+                } else if(signal.source in setOf("app_open","long_idle_unlock","task_deadline")) {
+                    val reason=when(signal.source) {
+                        "app_open"->"Owner opened Shiv; no automatic action"
+                        "long_idle_unlock"->"Long idle unlock observed with owner-granted usage access"
+                        else->"Pending task deadline observed; review Tasks"
+                    }
+                    DecisionTraceRecord(signal.id,signal.id,"OBSERVED",reason,"FREE")
                 } else when(val choice=CommitmentParser.analyze(signal.fact,ZoneId.systemDefault())) {
                     is CommitmentProposal.Ready -> DecisionTraceRecord(signal.id,signal.id,"ASK",
                         "Possible event: "+choice.title+" at "+choice.whenAt+"; owner must approve","ASK_FIRST")
@@ -28,7 +44,7 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
                     CommitmentProposal.None -> DecisionTraceRecord(signal.id,signal.id,"STAY_QUIET","No supported commitment","FREE")
                 }
                 // Never write an actual calendar event or notify before owner approval.
-                dao.finishSignal(signal.id,decision,System.currentTimeMillis())
+                dao.finishSignal(signal.id,decision,now)
                 examined++
             } catch(cancelled:CancellationException) {
                 throw cancelled
@@ -42,12 +58,15 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
         // rescheduling, high-volume input would stay pending indefinitely.
         if(dao.pendingCount()>0) schedule(applicationContext)
         Result.success()
-    }
+    } }
     companion object {
+        private val processingMutex=Mutex()
         suspend fun recoverPending(context:Context) {
-            val dao=EncryptedDatabase.open(context).dao()
-            dao.recoverInFlight()
-            if(dao.pendingCount()>0)schedule(context)
+            processingMutex.withLock {
+                val dao=EncryptedDatabase.open(context).dao()
+                dao.recoverInFlight()
+                if(dao.pendingCount()>0)schedule(context)
+            }
         }
         fun schedule(context:Context) {
             WorkManager.getInstance(context).enqueueUniqueWork(

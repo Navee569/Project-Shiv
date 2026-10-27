@@ -44,9 +44,11 @@ the in-app STOP control also works.
 
 - Requires Android 13+ and an available on-device recognizer and language pack.
   It does not silently switch to cloud speech.
-- Lasts **up to 10 minutes**, stops below 25% battery, on severe thermal status,
-  or after repeated recognition failures. It may terminate sooner if Samsung
-  restricts the recognizer.
+- The default session lasts **up to 10 minutes**. The owner can explicitly
+  select continuous foreground listening until STOP. Both modes stop below
+  25% battery, on severe thermal status, or after repeated recognition failures.
+  Silent recognition rounds back off to reduce duty cycle. Android may still
+  terminate the recognizer or service.
 - Selected language is en-IN / kn-IN / te-IN. Availability and recognition
   accuracy of Kannada/Telugu depend on installed on-device language data;
   no speech pack is bundled or represented as verified.
@@ -54,9 +56,9 @@ the in-app STOP control also works.
   the encrypted ASK_FIRST signal queue; sensitive OTP and long digit strings
   are rejected. No messages, calls, payments or calendar events are confirmed
   autonomously.
-- It does not record telephone call audio, bypass Android background-launch
-  restrictions, provide speaker identification or claim a continuous,
-  always-listening battery-efficient wake-word implementation.
+- The optional phrase gate accepts "Shiv" in a command or a command within ten
+  seconds after "Shiv" alone. It does not verify speaker identity. The app does
+  not record telephone call audio or bypass Android background-launch rules.
 
 ## Tests
 

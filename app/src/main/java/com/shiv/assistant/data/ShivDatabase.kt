@@ -107,6 +107,12 @@ interface ShivDao {
     }
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putEvent(value: EventRecord)
     @Query("DELETE FROM events WHERE id=:id") suspend fun deleteEvent(id:String)
+    @Transaction suspend fun undoLocalEvent(id:String):Boolean {
+        if(event(id)==null)return false
+        deleteEvent(id)
+        reminderStatus("event-"+id,"CANCELLED")
+        return true
+    }
     @Query("SELECT * FROM events WHERE startAt BETWEEN :start AND :end ORDER BY startAt")
     suspend fun events(start: Long, end: Long): List<EventRecord>
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putTask(value: TaskRecord)
@@ -114,7 +120,13 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putReminder(value: ReminderRecord)
     @Query("SELECT * FROM reminders WHERE id=:id") suspend fun reminder(id: String): ReminderRecord?
     @Query("SELECT id FROM reminders") suspend fun reminderIds(): List<String>
+    @Query("SELECT * FROM reminders WHERE status IN ('SCHEDULED','DEFERRED')") suspend fun pendingReminders(): List<ReminderRecord>
     @Query("UPDATE reminders SET status=:status WHERE id=:id") suspend fun reminderStatus(id:String,status:String)
+    @Query("UPDATE reminders SET status='DELIVERING' WHERE id=:id AND status IN ('SCHEDULED','DEFERRED')")
+    suspend fun claimReminder(id:String):Int
+    @Query("UPDATE reminders SET status='SCHEDULED' WHERE status='DELIVERING'")
+    suspend fun recoverDeliveringReminders()
+    @Query("UPDATE reminders SET status='DEFERRED', dueAt=:dueAt WHERE id=:id") suspend fun deferReminder(id:String,dueAt:Long)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putRule(value: RuleRecord)
     @Query("SELECT * FROM saved_rules WHERE enabled=1") suspend fun rules(): List<RuleRecord>
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putChat(value: ChatRecord)
@@ -122,6 +134,10 @@ interface ShivDao {
     @Query("DELETE FROM chat_history") suspend fun clearChats()
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun logAction(value: ActionLogRecord)
     @Query("SELECT * FROM action_log ORDER BY createdAt DESC LIMIT :limit") suspend fun actions(limit: Int): List<ActionLogRecord>
+    @Query("UPDATE action_log SET undo='NOT_AVAILABLE' WHERE undo IS NULL OR undo=''")
+    suspend fun normalizeActionUndo()
+    @Query("UPDATE action_log SET undo='USED' WHERE id=:id AND undo=:token")
+    suspend fun consumeActionUndo(id:String,token:String):Int
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putTier(value: PermissionTierRecord)
     @Query("SELECT * FROM permission_tiers WHERE actionType=:type") suspend fun tier(type: String): PermissionTierRecord?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putModel(value: ModelRecord)
@@ -137,7 +153,7 @@ interface ShivDao {
         if(recentMatchingSignal(value.source,value.fact,since)!=null) {
             logAction(ActionLogRecord(java.util.UUID.randomUUID().toString(),
                 "SIGNAL_MERGED","[REDACTED]","FREE","LOW_PRIORITY_POLICY",
-                false,"STALE_DUPLICATE_MERGED",null))
+                false,"STALE_DUPLICATE_MERGED","NOT_AVAILABLE"))
             return false
         }
         enqueue(value)
@@ -146,6 +162,8 @@ interface ShivDao {
     @Insert(onConflict=OnConflictStrategy.ABORT) suspend fun enqueue(value: SignalRecord)
     @Query("SELECT * FROM signals WHERE status IN ('PENDING','RETRY') AND attempts < 8 ORDER BY priority DESC, receivedAt ASC LIMIT 1")
     suspend fun nextSignal(): SignalRecord?
+    @Query("SELECT * FROM signals WHERE receivedAt >= :since AND status='PROCESSED' ORDER BY receivedAt DESC LIMIT :limit")
+    suspend fun recentProcessedSignals(since:Long,limit:Int):List<SignalRecord>
     @Query("UPDATE signals SET status='PROCESSING', attempts=attempts+1 WHERE id=:id AND status IN ('PENDING','RETRY')")
     suspend fun claim(id: String): Int
     @Query("UPDATE signals SET status='PROCESSED', processedAt=:now, lastError=NULL WHERE id=:id")

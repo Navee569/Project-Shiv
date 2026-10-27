@@ -19,6 +19,8 @@ import android.Manifest
 import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
+import com.shiv.assistant.domain.ActionKind
+import com.shiv.assistant.domain.ActionAuthorization
 import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.domain.AppSourceMode
 import com.shiv.assistant.ai.LocalBackend
@@ -37,6 +39,9 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     }
     var micWakePhrase by remember { mutableStateOf(false) }
     var micSleepOverride by remember { mutableStateOf(false) }
+    var micContinuous by remember { mutableStateOf(false) }
+    var editingBelief by remember { mutableStateOf<com.shiv.assistant.data.BeliefRecord?>(null) }
+    var beliefCorrection by remember { mutableStateOf("") }
     val screenContext=LocalContext.current
     var calendarMonitorEnabled by remember {
         mutableStateOf(com.shiv.assistant.data.ShivVault(screenContext).get(
@@ -67,7 +72,8 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     }
     val permissionMicSession=rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()) { granted ->
-        if(granted)controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
+        if(granted)controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,
+            micSleepOverride,micContinuous)
         else controller.reportIssue("Microphone permission denied; offline session was not started")
     }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -220,6 +226,16 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Text("The budget is measured LiteRT wall time, not battery mAh; " +
                     "native cancellation may be delayed. Owner-requested reminders do not consume it.",
                     color=Color.LightGray,fontSize=11.sp)
+                Text("DAILY WHOLE-DEVICE ENERGY WINDOW CAP",color=accent)
+                Text(controller.localEnergyReport(),color=Color.LightGray,fontSize=11.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(100,200,500,1000).forEach { value ->
+                        FilterChip(selected=controller.localEnergyBudgetMWh==value,
+                            onClick={controller.setLocalEnergyBudget(value)},
+                            label={Text("$value mWh")})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
                 Text("Pending encrypted signals: "+controller.notificationCount)
                 Text("Failed signals retained for owner review: "+controller.failedSignalCount,
                     color=Color.LightGray,fontSize=11.sp)
@@ -264,7 +280,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
             }
             "Beliefs" -> {
-                Text("What Shiv thinks he knows about you. These are hypotheses, not confirmed facts. You can remove any entry.",
+                Text("These are hypotheses, not confirmed facts. Correct one into an owner fact or delete it permanently.",
                     color=Color.LightGray)
                 controller.beliefs.forEach { belief ->
                     Surface(shape=MaterialTheme.shapes.medium) {
@@ -272,7 +288,14 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                             Text(belief.hypothesis)
                             Text("Confidence "+(belief.confidence*100).toInt()+"% • "+belief.evidence,
                                 style=MaterialTheme.typography.labelSmall)
-                            TextButton(onClick={scope.launch{controller.removeBelief(belief.id)}}) { Text("DELETE BELIEF") }
+                            Row {
+                                TextButton(onClick={editingBelief=belief;beliefCorrection=belief.hypothesis}) {
+                                    Text("CORRECT")
+                                }
+                                TextButton(onClick={scope.launch{controller.removeBelief(belief.id)}}) {
+                                    Text("DELETE BELIEF")
+                                }
+                            }
                         }
                     }
                 }
@@ -441,25 +464,33 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Text("USER-STARTED OFFLINE MIC SESSION",color=accent)
                 Text("On-device recognition only; no cloud STT or autonomous wake-word listener. " +
                     "Android shows a persistent microphone notification with STOP. " +
-                    "The session ends within 10 minutes or earlier if the device gets hot, " +
+                    "The default session ends within 10 minutes; continuous mode stays visible until STOP. " +
+                    "Either mode ends if the device gets hot, " +
                     "battery falls below 25%, or offline recognition is unavailable. " +
                     "Only non-sensitive recognized commitments go to Shiv's encrypted ASK_FIRST queue.",
                     color=Color.LightGray,fontSize=11.sp)
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=micWakePhrase,onCheckedChange={micWakePhrase=it})
-                    Text("Require 'Shiv' before each recognized command",color=Color.LightGray,fontSize=11.sp)
+                    Text("Require 'Shiv' with a command, or within 10 seconds before it",
+                        color=Color.LightGray,fontSize=11.sp)
                 }
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=micSleepOverride,onCheckedChange={micSleepOverride=it})
                     Text("Allow this session during 10 PM–9 AM",color=Color.LightGray,fontSize=11.sp)
                 }
-                Text("Proximity plus darkness pauses recognition while pocketed. The phrase check is not speaker identification.",
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=micContinuous,onCheckedChange={micContinuous=it})
+                    Text("Keep visible offline listening active until STOP or a safety gate ends it",
+                        color=Color.LightGray,fontSize=11.sp)
+                }
+                Text("Proximity plus darkness pauses recognition while pocketed. Speaker identity is disabled; the phrase is not authentication.",
                     color=Color.LightGray,fontSize=11.sp)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Button(onClick={
                         if(screenContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==
                             android.content.pm.PackageManager.PERMISSION_GRANTED)
-                            controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
+                            controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,
+                                micSleepOverride,micContinuous)
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
                     OutlinedButton(onClick=controller::stopOfflineMicSession) { Text("STOP MIC") }
@@ -468,6 +499,8 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 Text("Private, approximate hourly checks of events you approved. " +
                     "Quiet hours 10 PM–9 AM; maximum three optional notices per day, " +
                     "reduced if you repeatedly dismiss/correct them. " +
+                    "App opens and task deadlines enter the encrypted signal queue. " +
+                    "With a separate Usage Access grant, a long-idle unlock time can enter that queue. " +
                     "No background AI, microphone, cloud call or guessed commitments.",
                     color=Color.LightGray,fontSize=11.sp)
                 Row(verticalAlignment=Alignment.CenterVertically) {
@@ -503,6 +536,36 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
                 Text("Only explicit local reminders may use act-then-tell. Payments and messages still require review.",
                     color=Color.LightGray,fontSize=11.sp)
+                Text("ACTION AUTHORITY",color=accent)
+                Text("Choose a tier for each action. Messages and payments always require review. External app actions only open a handoff; the other app completes them.",
+                    color=Color.LightGray,fontSize=11.sp)
+                ActionKind.entries.filter { it!=ActionKind.UNKNOWN }.forEach { kind ->
+                    Text(kind.name.replace('_',' '),color=Color.White,fontSize=11.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        ActionAuthorization.editableTiers(kind).forEach { tier ->
+                            FilterChip(selected=owner.actionTier(kind)==tier,
+                                onClick={scope.launch { owner.changeActionTier(kind,tier) }},
+                                label={Text(tier.name.replace('_',' '),fontSize=10.sp)})
+                            Spacer(Modifier.width(5.dp))
+                        }
+                    }
+                }
+                Text("RECENT ACTION RESULTS",color=accent)
+                TextButton(onClick={scope.launch{owner.refreshActionHistory()}}) {
+                    Text("REFRESH ACTION LOG")
+                }
+                owner.actionHistory.take(30).forEach { entry ->
+                    Text(entry.type+" • "+entry.tier+" • "+entry.permission+" • "+
+                        entry.result+" • Undo: "+(entry.undo?:"NOT_AVAILABLE"),
+                        color=Color.LightGray,fontSize=10.sp)
+                    if(entry.result !in setOf("UNDONE","CANCELLED") &&
+                        (entry.undo?.startsWith("REMINDER:")==true ||
+                            entry.undo?.startsWith("MEMORY:")==true ||
+                            entry.undo?.startsWith("EVENT:")==true))
+                        TextButton(onClick={scope.launch{owner.undoAction(entry)}}) {
+                            Text("UNDO THIS LOCAL ACTION")
+                        }
+                }
                 OutlinedButton(onClick={scope.launch{owner.undoLatestReminder()}}) {
                     Text("UNDO LATEST PENDING REMINDER")
                 }
@@ -673,5 +736,18 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             }) {Text("SAVE CORRECTION")}
         },
         dismissButton={TextButton(onClick={editing=null}){Text("CANCEL")}}
+    )
+    if(editingBelief!=null) AlertDialog(
+        onDismissRequest={editingBelief=null},
+        title={Text("Correct learned belief")},
+        text={OutlinedTextField(value=beliefCorrection,
+            onValueChange={beliefCorrection=it.take(8192)},minLines=2,
+            label={Text("Your corrected fact")})},
+        confirmButton={Button(enabled=beliefCorrection.isNotBlank(),onClick={
+            val belief=editingBelief
+            editingBelief=null
+            if(belief!=null)scope.launch { controller.correctBelief(belief.id,beliefCorrection) }
+        }) { Text("SAVE OWNER FACT") }},
+        dismissButton={TextButton(onClick={editingBelief=null}) { Text("CANCEL") }}
     )
 }

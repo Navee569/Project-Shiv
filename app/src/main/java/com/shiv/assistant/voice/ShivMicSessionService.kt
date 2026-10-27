@@ -29,6 +29,7 @@ import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import com.shiv.assistant.automation.SignalWorker
 import com.shiv.assistant.data.ShivRepository
+import com.shiv.assistant.data.DailyEnergyLedger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,11 +37,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Owner-started, bounded 10-minute OFFLINE mic session.
+ * Owner-started OFFLINE mic session. Default ten-minute or explicitly
+ * continuous-until-STOP mode, with battery, thermal, sleep and pocket gates.
  *
  * User must be foreground when starting it and Android displays an ongoing
- * microphone notification with STOP. No wake word, call recording, cloud STT
- * fallback, secret screen capture or autonomous actions. Recognized safe
+ * microphone notification with STOP. No speaker identity, call recording,
+ * cloud STT fallback, secret screen capture or autonomous actions. Recognized safe
  * utterances enter the same encrypted ASK_FIRST decision path as typed input.
  *
  * Some Android/One UI speech engines cannot restart recognition indefinitely.
@@ -53,12 +55,15 @@ class ShivMicSessionService : Service() {
         const val EXTRA_LOCALE = "language"
         const val EXTRA_REQUIRE_WAKE = "require_wake_phrase"
         const val EXTRA_ALLOW_SLEEP = "allow_sleep_hours"
+        const val EXTRA_CONTINUOUS = "continuous_until_stop"
         private const val CHANNEL = "shiv_local_mic"
         private const val NOTIFICATION_ID = 5160
     }
     private val main=Handler(Looper.getMainLooper())
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private var startedAt=0L
+    private var lastEnergyAt=0L
+    private var lastEnergyNwh:Long?=null
     private var errors=0
     private var active=false
     private var locale="en-IN"
@@ -66,6 +71,12 @@ class ShivMicSessionService : Service() {
     private var listening=false
     private var requireWake=false
     private var allowSleep=false
+    private var continuous=false
+    private var silentRounds=0
+    private var heardSpeech=false
+    private var nextAttemptAt=0L
+    private var wakeArmedUntil=0L
+    private val activityGate=RmsActivityGate()
     private var proximityCm:Float?=null
     private var proximityMaxCm:Float?=null
     private var lux:Float?=null
@@ -83,6 +94,7 @@ class ShivMicSessionService : Service() {
     private val monitor = object : Runnable {
         override fun run() {
             if(!active)return
+            recordEnergyWindow()
             if(!allowed()) { stopSession();return }
             updateCaptureGate()
             main.postDelayed(this,10_000L)
@@ -111,7 +123,10 @@ class ShivMicSessionService : Service() {
         locale=requested
         requireWake=intent.getBooleanExtra(EXTRA_REQUIRE_WAKE,false)
         allowSleep=intent.getBooleanExtra(EXTRA_ALLOW_SLEEP,false)
+        continuous=intent.getBooleanExtra(EXTRA_CONTINUOUS,false)
         startedAt=SystemClock.elapsedRealtime()
+        lastEnergyAt=startedAt
+        lastEnergyNwh=energyCounter()
         active=true
         errors=0
         val manager=getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -123,7 +138,8 @@ class ShivMicSessionService : Service() {
         val notification:Notification=NotificationCompat.Builder(this,CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Shiv • Local microphone active")
-            .setContentText("Offline session; pauses in pocket/sleep hours, stops within 10 minutes.")
+            .setContentText(if(continuous)"Owner-started offline listening until STOP; pocket/sleep/power gates apply."
+                else "Offline session; pauses in pocket/sleep hours, stops within 10 minutes.")
             .setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel,"STOP",stopAction)
             .build()
@@ -143,15 +159,24 @@ class ShivMicSessionService : Service() {
             }
             recognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params:Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB:Float) {}
+                override fun onBeginningOfSpeech() { heardSpeech=true;silentRounds=0 }
+                override fun onRmsChanged(rmsdB:Float) {
+                    // A high sound level only adjusts duty cycling; recognized
+                    // final words still pass the independent privacy gate.
+                    if(activityGate.observe(rmsdB)) {
+                        heardSpeech=true
+                        silentRounds=0
+                    }
+                }
                 override fun onBufferReceived(buffer:ByteArray?) {}
                 override fun onEndOfSpeech() {}
                 override fun onError(error:Int) {
                     if(!active)return
                     listening=false
                     if(!captureAllowed())return
-                    errors++
+                    if(error==SpeechRecognizer.ERROR_NO_MATCH ||
+                        error==SpeechRecognizer.ERROR_SPEECH_TIMEOUT) silentRounds++
+                    else errors++
                     if(errors>=MicrophoneSessionPolicy.MAX_ERRORS) stopSession()
                     else scheduleNext()
                 }
@@ -160,9 +185,24 @@ class ShivMicSessionService : Service() {
                     listening=false
                     if(!captureAllowed()) { scheduleNext();return }
                     errors=0
-                    val utterance=MicrophoneSessionPolicy.wakeCommand(
-                        results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            ?.firstOrNull().orEmpty(),requireWake)
+                    val raw=results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull().orEmpty()
+                    val now=SystemClock.elapsedRealtime()
+                    val inline=if(requireWake)MicrophoneSessionPolicy.wakeCommand(raw,true) else null
+                    val utterance=when {
+                        !requireWake -> MicrophoneSessionPolicy.safeUtterance(raw)
+                        MicrophoneSessionPolicy.wakeOnly(raw) -> {
+                            wakeArmedUntil=now+10_000L
+                            null
+                        }
+                        inline!=null -> { wakeArmedUntil=0L;inline }
+                        now<wakeArmedUntil -> {
+                            wakeArmedUntil=0L
+                            MicrophoneSessionPolicy.safeUtterance(raw)
+                        }
+                        else -> null
+                    }
+                    if(utterance!=null || heardSpeech) silentRounds=0 else silentRounds++
                     if(utterance!=null) {
                         scope.launch {
                             // Only owner's explicitly started mic can produce this source.
@@ -193,7 +233,7 @@ class ShivMicSessionService : Service() {
         val thermal=if(Build.VERSION.SDK_INT>=29)manager.currentThermalStatus else 0
         return MicrophoneSessionPolicy.mayContinue(startedAt,SystemClock.elapsedRealtime(),
             percent,thermal,Build.VERSION.SDK_INT>=33 &&
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(this),errors)
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(this),errors,continuous)
     }
     private fun allowed():Boolean=active &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED &&
@@ -214,21 +254,49 @@ class ShivMicSessionService : Service() {
 
     private fun startRecognizing() {
         if(!allowed()) {stopSession();return}
-        if(!captureAllowed() || listening)return
+        if(!captureAllowed() || listening || SystemClock.elapsedRealtime()<nextAttemptAt)return
         val intent=Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE,locale)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false)
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true)
-        try { recognizer?.startListening(intent); listening=true }
+        try {
+            heardSpeech=false
+            activityGate.reset()
+            recognizer?.startListening(intent)
+            listening=true
+        }
         catch (_:Exception) {stopSession()}
     }
     private fun scheduleNext() {
-        main.postDelayed({if(active) startRecognizing()},1500L)
+        val delay=MicrophoneSessionPolicy.retryDelayMs(silentRounds)
+        nextAttemptAt=SystemClock.elapsedRealtime()+delay
+        main.postDelayed({if(active) startRecognizing()},delay)
+    }
+    private fun energyCounter():Long? {
+        val manager=getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        return manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER)
+            .takeIf { it>0L }
+    }
+    private fun recordEnergyWindow() {
+        val now=SystemClock.elapsedRealtime()
+        if(lastEnergyAt==0L || now<=lastEnergyAt)return
+        val current=energyCounter()
+        val previous=lastEnergyNwh
+        val drop=if(previous!=null && current!=null && current<=previous)
+            previous-current else null
+        val elapsed=now-lastEnergyAt
+        lastEnergyAt=now
+        lastEnergyNwh=current
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {DailyEnergyLedger(applicationContext).recordMicWindow(elapsed,drop)}
+        }
     }
     private fun stopSession() {
+        if(active)recordEnergyWindow()
         active=false
+        wakeArmedUntil=0L
         listening=false
         main.removeCallbacksAndMessages(null)
         sensors?.unregisterListener(sensorListener)
@@ -240,6 +308,7 @@ class ShivMicSessionService : Service() {
         stopSelf()
     }
     override fun onDestroy() {
+        if(active)recordEnergyWindow()
         active=false
         listening=false
         main.removeCallbacksAndMessages(null)

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.shiv.assistant.domain.AssistantConfiguration
 import com.shiv.assistant.domain.AuthorityTier
+import com.shiv.assistant.domain.ActionKind
+import com.shiv.assistant.domain.ActionAuthorization
 import com.shiv.assistant.domain.IntelligenceMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -92,9 +94,25 @@ class OwnerStateRepository(context:Context) {
     }
     suspend fun setReminderTier(tier:AuthorityTier) = dao.putTier(
         PermissionTierRecord("REMINDER",tier.name,System.currentTimeMillis()))
+    fun actionTier(kind:ActionKind):AuthorityTier {
+        val saved=runBlocking(Dispatchers.IO) { dao.tier(kind.name)?.tier }
+        val parsed=runCatching { AuthorityTier.valueOf(saved?:"") }.getOrNull()
+        return parsed?.takeIf { it in ActionAuthorization.editableTiers(kind) }
+            ?:if(kind==ActionKind.NOTES)AuthorityTier.FREE else AuthorityTier.ASK_FIRST
+    }
+    suspend fun setActionTier(kind:ActionKind,tier:AuthorityTier) {
+        require(kind!=ActionKind.UNKNOWN && tier in ActionAuthorization.editableTiers(kind))
+        dao.putTier(PermissionTierRecord(kind.name,tier.name,System.currentTimeMillis()))
+    }
     fun lastReminderId():String=vault.get("last_reminder_id").orEmpty()
     fun setLastReminderId(id:String)=vault.put("last_reminder_id",id)
     fun logAction(action:ActionLogRecord) = runBlocking(Dispatchers.IO) { dao.logAction(action) }
+    suspend fun actionHistory(limit:Int=50):List<ActionLogRecord> {
+        dao.normalizeActionUndo()
+        return dao.actions(limit)
+    }
+    suspend fun consumeActionUndo(id:String,token:String):Boolean =
+        dao.consumeActionUndo(id,token)==1
     suspend fun events(begin:Long,end:Long):List<EventRecord> = dao.events(begin,end)
     suspend fun saveQuietRule(hour:Int,minute:Int) = dao.putRule(RuleRecord(
         "quiet-reminders-before","Ignore reminders before "+hour+":"+minute.toString().padStart(2,'0'),

@@ -10,6 +10,8 @@ import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -52,15 +54,16 @@ class ShivAgendaNudgeWorker(context:Context, params:WorkerParameters):
                     .digest(eventId.toByteArray(Charsets.UTF_8))
                 return "agenda:"+digest.take(12).joinToString(""){"%02x".format(it.toInt() and 0xff)}
             }
-            val event=imminent.firstOrNull {
-                AgendaNudgePolicy.decide(AgendaNudge(stableKey(it.id),it.startAt),
-                    now,delivered,count,dailyLimit).deliver
-            }
+            val event=imminent.mapNotNull { item ->
+                val key=ledger.deliveryKey(stableKey(item.id),now) ?: return@mapNotNull null
+                if(AgendaNudgePolicy.decide(AgendaNudge(key,item.startAt),
+                    now,delivered,count,dailyLimit).deliver) item to key else null
+            }.firstOrNull()
             val selectedKey:String
             val title:String
             val text:String
             if(event!=null) {
-                selectedKey=stableKey(event.id)
+                selectedKey=event.second
                 title="Shiv • Upcoming saved event"
                 text="You have an approved event within 90 minutes. Open Shiv to review."
             } else {
@@ -68,8 +71,11 @@ class ShivAgendaNudgeWorker(context:Context, params:WorkerParameters):
                 val kind=when(hour) { in 9..10->"morning";in 18..20->"evening";else->null }
                     ?:return Result.success()
                 val withinNextDay=dao.events(now,now+24*3_600_000L)
+                    .filter { ledger.deliveryKey(stableKey(it.id),now)!=null }
                 if(withinNextDay.isEmpty())return Result.success()
-                selectedKey="brief:"+kind
+                val day=java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate().toString()
+                selectedKey=ledger.deliveryKey("brief:"+day+":"+kind,now) ?: return Result.success()
                 val brief=AgendaNudge(selectedKey,now)
                 if(!AgendaNudgePolicy.decide(brief,now,delivered,count,dailyLimit).deliver)
                     return Result.success()
@@ -96,10 +102,17 @@ class ShivAgendaNudgeWorker(context:Context, params:WorkerParameters):
 
     companion object {
         private const val UNIQUE_NAME="shiv-opt-in-agenda-nudges"
+        fun scheduleSnooze(context:Context) {
+            WorkManager.getInstance(context).enqueueUniqueWork("shiv-agenda-snooze",
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<ShivAgendaNudgeWorker>()
+                    .setInitialDelay(15,TimeUnit.MINUTES).build())
+        }
         fun updateRegistration(context:Context, enabled:Boolean) {
             val manager=WorkManager.getInstance(context)
             if(!enabled) {
                 manager.cancelUniqueWork(UNIQUE_NAME)
+                manager.cancelUniqueWork("shiv-agenda-snooze")
                 return
             }
             manager.enqueueUniquePeriodicWork(UNIQUE_NAME,

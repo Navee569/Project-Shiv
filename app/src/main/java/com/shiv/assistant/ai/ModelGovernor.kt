@@ -9,6 +9,8 @@ import com.shiv.assistant.domain.PowerMode
 import com.shiv.assistant.domain.PowerPolicy
 import com.shiv.assistant.data.ShivVault
 import com.shiv.assistant.data.LocalModelComputeLedger
+import com.shiv.assistant.data.DailyEnergyLedger
+import com.shiv.assistant.domain.EnergyBudgetPolicy
 
 data class ModelLease(val allowed:Boolean,val reason:String,val freeRamBytes:Long,
     val mode:PowerMode,val maxModelSeconds:Int=0)
@@ -26,14 +28,19 @@ class ModelGovernor(private val context:Context) {
         val charging=battery.isCharging
         val ledger=LocalModelComputeLedger(ShivVault(context))
         val remaining=ledger.leaseSeconds(if(role=="conversation")60 else 30)
-        val usedPercent=if(remaining==0)100 else 0
+        val energyLedger=DailyEnergyLedger(context)
+        val energyPercent=EnergyBudgetPolicy.usedPercent(
+            energyLedger.snapshot().upperBoundNwh,energyLedger.budgetMWh())
+        val usedPercent=maxOf(EnergyBudgetPolicy.computePercent(
+            ledger.usedMillisecondsToday(),ledger.budgetSeconds()),energyPercent?:0)
         val mode=PowerPolicy.mode(PowerContext(pct,charging,hot,usedPercent))
         val big=role=="conversation"
         val minimum=if(big) 2_500_000_000L else 450_000_000L
-        val permitted=remaining>0 && info.availMem>minimum && !hot &&
+        val permitted=remaining>0 && energyPercent!=100 && info.availMem>minimum && !hot &&
             (!big || pct>=25 || charging)
         return ModelLease(permitted,when{
             remaining==0->"Daily owner-selected local compute limit exhausted"
+            energyPercent==100->"Whole-device energy during Shiv windows reached the owner cap; other activity may contribute"
             hot->"Device too hot; heavy model paused"
             info.availMem<=minimum->"Not enough free RAM for requested model"
             big && pct<25 && !charging->"Battery too low for E2B; try router model"

@@ -22,12 +22,17 @@ class ShivReminderWorker(context:Context,parameters:WorkerParameters):CoroutineW
         val dao=EncryptedDatabase.open(applicationContext).dao()
         val reminder=dao.reminder(id)?:return@withContext Result.failure()
         if(reminder.status !in setOf("SCHEDULED","DEFERRED"))return@withContext Result.success()
+        val remaining=reminder.dueAt-System.currentTimeMillis()
+        if(remaining>1000L) {
+            ShivReminders.enqueueId(applicationContext,id,(remaining/1000L).coerceAtLeast(1L))
+            return@withContext Result.success()
+        }
         val before=dao.rules().firstOrNull{it.key=="reminders_minute_of_day"}?.value?.toIntOrNull()
         val now=ZonedDateTime.now()
         if(before!=null && (now.hour*60+now.minute)<before && before in 0..1439) {
             val deferUntil=now.toLocalDate().atStartOfDay(now.zone).plusMinutes(before.toLong())
             val seconds=java.time.Duration.between(now,deferUntil).seconds.coerceAtLeast(30L)
-            dao.reminderStatus(id,"DEFERRED")
+            dao.deferReminder(id,deferUntil.toInstant().toEpochMilli())
             ShivReminders.enqueueId(applicationContext,id,seconds)
             return@withContext Result.success()
         }
@@ -39,10 +44,16 @@ class ShivReminderWorker(context:Context,parameters:WorkerParameters):CoroutineW
             dao.reminderStatus(id,"NOTIFICATION_BLOCKED")
             return@withContext Result.success()
         }
-        manager.notify(id.hashCode(),NotificationCompat.Builder(applicationContext,"shiv_reminders")
-            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("Shiv reminder")
-            .setContentText(reminder.label.take(240)).setAutoCancel(true).build())
-        dao.reminderStatus(id,"SHOWN")
+        if(dao.claimReminder(id)==0)return@withContext Result.success()
+        try {
+            manager.notify(id.hashCode(),NotificationCompat.Builder(applicationContext,"shiv_reminders")
+                .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("Shiv reminder")
+                .setContentText(reminder.label.take(240)).setAutoCancel(true).build())
+            dao.reminderStatus(id,"SHOWN")
+        } catch (_:Exception) {
+            dao.reminderStatus(id,"SCHEDULED")
+            return@withContext Result.retry()
+        }
         Result.success()
     }
 }
@@ -65,6 +76,15 @@ object ShivReminders {
             .addTag("shiv-reminder-"+id)
             .setInitialDelay(delaySeconds,TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueue(task)
+    }
+    /** Recreates opaque scheduled work after a DB write or reboot interrupted enqueue. */
+    suspend fun recoverPending(context:Context) = withContext(Dispatchers.IO) {
+        val dao=EncryptedDatabase.open(context).dao()
+        dao.recoverDeliveringReminders()
+        dao.pendingReminders().forEach { reminder ->
+            val seconds=((reminder.dueAt-System.currentTimeMillis())/1000L).coerceAtLeast(1L)
+            enqueueId(context,reminder.id,seconds)
+        }
     }
     fun scheduleApprovedEvent(context:Context,reminderId:String,dueAtMillis:Long) {
         val delay=((dueAtMillis-System.currentTimeMillis())/1000L).coerceAtLeast(1L)

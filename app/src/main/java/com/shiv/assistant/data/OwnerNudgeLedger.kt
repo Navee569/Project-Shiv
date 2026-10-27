@@ -16,6 +16,15 @@ class OwnerNudgeLedger(private val vault: ShivVault) {
     private val deliveryKey="proactive_delivered_v1"
     private val feedbackKey="proactive_feedback_v1"
 
+    /** One optional repeat after a snooze; acted, dismissed and corrected stay suppressed. */
+    fun deliveryKey(base:String,now:Long=System.currentTimeMillis()):String? {
+        val raw=JSONArray(vault.get(feedbackKey) ?: "[]")
+        val row=(0 until raw.length()).mapNotNull { raw.optJSONObject(it) }
+            .lastOrNull { it.optString("key")==base }
+        return AgendaNudgePolicy.deliveryKey(base,row?.optString("reaction"),
+            row?.optLong("at"),now)
+    }
+
     @Synchronized
     fun deliveredToday(now:Long=System.currentTimeMillis()): Pair<Set<String>,Int> {
         val day=java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault())
@@ -41,7 +50,7 @@ class OwnerNudgeLedger(private val vault: ShivVault) {
     }
     @Synchronized
     fun react(reaction: OwnerNudgeReaction) {
-        val key=vault.get("proactive_last_key") ?: return
+        val key=vault.get("proactive_last_key")?.removeSuffix(":snooze") ?: return
         require(key.matches(Regex("[a-z0-9:_-]{1,100}")))
         val arr=JSONArray(vault.get(feedbackKey) ?: "[]")
         val kept=JSONArray()

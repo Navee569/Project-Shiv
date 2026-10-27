@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import com.shiv.assistant.domain.*
+import com.shiv.assistant.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -44,6 +45,8 @@ class ShivIntelligence(private val context: Context, val localBrain: ShivBrainHu
                 "No on-device AI model loaded. Import your router or conversation model in Model Manager. Supported deterministic commands still work offline."
             }
         }
+        if(!BuildConfig.NETWORK_ALLOWED)
+            return "This private build has no internet permission. Use a local model or local commands."
         if (config.mode == IntelligenceMode.HYBRID && !CloudSafety.maySend(config)) {
             return try { localBrain.infer(message) }
             catch (_: Exception) { "No local model loaded and cloud transmission is disabled." }
@@ -59,6 +62,7 @@ class ShivIntelligence(private val context: Context, val localBrain: ShivBrainHu
     }
     private suspend fun completeCloud(message: String, settings: AssistantConfiguration, apiKey: String): String =
         withContext(Dispatchers.IO) {
+            require(BuildConfig.NETWORK_ALLOWED) { "Private build has no network access" }
             require(CloudSafety.endpointAllowed(settings.endpoint)) { "Only HTTPS or explicit loopback endpoints are accepted" }
             val endpoint = URL(settings.endpoint)
             val conn = endpoint.openConnection() as HttpURLConnection
@@ -84,6 +88,7 @@ class ShivIntelligence(private val context: Context, val localBrain: ShivBrainHu
     suspend fun describeImage(
         uri: Uri, config: AssistantConfiguration, key: String
     ): String = withContext(Dispatchers.IO) {
+        require(BuildConfig.NETWORK_ALLOWED) { "Private build has no network access" }
         require(CloudSafety.maySend(config)) { "Enable cloud transmission to analyze selected images" }
         val type = context.contentResolver.getType(uri) ?: "image/jpeg"
         require(type in setOf("image/jpeg","image/png","image/webp")) { "Unsupported image format" }

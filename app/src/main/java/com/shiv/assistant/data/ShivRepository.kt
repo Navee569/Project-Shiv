@@ -31,6 +31,8 @@ class ShivRepository(private val context: Context) {
             // Only explicitly safe, low-priority background facts may merge.
             val window=when {
                 normalized!=null -> 10 * 60_000L
+                source=="app_open" -> 10*60_000L
+                source in setOf("long_idle_unlock","task_deadline") -> 24*60*60_000L
                 else -> 0L
             }
             val result=if(window==0L) {
@@ -43,10 +45,13 @@ class ShivRepository(private val context: Context) {
             if(result!=null) SignalWorker.schedule(context.applicationContext)
             result
         }
-    suspend fun contextSnapshot(now: Long = System.currentTimeMillis()): ContextSnapshot =
+    suspend fun contextSnapshot(now: Long = System.currentTimeMillis(),request:String = ""): ContextSnapshot =
         ContextSnapshot(Instant.ofEpochMilli(now).toString(),
-            dao.events(now,now+48*60*60*1000L),dao.recentMemories(now,12),
-            dao.rules(),dao.recentChats(8),dao.actions(10))
+            dao.events(now,now+48*60*60*1000L),
+            MemoryRetrieval.rank(dao.recentMemories(now,250),request,now).take(12),
+            dao.rules(),dao.recentChats(8),dao.actions(10),
+            dao.traces(20).filter { it.decision in setOf("ASK","APPROVED","DECLINED","UNDONE") }
+                .take(8))
     suspend fun remember(text: String,category: String = "FACT",source: String = "owner"): MemoryRecord {
         require(text.isNotBlank())
         val compact=text.trim().take(8192)
@@ -103,12 +108,8 @@ class ShivRepository(private val context: Context) {
         dao.putVault(VaultEntry("notes",revised.toString()))
     }
     suspend fun search(query: String): List<MemoryRecord> {
-        val words=query.lowercase().split(Regex("\\W+")).filter{it.length>=3}.take(6)
-        return dao.recentMemories(System.currentTimeMillis(),100)
-            .map { item -> item to (words.count{item.text.lowercase().contains(it)}*4.0 +
-                item.confidence*2.0 + if(item.explicit) 3.0 else 0.0) }
-            .filter{words.isEmpty()||it.second>=4}
-            .sortedByDescending{it.second}.take(12).map{it.first}
+        val now=System.currentTimeMillis()
+        return MemoryRetrieval.rank(dao.recentMemories(now,250),query,now).take(12)
     }
     suspend fun purgeExpired(now:Long=System.currentTimeMillis()):Int =
         database.withTransaction { dao.purgeExpiredMemories(now) }
@@ -121,11 +122,34 @@ class ShivRepository(private val context: Context) {
     }
     suspend fun upcoming(start:Long,end:Long)=dao.events(start,end)
     suspend fun beliefs()=dao.beliefs()
-    suspend fun forgetBelief(id:String)=dao.deleteBelief(id)
+    private suspend fun suppressBelief(id:String) {
+        require(id.startsWith("pattern-"))
+        val current=JSONArray(dao.vault("suppressed_pattern_ids")?.value?:"[]")
+        val ids=(0 until current.length()).map { current.optString(it) }.toMutableSet()
+        ids.add(id)
+        dao.putVault(VaultEntry("suppressed_pattern_ids",JSONArray(ids.sorted()).toString()))
+    }
+    suspend fun forgetBelief(id:String)=database.withTransaction {
+        suppressBelief(id)
+        dao.deleteBelief(id)
+    }
+    suspend fun correctBelief(id:String,replacement:String):MemoryRecord=database.withTransaction {
+        require(replacement.isNotBlank())
+        val belief=dao.beliefs().firstOrNull { it.id==id } ?: error("Belief no longer exists")
+        val text=replacement.trim().take(8192)
+        val entry=MemoryRecord(UUID.randomUUID().toString(),text,"CORRECTION",
+            "owner-correction",1.0,true)
+        dao.putMemory(entry)
+        indexOwnerNote(text)
+        suppressBelief(belief.id)
+        dao.deleteBelief(belief.id)
+        entry
+    }
 }
 data class ContextSnapshot(val asOf:String,val events:List<EventRecord>,
     val relevantMemories:List<MemoryRecord>,val rules:List<RuleRecord>,
-    val recentConversations:List<ChatRecord>,val recentActions:List<ActionLogRecord>) {
+    val recentConversations:List<ChatRecord>,val recentActions:List<ActionLogRecord>,
+    val recentInterruptions:List<DecisionTraceRecord> = emptyList()) {
     fun boundedSummary()=buildString {
         append("Date/time: ").append(asOf)
         append("\nEvents: ").append(events.take(8).joinToString("; "){it.title+" @ "+it.startAt})
@@ -137,5 +161,7 @@ data class ContextSnapshot(val asOf:String,val events:List<EventRecord>,
         // context; the model only needs to know what actually happened.
         append("\nRecent action outcomes: ").append(recentActions.take(6)
             .joinToString("; "){it.type+"="+it.result})
+        append("\nInterruption decisions: ").append(recentInterruptions.take(6)
+            .joinToString("; "){it.decision+"="+it.reason.take(100)})
     }.take(4000)
 }

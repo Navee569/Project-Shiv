@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
+import com.shiv.assistant.BuildConfig
 import com.shiv.assistant.domain.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -56,10 +57,26 @@ fun ShivInterface(
     var note by remember { mutableStateOf("") }
     var ocrTaskTitle by remember { mutableStateOf("Review document commitment") }
     var ocrTaskClock by remember { mutableStateOf("") }
+    var postCallAnswer by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Capability?>(null) }
     var chatJob by remember { mutableStateOf<Job?>(null) }
     val pending = controller.pending
+    val pendingTool = controller.pendingTool
     val photo = controller.visionCandidate
+    if(controller.postCallSignal.isNotBlank()) AlertDialog(
+        onDismissRequest={scope.launch{controller.dismissPostCall()}},
+        title={Text("After your call")},
+        text={Column {
+            Text("Was anything agreed? Add the date and time if there is a follow-up. Your answer will be reviewed before an event is saved.")
+            OutlinedTextField(postCallAnswer,{postCallAnswer=it.take(1000)},
+                label={Text("What was agreed?")},minLines=2)
+        }},
+        confirmButton={Button(onClick={scope.launch {
+            controller.answerPostCall(postCallAnswer)
+            postCallAnswer=""
+        }},enabled=postCallAnswer.isNotBlank()){Text("REVIEW ANSWER")}},
+        dismissButton={TextButton(onClick={scope.launch{controller.dismissPostCall()}}){Text("NOTHING AGREED")}}
+    )
     Column(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF050A14), Color(0xFF0C1930), Color(0xFF090A17))))
@@ -269,6 +286,16 @@ fun ShivInterface(
         confirmButton = { Button(onClick = controller::approve) { Text("CONTINUE") } },
         dismissButton = { TextButton(onClick = controller::reject) { Text("CANCEL") } }
     )
+    if (pendingTool != null) AlertDialog(
+        onDismissRequest = controller::rejectTool,
+        title = { Text("REVIEW MODEL ACTION • " + pendingTool.action.name) },
+        text = { Text(pendingTool.arguments.entries.joinToString("\n") { it.key+": "+it.value }+
+            "\n\nThe local model suggested this action. It runs only after you approve these exact values.") },
+        confirmButton = { Button(onClick = { scope.launch { controller.approveTool() } }) {
+            Text("APPROVE")
+        } },
+        dismissButton = { TextButton(onClick = controller::rejectTool) { Text("CANCEL") } }
+    )
     if (photo != null) AlertDialog(
         onDismissRequest = controller::cancelImage,
         title = { Text("Share selected image with AI?") },
@@ -282,7 +309,7 @@ fun ShivInterface(
                     Text("LOCAL OCR")
                 }
                 Button(onClick={scope.launch{controller.approveVision()}},
-                    enabled=CloudSafety.maySend(controller.config)) { Text("SEND TO API") }
+                    enabled=BuildConfig.NETWORK_ALLOWED && CloudSafety.maySend(controller.config)) { Text("SEND TO API") }
             }
         },
         dismissButton = { TextButton(onClick = controller::cancelImage) { Text("KEEP PRIVATE") } }
@@ -364,11 +391,11 @@ fun ShivInterface(
     }
 }
 @Composable private fun ShivSettings(controller: ShivController, askNotifications: () -> Unit) {
-    var mode by remember { mutableStateOf(controller.config.mode) }
+    var mode by remember { mutableStateOf(if(BuildConfig.NETWORK_ALLOWED)controller.config.mode else IntelligenceMode.LOCAL) }
     var endpoint by remember { mutableStateOf(controller.config.endpoint) }
     var model by remember { mutableStateOf(controller.config.model) }
     var secret by remember { mutableStateOf(controller.apiKey) }
-    var consent by remember { mutableStateOf(controller.config.allowCloudTransmission) }
+    var consent by remember { mutableStateOf(BuildConfig.NETWORK_ALLOWED && controller.config.allowCloudTransmission) }
     var error by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)) {
@@ -383,7 +410,7 @@ fun ShivInterface(
             color=Muted,fontSize=11.sp)
         Header("INTELLIGENCE ROUTING", "Choose private local actions, cloud reasoning, or a hybrid that prefers local actions.")
         GlassCard {
-            IntelligenceMode.entries.forEach { option ->
+                IntelligenceMode.entries.filter { BuildConfig.NETWORK_ALLOWED || it==IntelligenceMode.LOCAL }.forEach { option ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier
                     .fillMaxWidth().clickable { mode = option }.padding(vertical = 5.dp)) {
                     RadioButton(selected = mode == option, onClick = { mode = option })
@@ -404,8 +431,11 @@ fun ShivInterface(
             modifier = Modifier.fillMaxWidth())
         OutlinedTextField(secret, { secret = it.take(4096) }, label = { Text("API key (encrypted)") },
             visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        Row(Modifier.clickable { consent = !consent }, verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = consent, onCheckedChange = { consent = it })
+        Row(Modifier.clickable(enabled=BuildConfig.NETWORK_ALLOWED) { consent = !consent },
+            verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = consent && BuildConfig.NETWORK_ALLOWED,
+                onCheckedChange = { if(BuildConfig.NETWORK_ALLOWED)consent = it },
+                enabled=BuildConfig.NETWORK_ALLOWED)
             Text("I consent to sending my prompts to this provider", fontSize = 12.sp, color = Color.White)
         }
         Button(onClick = {

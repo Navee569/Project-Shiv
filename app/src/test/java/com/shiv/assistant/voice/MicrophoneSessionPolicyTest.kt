@@ -9,6 +9,8 @@ class MicrophoneSessionPolicyTest {
             "Shiv, meet Raj tomorrow",true))
         assertNull(MicrophoneSessionPolicy.wakeCommand("meet Raj tomorrow",true))
         assertNull(MicrophoneSessionPolicy.wakeCommand("Shiv, my OTP is 123456",true))
+        assertTrue(MicrophoneSessionPolicy.wakeOnly("Shiv!"))
+        assertFalse(MicrophoneSessionPolicy.wakeOnly("Shiv, meet Raj"))
         assertTrue(MicrophoneSessionPolicy.pocketed(0f,5f,2f))
         assertFalse(MicrophoneSessionPolicy.pocketed(0f,5f,40f))
         assertFalse(MicrophoneSessionPolicy.pocketed(null,5f,2f))
@@ -24,6 +26,10 @@ class MicrophoneSessionPolicyTest {
         assertFalse(MicrophoneSessionPolicy.mayContinue(start,start+1000,80,4,true,0))
         assertFalse(MicrophoneSessionPolicy.mayContinue(start,start+1000,80,0,false,0))
         assertFalse(MicrophoneSessionPolicy.mayContinue(start,start+1000,80,0,true,5))
+        assertTrue(MicrophoneSessionPolicy.mayContinue(start,start+600001,70,0,true,0,true))
+        assertFalse(MicrophoneSessionPolicy.mayContinue(start,start+600001,24,0,true,0,true))
+        assertEquals(1_500L,MicrophoneSessionPolicy.retryDelayMs(0))
+        assertEquals(15_000L,MicrophoneSessionPolicy.retryDelayMs(6))
     }
     @Test fun microphoneDoesNotPersistSensitiveRecognizedCodes() {
         assertNull(MicrophoneSessionPolicy.safeUtterance("OTP is 123456"))

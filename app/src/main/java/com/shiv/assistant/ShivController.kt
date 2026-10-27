@@ -10,8 +10,10 @@ import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.data.ShivVault
 import com.shiv.assistant.data.OwnerStateRepository
+import com.shiv.assistant.data.ReviewedToolExecutor
 import com.shiv.assistant.domain.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -48,11 +50,60 @@ class ShivController(private val context: Context) {
     val messages = mutableStateListOf<ChatEntry>()
     val notes = mutableStateListOf<String>()
     val macros = mutableStateListOf<String>()
+    val actionHistory=mutableStateListOf<com.shiv.assistant.data.ActionLogRecord>()
+    suspend fun refreshActionHistory() {
+        val current=withContext(Dispatchers.IO) { ownerState.actionHistory() }
+        actionHistory.clear()
+        actionHistory.addAll(current)
+    }
+    suspend fun undoAction(log:com.shiv.assistant.data.ActionLogRecord) {
+        val token=log.undo.orEmpty()
+        if(token.isBlank() || token=="USED")return
+        val undone=when {
+            token.startsWith("REMINDER:")->ShivReminders.undo(context,token.removePrefix("REMINDER:"))
+            token.startsWith("MEMORY:")->{
+                val id=token.removePrefix("MEMORY:")
+                val exists=com.shiv.assistant.data.EncryptedDatabase.open(context).dao()
+                    .memory(id)!=null
+                if(exists) {
+                    com.shiv.assistant.data.ShivRepository(context).forget(id)
+                    notes.clear();notes.addAll(ownerState.notes())
+                }
+                exists
+            }
+            token.startsWith("EVENT:")->{
+                val id=token.removePrefix("EVENT:")
+                val approved=runCatching {
+                    com.shiv.assistant.data.CommitmentDecisionRepository(context).undo(id)
+                }.getOrNull()!=null
+                if(!approved) {
+                    val dao=com.shiv.assistant.data.EncryptedDatabase.open(context).dao()
+                    if(dao.undoLocalEvent(id)) {
+                        ShivReminders.undo(context,"event-"+id)
+                        true
+                    } else false
+                } else {
+                    ShivReminders.undo(context,"event-"+id)
+                    true
+                }
+            }
+            else->false
+        }
+        if(undone)ownerState.consumeActionUndo(log.id,token)
+        ownerState.logAction(com.shiv.assistant.data.ActionLogRecord(
+            java.util.UUID.randomUUID().toString(),"UNDO_"+log.type,"[REDACTED]",
+            log.tier,"OWNER_REQUESTED",true,if(undone)"UNDONE" else "UNDO_UNAVAILABLE",
+            "NOT_AVAILABLE"))
+        notice=if(undone)"Local action reversed" else "This action can no longer be reversed"
+        refreshActionHistory()
+    }
     var config by mutableStateOf(AssistantConfiguration())
         private set
     var apiKey by mutableStateOf("")
         private set
     var pending by mutableStateOf<ActionProposal?>(null)
+        private set
+    var pendingTool by mutableStateOf<ParsedToolAction?>(null)
         private set
     var visionCandidate by mutableStateOf<Uri?>(null)
         private set
@@ -67,7 +118,33 @@ class ShivController(private val context: Context) {
     var notificationSummaries by mutableStateOf(false)
         private set
     var reminderTier by mutableStateOf(AuthorityTier.ASK_FIRST)
+    val actionTiers=mutableStateMapOf<ActionKind,AuthorityTier>()
+    fun actionTier(kind:ActionKind)=actionTiers[kind]?:ownerState.actionTier(kind)
+    suspend fun changeActionTier(kind:ActionKind,tier:AuthorityTier) {
+        ownerState.setActionTier(kind,tier)
+        actionTiers[kind]=tier
+        if(kind==ActionKind.REMINDER)reminderTier=tier
+        notice="${kind.name} authority saved: ${tier.name}"
+    }
     var speechDraft by mutableStateOf("")
+    var postCallSignal by mutableStateOf(vault.get("pending_post_call_signal").orEmpty())
+        private set
+    fun refreshPostCall() { postCallSignal=vault.get("pending_post_call_signal").orEmpty() }
+    suspend fun dismissPostCall() {
+        vault.put("pending_post_call_signal","")
+        postCallSignal=""
+        notice="Post-call check-in dismissed"
+    }
+    suspend fun answerPostCall(details:String) {
+        val answer=details.trim().take(1000)
+        if(answer.isBlank())return
+        val id=postCallSignal
+        if(id.isBlank())return
+        phase.submitSignal("post_call_owner_answer","Agreed during call: "+answer,7)
+        append("user",answer)
+        append("assistant","I saved your answer for review. Open Decisions to confirm any proposed event; nothing was added automatically.")
+        dismissPostCall()
+    }
     init {
         runCatching {
             val saved=ownerState.load()
@@ -76,13 +153,22 @@ class ShivController(private val context: Context) {
             speechLocale=saved.speechLocale
             notificationSummaries=saved.notificationSummaries
             reminderTier=saved.reminderTier
+            ActionKind.entries.filter { it!=ActionKind.UNKNOWN }.forEach {
+                actionTiers[it]=ownerState.actionTier(it)
+            }
             messages.addAll(saved.chat.map { ChatEntry(it.first,it.second) })
             notes.addAll(saved.notes)
             macros.addAll(saved.macros)
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
         if (messages.isEmpty()) messages.add(ChatEntry("assistant", "SHIV ONLINE. Local intelligence is active. Choose cloud or hybrid mode in Settings if you want an API-powered assistant."))
+        runCatching { actionHistory.addAll(runBlocking(Dispatchers.IO) {
+            ownerState.actionHistory()
+        }) }
     }
     fun settings(mode: IntelligenceMode, endpoint: String, model: String, secret: String, consent: Boolean) {
+        require(BuildConfig.NETWORK_ALLOWED || (mode==IntelligenceMode.LOCAL && !consent)) {
+            "Private build permits local intelligence only"
+        }
         require(CloudSafety.endpointAllowed(endpoint)) { "Use an HTTPS endpoint or explicit local loopback address" }
         require(model.isNotBlank()) { "Model name cannot be empty" }
         val proposed=AssistantConfiguration(mode, endpoint.trim(), model.trim(), consent)
@@ -93,8 +179,7 @@ class ShivController(private val context: Context) {
     }
     suspend fun changeReminderTier(tier:AuthorityTier) {
         require(tier in setOf(AuthorityTier.ASK_FIRST,AuthorityTier.ACT_THEN_TELL))
-        ownerState.setReminderTier(tier)
-        reminderTier=tier
+        changeActionTier(ActionKind.REMINDER,tier)
         notice=if(tier==AuthorityTier.ASK_FIRST) "Reminder approval required"
             else "Explicit reminders may be scheduled, with owner undo available"
     }
@@ -110,7 +195,7 @@ class ShivController(private val context: Context) {
             ownerState.logAction(
                     com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
                     "REMINDER_UNDO","[REDACTED]","ASK_FIRST","OWNER_REQUESTED",
-                    true,"CANCEL_REQUESTED",null))
+                    true,"CANCEL_REQUESTED","NOT_AVAILABLE"))
         }
         notice=if(undone) "Pending reminder canceled; delivered notifications cannot be recalled"
             else "Reminder already delivered, canceled, or missing"
@@ -156,22 +241,10 @@ class ShivController(private val context: Context) {
             return
         }
         val proposal = ShivPlanner.parse(question)
-        if (proposal.kind == ActionKind.NOTES) {
-            saveNote(proposal.argument)
-            append("assistant", "Saved to encrypted Shiv memory.")
-            return
-        }
-        if (proposal.kind == ActionKind.REMINDER &&
-            reminderTier == AuthorityTier.ACT_THEN_TELL &&
-            ActionAuthorization.decide(proposal, reminderTier, false).permitted) {
-            val id=ShivReminders.schedule(context,proposal.argument)
-            if(id!=null) ownerState.setLastReminderId(id.toString())
-            ownerState.logAction(
-                    com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
-                        "REMINDER","[REDACTED]","ACT_THEN_TELL","OWNER_CONFIGURED",
-                        id!=null,if(id!=null)"SCHEDULED" else "INVALID_DATE",null))
-            append("assistant",if(id!=null) "Reminder scheduled. Use Permissions > Undo latest reminder to cancel it."
-                else "I couldn't parse the reminder time. Try 'remind me in 10 minutes'.")
+        if(proposal.kind!=ActionKind.UNKNOWN &&
+            ActionAuthorization.decide(proposal,actionTier(proposal.kind),false).permitted) {
+            val result=performAction(proposal,false)
+            append("assistant",result)
             return
         }
         if (proposal.kind != ActionKind.UNKNOWN) {
@@ -181,13 +254,36 @@ class ShivController(private val context: Context) {
         }
         working = true
         try {
+            var streamPrefix=""
+            var structuredStream:Boolean?=null
             val response = if(onLocalFragment!=null && config.mode==IntelligenceMode.LOCAL)
-                brain.localBrain.inferStreaming(question,onLocalFragment)
+                brain.localBrain.inferStreaming(question) { fragment ->
+                    if(structuredStream==null) {
+                        streamPrefix+=fragment
+                        if(streamPrefix.trimStart().isNotEmpty()) {
+                            structuredStream=streamPrefix.trimStart().startsWith("{")
+                            if(structuredStream==false) onLocalFragment?.invoke(streamPrefix)
+                            streamPrefix=""
+                        }
+                    } else if(structuredStream==false) {
+                        onLocalFragment?.invoke(fragment)
+                    }
+                }
             else brain.respond(question, notes, config, apiKey)
             // A provider or runtime may return after coroutine cancellation;
             // never append that stale reply to the owner's encrypted history.
             currentCoroutineContext().ensureActive()
-            append("assistant", response)
+            if(response.trimStart().startsWith("{")) {
+                val tool=StructuredToolParser.parseOrNull(response.trim())
+                when {
+                    tool==null -> append("assistant","The model returned an invalid action. No action was taken.")
+                    tool.action==ToolAction.STAY_QUIET -> notice="Local model chose to stay quiet"
+                    else -> {
+                        pendingTool=tool
+                        append("assistant","Review the model's proposed "+tool.action.name+" action before it runs.")
+                    }
+                }
+            } else append("assistant", response)
         } catch (cancelled: CancellationException) {
             notice = "Reply canceled"
             throw cancelled
@@ -196,31 +292,77 @@ class ShivController(private val context: Context) {
         } finally { working = false }
     }
     fun propose(action: ActionProposal) { pending = action }
+    fun rejectTool() {
+        val tool=pendingTool ?: return
+        pendingTool=null
+        notice="Model action cancelled"
+        ownerState.logAction(com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
+            tool.action.name,"[REDACTED]","ASK_FIRST","OWNER_DECLINED",false,"CANCELLED","NOT_AVAILABLE"))
+        actionHistory.clear()
+        actionHistory.addAll(runBlocking(Dispatchers.IO) { ownerState.actionHistory() })
+    }
+    suspend fun approveTool() {
+        val tool=pendingTool ?: return
+        pendingTool=null
+        try {
+            val result=ReviewedToolExecutor(context).execute(tool)
+            notice=result
+            if(result.startsWith("QUESTION: ")) append("assistant",result.removePrefix("QUESTION: "))
+            else append("assistant",tool.action.name+" completed after your approval.")
+            refreshActionHistory()
+        } catch(e:Exception) {
+            notice=e.message ?: "Action failed"
+            ownerState.logAction(com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
+                tool.action.name,"[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,
+                "FAILED","NOT_AVAILABLE"))
+            append("assistant","The reviewed action failed. No completion is claimed.")
+            refreshActionHistory()
+        }
+    }
     fun reject() {
         val action=pending
         pending=null
         notice="Action cancelled"
         if(action!=null) {
-            val decision=ActionAuthorization.decide(action,null,false)
+            val decision=ActionAuthorization.decide(action,actionTier(action.kind),false)
             ownerState.logAction(ActionAuthorization.log(action,decision,"NOT_REQUESTED","CANCELLED"))
         }
     }
     fun approve() {
         val action = pending ?: return
         pending = null
-        val authorization=ActionAuthorization.decide(action,null,true)
+        val authorization=ActionAuthorization.decide(action,actionTier(action.kind),true)
         if(!authorization.permitted) {
             notice="Action blocked by Shiv owner policy"
+            ownerState.logAction(ActionAuthorization.log(action,authorization,
+                "OWNER_APPROVED","POLICY_BLOCKED","NOT_AVAILABLE"))
             return
         }
-        val result = when (action.kind) {
+        performAction(action,true)
+    }
+    private fun performAction(action:ActionProposal,ownerConfirmed:Boolean):String {
+        val authorization=ActionAuthorization.decide(action,actionTier(action.kind),ownerConfirmed)
+        if(!authorization.permitted)return "Action requires owner review"
+        var undo="NOT_AVAILABLE"
+        val result = try { when (action.kind) {
             ActionKind.NOTES -> {
-                saveNote(action.argument)
+                val alreadySaved=ownerState.notes().any {
+                    it.equals(action.argument.trim(),ignoreCase=true)
+                }
+                val saved=runBlocking(Dispatchers.IO) {
+                    com.shiv.assistant.data.ShivRepository(context).remember(action.argument)
+                }
+                notes.clear();notes.addAll(ownerState.notes())
+                if(!alreadySaved)undo="MEMORY:"+saved.id
+                notice="Encrypted note saved"
                 "ENCRYPTED_NOTE_SAVED"
             }
             ActionKind.REMINDER -> {
                 val id = ShivReminders.schedule(context, action.argument)
-                if(id!=null) ownerState.setLastReminderId(id.toString())
+                if(id!=null) {
+                    ownerState.setLastReminderId(id.toString())
+                    undo="REMINDER:$id"
+                }
                 notice = if (id == null) "Use: remind me in 10 minutes to ..."
                     else "Reminder scheduled locally; undo is available in Permissions"
                 if(id==null) "INVALID_DATE" else "SCHEDULED"
@@ -231,8 +373,26 @@ class ShivController(private val context: Context) {
                     else "No compatible app installed, or action unavailable"
                 if(opened) "APP_HANDOFF_OPENED" else "APP_HANDOFF_FAILED"
             }
+        } } catch (_:Exception) {
+            ownerState.logAction(ActionAuthorization.log(action,authorization,
+                if(ownerConfirmed)"OWNER_APPROVED" else "OWNER_CONFIGURED",
+                "FAILED","NOT_AVAILABLE"))
+            notice="Action failed; no completion is claimed"
+            return notice
         }
-        ownerState.logAction(ActionAuthorization.log(action,authorization,"APP_HANDOFF",result))
+        ownerState.logAction(ActionAuthorization.log(action,authorization,
+            if(ownerConfirmed)"OWNER_APPROVED" else "OWNER_CONFIGURED",result,undo))
+        runCatching {
+            actionHistory.clear()
+            actionHistory.addAll(runBlocking(Dispatchers.IO) { ownerState.actionHistory() })
+        }
+        return when(result) {
+            "ENCRYPTED_NOTE_SAVED"->"Saved to encrypted Shiv memory."
+            "SCHEDULED"->"Reminder scheduled locally. You can undo it in Permissions."
+            "INVALID_DATE"->"I couldn't parse the reminder time. Try 'remind me in 10 minutes'."
+            "APP_HANDOFF_OPENED"->"Opened an external app for your review; Shiv cannot verify completion there."
+            else->"No compatible app was found or the action failed."
+        }
     }
     fun saveNote(value: String) {
         if (value.trim().isEmpty()) return
@@ -288,6 +448,8 @@ class ShivController(private val context: Context) {
             speechLocale="en-IN"
             notificationSummaries=false
             reminderTier=AuthorityTier.ASK_FIRST
+            actionTiers.clear()
+            actionHistory.clear()
             phase.discardCalendarPreview()
             phase.clearContactNames()
             phase.reload()
@@ -318,6 +480,8 @@ class ShivController(private val context: Context) {
         apiKey=""
         config=AssistantConfiguration()
         reminderTier=AuthorityTier.ASK_FIRST
+        actionTiers.clear()
+        actionHistory.clear()
         notificationSummaries=false
         speechLocale="en-IN"
         phase.discardCalendarPreview()

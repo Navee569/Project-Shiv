@@ -33,14 +33,14 @@ class CommitmentDecisionRepository(context:Context) {
             current.copy(decision="APPROVED",reason="Owner reviewed and approved event; "+
                 "notification queued",policyTier="ASK_FIRST"),
             ActionLogRecord("approval-"+incoming.id,"CREATE_EVENT","[REDACTED]",
-                "ASK_FIRST","OWNER_APPROVED",true,"EVENT_AND_REMINDER_SAVED",null))
+                "ASK_FIRST","OWNER_APPROVED",true,"EVENT_AND_REMINDER_SAVED","EVENT:"+event.id))
         ApprovedReminder(reminderId,reminderAt)
     }
     suspend fun undo(traceId:String):String? = withContext(Dispatchers.IO) {
         val current=dao.decision(traceId) ?: error("Decision not found")
         val eventId=current.signalId ?: error("Source event unavailable")
         val audit=ActionLogRecord("undo-"+eventId,"UNDO_EVENT","[REDACTED]",
-            "ASK_FIRST","OWNER_REQUESTED",true,"EVENT_REMINDER_CANCELLED",null)
+            "ASK_FIRST","OWNER_REQUESTED",true,"EVENT_REMINDER_CANCELLED","NOT_AVAILABLE")
         if(dao.undoApprovedEvent(current.id,eventId,audit))eventId else null
     }
     suspend fun decline(traceId:String) = withContext(Dispatchers.IO) {

@@ -31,4 +31,19 @@ class PortableBackupCodecTest {
             PortableBackupCodec.encrypt("hello".toByteArray(),"short".toCharArray())
         }.isFailure)
     }
+    @Test fun truncationAndHeaderChangesNeverReturnPlaintext() {
+        val archive=PortableBackupCodec.encrypt("private owner data".toByteArray(),password())
+        for(length in listOf(0,1,7,8,20,archive.size-1)) {
+            assertTrue(runCatching {
+                PortableBackupCodec.decrypt(archive.copyOf(length),password())
+            }.isFailure)
+        }
+        for(index in listOf(0,7,8,15,24,35,archive.lastIndex)) {
+            val changed=archive.copyOf()
+            changed[index]=(changed[index].toInt() xor 0x40).toByte()
+            assertTrue("Mutated byte $index",runCatching {
+                PortableBackupCodec.decrypt(changed,password())
+            }.isFailure)
+        }
+    }
 }

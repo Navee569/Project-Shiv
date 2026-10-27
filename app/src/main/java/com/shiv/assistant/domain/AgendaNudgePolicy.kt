@@ -9,6 +9,13 @@ data class AgendaNudgeDecision(val deliver: Boolean, val reason: String)
 
 /** Pure, deterministic notification safety gate; does not authorize any action. */
 object AgendaNudgePolicy {
+    fun deliveryKey(base:String,reaction:String?,reactionAt:Long?,now:Long):String? =
+        when(reaction) {
+            "ACTED","DISMISSED","CORRECTED" -> null
+            "SNOOZED" -> if(reactionAt!=null && now-reactionAt>=15*60_000L &&
+                now-reactionAt<24*60*60_000L) "$base:snooze" else null
+            else -> base
+        }
     fun decide(
         candidate: AgendaNudge,
         now: Long,

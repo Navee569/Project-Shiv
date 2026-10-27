@@ -31,7 +31,7 @@ class PhaseOneDataRepository(context:Context) {
         dao.putEvent(event)
         dao.logAction(ActionLogRecord("calendar-"+event.id,
             "IMPORT_CALENDAR","[REDACTED]","ASK_FIRST","OWNER_APPROVED",
-            true,"ENCRYPTED_EVENT_IMPORTED",null))
+            true,"ENCRYPTED_EVENT_IMPORTED","EVENT:"+event.id))
     }
     suspend fun currentEvent(id:String):EventRecord?=dao.event(id)
     fun exportedCalendarEvent(id:String):Boolean=!vault.get("calendar_export_"+id).isNullOrBlank()
@@ -39,7 +39,7 @@ class PhaseOneDataRepository(context:Context) {
         vault.put("calendar_export_"+id,"$calendarId:$externalId")
     suspend fun logCalendarExport():Boolean = try {
         dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),"EXPORT_CALENDAR",
-            "[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,"EXTERNAL_EVENT_CREATED",null))
+            "[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,"EXTERNAL_EVENT_CREATED","EXTERNAL_CALENDAR_REVIEW"))
         true
     } catch (_:Exception) { false }
 
@@ -76,7 +76,7 @@ class PhaseOneDataRepository(context:Context) {
             dao.putTask(TaskRecord(UUID.randomUUID().toString(),title.trim(),"OPEN",dueAt))
             dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),
                 "OCR_TASK","[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,
-                "ENCRYPTED_TASK_SAVED",null))
+                "ENCRYPTED_TASK_SAVED","NOT_AVAILABLE"))
         }
     }
     suspend fun retryFailedSignals():Int=dao.retryFailedSignals()

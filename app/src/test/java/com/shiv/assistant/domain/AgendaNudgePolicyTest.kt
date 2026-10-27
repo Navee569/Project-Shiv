@@ -31,4 +31,12 @@ class AgendaNudgePolicyTest {
         assertEquals(1,AgendaNudgePolicy.limitFromFeedback(
             listOf("DISMISSED","DISMISSED","DISMISSED"),1))
     }
+    @Test fun reactionsSuppressOrAllowOneDelayedRepeat() {
+        val now=local(10)
+        assertNull(AgendaNudgePolicy.deliveryKey("agenda:one","DISMISSED",now-1000,now))
+        assertNull(AgendaNudgePolicy.deliveryKey("agenda:one","CORRECTED",now-1000,now))
+        assertNull(AgendaNudgePolicy.deliveryKey("agenda:one","SNOOZED",now-14*60_000L,now))
+        assertEquals("agenda:one:snooze",AgendaNudgePolicy.deliveryKey(
+            "agenda:one","SNOOZED",now-15*60_000L,now))
+    }
 }

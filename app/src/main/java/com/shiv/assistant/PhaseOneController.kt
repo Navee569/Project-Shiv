@@ -30,6 +30,7 @@ import com.shiv.assistant.automation.ShivAgendaNudgeWorker
 import com.shiv.assistant.data.OwnerNudgeLedger
 import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.data.LocalModelComputeLedger
+import com.shiv.assistant.data.DailyEnergyLedger
 import com.shiv.assistant.integrations.UsageOverview
 import com.shiv.assistant.domain.UsageObservation
 import com.shiv.assistant.data.*
@@ -61,6 +62,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val usagePreview=mutableStateListOf<UsageObservation>()
     private val nudgeLedger=OwnerNudgeLedger(ShivVault(context))
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
+    private val energyLedger=DailyEnergyLedger(context)
+    var localEnergyBudgetMWh by mutableIntStateOf(energyLedger.budgetMWh())
+        private set
     var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
         private set
     var localBackend by mutableStateOf(data.localBackend())
@@ -229,7 +233,8 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
         progress="App returned to default policy; built-in and owner denylists still apply"
     }
-    fun startOfflineMicSession(locale:String,requireWake:Boolean=false,allowSleep:Boolean=false) {
+    fun startOfflineMicSession(locale:String,requireWake:Boolean=false,allowSleep:Boolean=false,
+        continuous:Boolean=false) {
         if(Build.VERSION.SDK_INT<33 ||
             !android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
             issue="Offline on-device speech service unavailable. No cloud recognizer was started."
@@ -249,9 +254,11 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
                 .setAction(ShivMicSessionService.ACTION_START)
                 .putExtra(ShivMicSessionService.EXTRA_LOCALE,locale)
                 .putExtra(ShivMicSessionService.EXTRA_REQUIRE_WAKE,requireWake)
-                .putExtra(ShivMicSessionService.EXTRA_ALLOW_SLEEP,allowSleep))
+                .putExtra(ShivMicSessionService.EXTRA_ALLOW_SLEEP,allowSleep)
+                .putExtra(ShivMicSessionService.EXTRA_CONTINUOUS,continuous))
             issue=null
-            progress="Owner-started offline microphone session requested. Notification STOP available; expires within 10 minutes."
+            progress=if(continuous)"Owner-started offline microphone active until STOP or a safety gate ends it."
+                else "Owner-started offline microphone session requested. Notification STOP available; expires within 10 minutes."
         } catch (_:Exception) {
             issue="Android blocked the microphone session. Start it with Shiv in foreground."
         }
@@ -286,10 +293,17 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             "This is not a measured battery budget."
     }
     fun localComputeReport():String=computeLedger.report()
+    fun localEnergyReport():String=energyLedger.report()
+    fun setLocalEnergyBudget(value:Int) {
+        energyLedger.setBudgetMWh(value)
+        localEnergyBudgetMWh=value
+        progress="Whole-device observation-window cap saved; it may include other apps"
+    }
     fun changeProactiveOptIn(enabled:Boolean) {
         data.setProactiveOptIn(enabled)
         proactiveOptIn=enabled
         ShivAgendaNudgeWorker.updateRegistration(context,enabled)
+        com.shiv.assistant.automation.ProactiveTriggerWorker.updateRegistration(context,enabled)
         progress=if(enabled) "Owner-enabled, quiet-hour-limited optional agenda notices"
             else "Optional agenda notices disabled"
     }
@@ -299,6 +313,8 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             return
         }
         nudgeLedger.react(reaction)
+        if(reaction==OwnerNudgeReaction.SNOOZED)
+            ShivAgendaNudgeWorker.scheduleSnooze(context)
         proactiveLastKey=nudgeLedger.lastKey()
         proactiveFeedback=nudgeLedger.report()
         progress="Feedback saved encrypted. Only optional future interruption caps may decrease."
@@ -440,24 +456,32 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     }
     suspend fun deleteMemory(id:String) { repository.forget(id);reload() }
     suspend fun removeBelief(id:String) { repository.forgetBelief(id);reload() }
+    suspend fun correctBelief(id:String,text:String) {
+        repository.correctBelief(id,text)
+        reload()
+        progress="Belief corrected as an explicit owner fact"
+    }
     fun modelStatus():String {
         val router=hub.router.status()
         val chat=hub.conversation.status()
-        return computeLedger.report()+" | Router: "+(router.modelName?:"not loaded")+
+        val measured=if(hub.lastRoutedRole=="router")router else chat
+        return computeLedger.report()+" | "+energyLedger.report()+
+            " | Router: "+(router.modelName?:"not loaded")+
             " | Conversation: "+(chat.modelName?:"not loaded")+
             " | Queue: "+hub.inference.pendingCount()+
-            " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
-            " | Reply ms: "+(chat.lastReplyMs?.toString()?:"not measured")+
-            " | First text fragment ms: "+(chat.firstFragmentMs?.toString()?:"not measured")+
-            " | Runtime TTFT ms: "+(chat.runtimeTtftMs?.toString()?:"unavailable")+
-            " | Decode tokens: "+(chat.decodeTokens?.toString()?:"unavailable")+
-            " | Decode tokens/s: "+(chat.decodeTokensPerSecond?.let { String.format(java.util.Locale.ROOT,"%.1f",it) }?:"unavailable")+
+            " | Last measured role: "+(hub.lastRoutedRole?:"none")+
+            " | Load ms: "+(measured.lastLoadMs?.toString()?:"not measured")+
+            " | Reply ms: "+(measured.lastReplyMs?.toString()?:"not measured")+
+            " | First text fragment ms: "+(measured.firstFragmentMs?.toString()?:"not measured")+
+            " | Runtime TTFT ms: "+(measured.runtimeTtftMs?.toString()?:"unavailable")+
+            " | Decode tokens: "+(measured.decodeTokens?.toString()?:"unavailable")+
+            " | Decode tokens/s: "+(measured.decodeTokensPerSecond?.let { String.format(java.util.Locale.ROOT,"%.1f",it) }?:"unavailable")+
             " | Whole-device energy drop during reply mWh: "+
-                (chat.deviceEnergyDropNwh?.let { String.format(java.util.Locale.ROOT,"%.3f",it/1_000_000.0) }?:"unavailable")+
+                (measured.deviceEnergyDropNwh?.let { String.format(java.util.Locale.ROOT,"%.3f",it/1_000_000.0) }?:"unavailable")+
             " | "+com.shiv.assistant.voice.SpeechDiagnostics.report()+
-            " | Output chars: "+(chat.lastOutputCharacters?.toString()?:"not measured")+
-            " | Backend: "+(chat.backend?:"not loaded")+
-            " | Max output tokens: "+(chat.maxOutputTokens?.toString()?:"not loaded")+
+            " | Output chars: "+(measured.lastOutputCharacters?.toString()?:"not measured")+
+            " | Backend: "+(measured.backend?:"not loaded")+
+            " | Max output tokens: "+(measured.maxOutputTokens?.toString()?:"not loaded")+
             " | Last route: "+(hub.lastRoutedRole?:"none")+
             " in "+(hub.lastRoutingMs?.toString()?:"not measured")+" ms"+
             " | Fallback: "+(hub.lastFallbackReason?:"none")

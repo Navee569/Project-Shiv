@@ -2,6 +2,7 @@ package com.shiv.assistant.ai
 
 import com.shiv.assistant.data.ActionLogRecord
 import com.shiv.assistant.data.ContextSnapshot
+import com.shiv.assistant.data.DecisionTraceRecord
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -21,5 +22,11 @@ class LocalPromptBuilderTest {
         val summary=snapshot.boundedSummary()
         assertTrue(summary.contains("REMINDER=SCHEDULED"))
         assertFalse(summary.contains("private phone number"))
+    }
+    @Test fun contextIncludesRecentInterruptionDecision() {
+        val snapshot=ContextSnapshot("2026-10-26T10:00:00Z",emptyList(),emptyList(),
+            emptyList(),emptyList(),emptyList(),listOf(DecisionTraceRecord(
+                "decision-1",null,"DECLINED","Owner declined afternoon nudge","ASK_FIRST")))
+        assertTrue(snapshot.boundedSummary().contains("DECLINED=Owner declined afternoon nudge"))
     }
 }

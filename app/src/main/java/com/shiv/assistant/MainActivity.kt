@@ -26,8 +26,30 @@ import com.shiv.assistant.data.OwnerStateRepository
 import com.shiv.assistant.ui.StorageRecoveryScreen
 import com.shiv.assistant.ui.StorageCheckingScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.lifecycleScope
+import com.shiv.assistant.data.ShivRepository
 
 class MainActivity : ComponentActivity() {
+    @Volatile private var storageReadyForTriggers=false
+    private var activeController:ShivController?=null
+    override fun onResume() {
+        super.onResume()
+        activeController?.refreshPostCall()
+    }
+    private fun recordAppOpen() {
+        if(!storageReadyForTriggers)return
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching {
+                if(ShivVault(applicationContext).get("proactive_opt_in")=="yes" &&
+                    !com.shiv.assistant.awareness.AwarenessControl.isPaused(applicationContext))
+                    ShivRepository(applicationContext).incoming("app_open","Owner opened Shiv",2)
+            }
+        }
+    }
+    override fun onStart() {
+        super.onStart()
+        recordAppOpen()
+    }
     private fun storageProblem():String? = try {
         EncryptedDatabase.verify(applicationContext)
         ShivVault(applicationContext) // Completes or safely retries the legacy migration.
@@ -46,6 +68,8 @@ class MainActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             LaunchedEffect(Unit) {
                 storageIssue=withContext(Dispatchers.IO) { storageProblem() }
+                storageReadyForTriggers=storageIssue==null
+                if(storageReadyForTriggers)recordAppOpen()
                 storageChecked=true
             }
             if(!storageChecked) {
@@ -57,6 +81,8 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         storageChecked=false
                         storageIssue=withContext(Dispatchers.IO) { storageProblem() }
+                        storageReadyForTriggers=storageIssue==null
+                        if(storageReadyForTriggers)recordAppOpen()
                         storageChecked=true
                     }
                 },onErase={ phrase ->
@@ -65,8 +91,11 @@ class MainActivity : ComponentActivity() {
                             storageChecked=false
                             EncryptedDatabase.resetAfterOwnerConfirmation(applicationContext,phrase)
                             storageIssue=withContext(Dispatchers.IO) { storageProblem() }
+                            storageReadyForTriggers=storageIssue==null
+                            if(storageReadyForTriggers)recordAppOpen()
                         } catch (_:Exception) {
                             storageIssue="Storage recovery did not finish. Review any backup before retrying."
+                            storageReadyForTriggers=false
                         } finally { storageChecked=true }
                     }
                 })
@@ -75,16 +104,20 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
                     com.shiv.assistant.automation.SignalWorker.recoverPending(applicationContext)
+                    com.shiv.assistant.automation.ShivReminders.recoverPending(applicationContext)
                 }
                 com.shiv.assistant.awareness.AwarenessControl.show(applicationContext)
                 com.shiv.assistant.automation.ShivRetentionWorker.schedule(applicationContext)
                 com.shiv.assistant.automation.ShivAgendaNudgeWorker.updateRegistration(
+                    applicationContext,ShivVault(applicationContext).get("proactive_opt_in")=="yes")
+                com.shiv.assistant.automation.ProactiveTriggerWorker.updateRegistration(
                     applicationContext,ShivVault(applicationContext).get("proactive_opt_in")=="yes")
                 com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(
                     applicationContext,ShivVault(applicationContext).get(
                         com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN)=="yes")
             }
             val controller = viewModel<ShivViewModel>().controller
+            activeController=controller
             LaunchedEffect(controller) {
                 withContext(Dispatchers.IO) { controller.phase.hub.restoreRouterIfSelected() }
             }
