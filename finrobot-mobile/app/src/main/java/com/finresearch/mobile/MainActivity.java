@@ -115,8 +115,40 @@ public final class MainActivity extends Activity {
         sentiments.addView(sentimentResult);
         sentimentButton.setOnClickListener(v -> scoreSentiment());
 
+        LinearLayout dcf = panel(root);
+        dcf.addView(text("3  OFFLINE DCF VALUATION", 17, Color.WHITE, true));
+        dcf.addView(text("Illustrative five-year free-cash-flow DCF. Enter observed, independently verified inputs. Use the SAME monetary scale for FCF, net debt and share count (e.g. all in crores).", 12, SUBTEXT, false));
+        EditText[] dcfFields = new EditText[6];
+        String[] dcfLabels = {"Annual free cash flow", "Annual FCF growth (%)", "Discount rate / WACC (%)",
+            "Terminal growth (%)", "Net debt (debt minus cash)", "Diluted shares outstanding"};
+        String[] defaults = {"100", "5", "12", "3", "0", "100"};
+        for (int i=0;i<dcfFields.length;i++) {
+            dcf.addView(text(dcfLabels[i],12,SUBTEXT,false));
+            dcfFields[i] = input(defaults[i],false);
+            dcfFields[i].setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED);
+            dcfFields[i].setText(defaults[i]);
+            dcf.addView(dcfFields[i]);
+        }
+        TextView dcfResult = text("No DCF computed. Sample inputs are illustrative, NOT ticker fundamentals.", 14, SUBTEXT, false);
+        Button dcfButton = button("COMPUTE ILLUSTRATIVE DCF");
+        dcf.addView(dcfButton);
+        dcf.addView(dcfResult);
+        dcfButton.setOnClickListener(v -> {
+            try {
+                double[] values = new double[6];
+                for (int i=0;i<6;i++) values[i] = Double.parseDouble(dcfFields[i].getText().toString().trim());
+                double price = ValuationMath.dcfPerShare(values[0],values[1]/100.0,values[2]/100.0,
+                    values[3]/100.0,values[4],values[5]);
+                dcfResult.setText(String.format(Locale.US,
+                    "Indicative DCF value per share: %.2f\nModel: 5-year constant FCF growth + terminal value.\nThis is NOT a stock-price target; check units, assumptions, net debt and reporting period.",
+                    price));
+            } catch (Exception e) {
+                dcfResult.setText("Invalid inputs. Require positive FCF and shares, finite rates, WACC above terminal growth, and growth rates above -100%.");
+            }
+        });
+
         LinearLayout ai = panel(root);
-        ai.addView(text("3  SIX-MODEL AI RESEARCH", 17, Color.WHITE, true));
+        ai.addView(text("4  SIX-MODEL AI RESEARCH", 17, Color.WHITE, true));
         ai.addView(text("Select an analyst role. Each role can use its own NVIDIA-hosted model. Only you initiate API calls.", 12, SUBTEXT, false));
         roleSpinner = new Spinner(this);
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ROLES);
@@ -129,7 +161,7 @@ public final class MainActivity extends Activity {
         analyzeButton.setOnClickListener(v -> analyze());
 
         LinearLayout settings = panel(root);
-        settings.addView(text("4  NVIDIA SETTINGS", 17, Color.WHITE, true));
+        settings.addView(text("5  NVIDIA SETTINGS", 17, Color.WHITE, true));
         settings.addView(text("Use a key from build.nvidia.com. It is encrypted with Android Keystore and sent only to NVIDIA when you initiate an analysis.", 12, SUBTEXT, false));
         keyInput = input("NVIDIA API key (leave blank to keep saved key)", false);
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -178,9 +210,19 @@ public final class MainActivity extends Activity {
                 }
                 if (prices.size() < 2) throw new IllegalStateException("Not enough valid prices.");
                 String currency = result.getJSONObject("meta").optString("currency", "");
+                JSONArray timestamps = result.optJSONArray("timestamp");
+                String priceDate = "unavailable";
+                if (timestamps != null && timestamps.length() > 0) {
+                    long latestTimestamp = timestamps.optLong(timestamps.length()-1,0);
+                    if (latestTimestamp > 0) {
+                        priceDate = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm 'UTC'",Locale.US)
+                            .format(new java.util.Date(latestTimestamp * 1000L));
+                    }
+                }
+                final String historyDate = priceDate;
                 String output = String.format(Locale.US,
-                    "%s • %s\nLast historical close: %.2f\nChange vs preceding close: %+.2f%%\nSMA20: %s\nSMA50: %s\nSimple RSI14: %s\nObservations: %d\nSource: Yahoo Finance chart; check market-date freshness.",
-                    symbol, currency, prices.get(prices.size()-1),
+                    "%s • %s\nLatest chart timestamp: %s\nLast historical close: %.2f\nChange vs preceding close: %+.2f%%\nSMA20: %s\nSMA50: %s\nSimple RSI14: %s\nObservations: %d\nSource: Yahoo Finance chart; not a real-time trade price.",
+                    symbol, currency, historyDate, prices.get(prices.size()-1),
                     ResearchMath.percentChange(prices), fmt(ResearchMath.sma(prices, 20)),
                     fmt(ResearchMath.sma(prices, 50)), fmt(ResearchMath.rsi(prices,14)),
                     prices.size());
