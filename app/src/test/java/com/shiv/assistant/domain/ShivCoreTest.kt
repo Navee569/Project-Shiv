@@ -18,6 +18,12 @@ class ShivCoreTest {
         assertFalse(CloudSafety.endpointAllowed("http://api.example.org/chat"))
         assertFalse(CloudSafety.endpointAllowed("https://user:pass@example.org/chat"))
         assertTrue(CloudSafety.endpointAllowed("http://localhost:8080/v1/chat/completions"))
+        assertFalse(CloudSafety.maySend(AssistantConfiguration(IntelligenceMode.LOCAL,
+            "https://api.example.org/v1/chat/completions", "test", true)))
+        assertFalse(CloudSafety.maySend(AssistantConfiguration(IntelligenceMode.HYBRID,
+            "https://api.example.org/v1/chat/completions", "test", false)))
+        assertFalse(CloudSafety.endpointAllowed("https://example.org#private-fragment"))
+        assertFalse(CloudSafety.endpointAllowed("http://192.168.1.10/chat"))
     }
     @Test fun sendingMoneyOrMessagesAlwaysNeedsApproval() {
         listOf("call 123","sms hello","telegram hello","whatsapp hello","pay 500","post hello").forEach {
@@ -42,8 +48,12 @@ class ShivCoreTest {
     @Test fun incompleteIntegrationsAreLabelled() {
         assertEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { it.id == "model-local" }.state)
         assertEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { it.id == "model-download" }.state)
-        listOf("wakeword","accessibility","social-publish","terminal").forEach {
+        listOf("wakeword","social-publish","terminal").forEach {
             assertNotEquals(CapabilityState.BUILT_IN,ShivCapabilities.all.first { c -> c.id == it }.state)
+        }
+        listOf("contacts","accessibility").forEach {
+            assertEquals(CapabilityState.REQUIRES_DEVICE_PERMISSION,
+                ShivCapabilities.all.first { c -> c.id == it }.state)
         }
     }
 }

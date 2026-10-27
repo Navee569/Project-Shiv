@@ -6,6 +6,7 @@ import com.shiv.assistant.data.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.*
+import kotlinx.coroutines.CancellationException
 
 /** Durable encrypted queue, restarted by WorkManager after process death. */
 class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params) {
@@ -17,20 +18,24 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
             val signal=dao.nextSignal()?:break
             if(dao.claim(signal.id)==0)continue
             try {
-                val choice=CommitmentParser.analyze(signal.fact,ZoneId.systemDefault())
-                val decision=when(choice) {
+                val decision=if(signal.source=="calendar-change") {
+                    DecisionTraceRecord(signal.id,signal.id,"OBSERVED",
+                        "Phone calendar changed; review the Events screen if needed","FREE")
+                } else when(val choice=CommitmentParser.analyze(signal.fact,ZoneId.systemDefault())) {
                     is CommitmentProposal.Ready -> DecisionTraceRecord(signal.id,signal.id,"ASK",
                         "Possible event: "+choice.title+" at "+choice.whenAt+"; owner must approve","ASK_FIRST")
                     is CommitmentProposal.Clarify -> DecisionTraceRecord(signal.id,signal.id,"ASK",choice.question,"ASK_FIRST")
                     CommitmentProposal.None -> DecisionTraceRecord(signal.id,signal.id,"STAY_QUIET","No supported commitment","FREE")
                 }
                 // Never write an actual calendar event or notify before owner approval.
-                dao.trace(decision)
-                dao.markProcessed(signal.id,System.currentTimeMillis())
+                dao.finishSignal(signal.id,decision,System.currentTimeMillis())
                 examined++
+            } catch(cancelled:CancellationException) {
+                throw cancelled
             } catch(e:Exception) {
                 dao.markRetry(signal.id,e.javaClass.simpleName)
-                return@withContext Result.retry()
+                return@withContext if(dao.signal(signal.id)?.status=="FAILED")
+                    Result.success() else Result.retry()
             }
         }
         // A single worker intentionally limits work to 30 items. Without
@@ -39,6 +44,11 @@ class SignalWorker(context:Context,params:WorkerParameters):CoroutineWorker(cont
         Result.success()
     }
     companion object {
+        suspend fun recoverPending(context:Context) {
+            val dao=EncryptedDatabase.open(context).dao()
+            dao.recoverInFlight()
+            if(dao.pendingCount()>0)schedule(context)
+        }
         fun schedule(context:Context) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "shiv-durable-signals",ExistingWorkPolicy.APPEND_OR_REPLACE,

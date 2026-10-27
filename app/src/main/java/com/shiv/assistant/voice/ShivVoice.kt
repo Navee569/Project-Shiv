@@ -8,6 +8,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /** Explicit language, explicit on-device STT. No network recognizer fallback. */
@@ -19,6 +20,7 @@ class ShivVoice(private val context:Context) {
 
     fun startRecognition(tag:String, onPartial:(String)->Unit,onResult:(String)->Unit,onFailure:(String)->Unit) {
         stopListening()
+        SpeechDiagnostics.begin()
         if(Build.VERSION.SDK_INT<33 || !SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
             onFailure("Offline recognition is not available. Install an offline language pack; cloud recognition was not started.")
             return
@@ -33,9 +35,10 @@ class ShivVoice(private val context:Context) {
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(p0:Float) {}
                 override fun onBufferReceived(p0:ByteArray?) {}
-                override fun onEndOfSpeech() {}
+                override fun onEndOfSpeech() { SpeechDiagnostics.ended() }
                 override fun onError(error:Int) { onFailure("On-device recognizer error code $error. Check offline language data.") }
                 override fun onResults(results:Bundle?) {
+                    SpeechDiagnostics.recognized()
                     onResult(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty())
                 }
                 override fun onPartialResults(results:Bundle?) {
@@ -58,8 +61,18 @@ class ShivVoice(private val context:Context) {
             ttsError=if(ttsReady)null else "Speech Services by Google is unavailable"
             onReady(ttsReady,ttsError)
         },"com.google.android.tts")
+        tts?.setOnUtteranceProgressListener(object:UtteranceProgressListener() {
+            override fun onStart(utteranceId:String?) { SpeechDiagnostics.ttsStarted() }
+            override fun onAudioAvailable(utteranceId:String?,audio:ByteArray?) {
+                SpeechDiagnostics.firstAudioAvailable()
+            }
+            override fun onDone(utteranceId:String?) {}
+            @Deprecated("Platform callback") override fun onError(utteranceId:String?) {}
+        })
     }
-    fun speak(text:String,tag:String):String? {
+    fun speak(text:String,tag:String):String? = speakInternal(text,tag,TextToSpeech.QUEUE_FLUSH)
+    fun speakQueued(text:String,tag:String):String? = speakInternal(text,tag,TextToSpeech.QUEUE_ADD)
+    private fun speakInternal(text:String,tag:String,queueMode:Int):String? {
         if(!ttsReady)return "Google speech engine is not ready"
         val engine=tts?:return "Install Speech Services by Google"
         val locale=when(tag) {
@@ -72,7 +85,7 @@ class ShivVoice(private val context:Context) {
         if(available<TextToSpeech.LANG_AVAILABLE)
             return "Missing $tag voice. Settings > General management > Language > Text-to-speech > Preferred engine > Speech Services by Google > gear > Install voice data."
         engine.language=locale
-        engine.speak(text,TextToSpeech.QUEUE_FLUSH,null,"shiv-speech")
+        engine.speak(text,queueMode,null,"shiv-speech-"+System.nanoTime())
         return null
     }
     fun stopListening() { recognizer?.cancel();recognizer?.destroy();recognizer=null }

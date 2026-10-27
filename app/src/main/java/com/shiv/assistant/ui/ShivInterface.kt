@@ -9,6 +9,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
@@ -20,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private val Neon = Color(0xFF65F5F0)
@@ -32,6 +41,7 @@ private val Panel = Color(0xFF101C2C)
 fun ShivInterface(
     controller: ShivController,
     onVoice: () -> Unit,
+    onStopVoice: () -> Unit,
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
     onSpeak: (String) -> Unit,
@@ -39,13 +49,15 @@ fun ShivInterface(
     onModelPick: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableStateOf("Core") }
+    // Only the screen name is saved in Android state; private drafts stay out of Bundle.
+    var tab by rememberSaveable { mutableStateOf("Core") }
     var draft by remember { mutableStateOf("") }
     var goal by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var ocrTaskTitle by remember { mutableStateOf("Review document commitment") }
     var ocrTaskClock by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Capability?>(null) }
+    var chatJob by remember { mutableStateOf<Job?>(null) }
     val pending = controller.pending
     val photo = controller.visionCandidate
     Column(
@@ -56,7 +68,8 @@ fun ShivInterface(
         Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text("S H I V", color = Neon, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 5.sp)
+                    Text("S H I V", color = Neon, fontSize = 24.sp, fontWeight = FontWeight.Black,
+                        letterSpacing = 5.sp,modifier=Modifier.semantics { heading() })
                     Text("PERSONAL INTELLIGENCE SYSTEM", fontSize = 9.sp, letterSpacing = 2.sp, color = Muted)
                 }
                 Text("●  " + controller.config.mode.name, color = Neon, fontSize = 10.sp,
@@ -69,7 +82,9 @@ fun ShivInterface(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = if (active) Neon else Panel,
-                        modifier = Modifier.clickable { tab = it }
+                        modifier = Modifier.heightIn(min=48.dp)
+                            .selectable(selected=active,role=Role.Tab,onClick={tab=it})
+                            .semantics { contentDescription="Open $it screen" }
                     ) {
                         Text(it.uppercase(), color = if (active) Color(0xFF051521) else Muted,
                             fontWeight = FontWeight.Bold, fontSize = 11.sp,
@@ -117,6 +132,13 @@ fun ShivInterface(
                 }
             }
             "Chat" -> Column(Modifier.weight(1f)) {
+                if(controller.messages.none { it.role=="user" })
+                    Text("No conversation yet. Type a message or use offline voice.",
+                        color=Muted,modifier=Modifier.padding(16.dp))
+                if(controller.working) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if(controller.speechDraft.isNotBlank()) Text(
+                    "Hearing: "+controller.speechDraft,color=Violet,
+                    modifier=Modifier.padding(horizontal=16.dp))
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(controller.messages) { entry ->
@@ -141,15 +163,18 @@ fun ShivInterface(
                     Button(
                         onClick = {
                             val text = draft; draft = ""
-                            scope.launch { controller.submit(text) }
+                            chatJob = scope.launch { controller.submit(text) }
                         },
                         enabled = !controller.working && draft.isNotBlank(),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)
                     ) { Text("SEND") }
+                    if(controller.working) TextButton(onClick = { chatJob?.cancel();onStopVoice() }) {
+                        Text("STOP", color = Violet)
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onVoice) { Text("🎙 Voice", color = Neon) }
+                    TextButton(onClick = { chatJob?.cancel();onVoice() }) { Text("🎙 Voice", color = Neon) }
                     TextButton(onClick = onPhoto) { Text("◈ Vision", color = Neon) }
                     TextButton(onClick = { controller.messages.lastOrNull { it.role == "assistant" }?.let { onSpeak(it.text) } }) {
                         Text("◉ Speak", color = Neon)
@@ -163,7 +188,10 @@ fun ShivInterface(
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { controller.saveMacro(goal) }, enabled = goal.isNotBlank()) { Text("SAVE MACRO") }
+                    Button(onClick = {
+                        runCatching { controller.saveMacro(goal) }
+                            .onFailure { controller.showNotice("Macro could not be saved to encrypted storage") }
+                    }, enabled = goal.isNotBlank()) { Text("SAVE MACRO") }
                     OutlinedButton(onClick = { if (goal.isNotBlank()) controller.propose(ShivPlanner.plan(goal).steps.first()) },
                         enabled = goal.isNotBlank()) { Text("REVIEW FIRST STEP") }
                 }
@@ -184,6 +212,7 @@ fun ShivInterface(
                 }
                 Spacer(Modifier.height(12.dp))
                 Header("YOUR MACROS", "Stored encrypted. No unattended app control.")
+                if(controller.macros.isEmpty()) Text("No saved macros yet.",color=Muted)
                 controller.macros.forEach { saved ->
                     GlassCard {
                         Text(saved, color = Color.White)
@@ -205,17 +234,22 @@ fun ShivInterface(
                 OutlinedTextField(note, { note = it.take(8192) }, label = { Text("Save an explicit memory") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { controller.saveNote(note); note = "" }, enabled = note.isNotBlank()) { Text("SAVE") }
+                    Button(onClick = {
+                        runCatching { controller.saveNote(note) }
+                            .onSuccess { note="" }
+                            .onFailure { controller.showNotice("Note could not be saved to encrypted storage") }
+                    }, enabled = note.isNotBlank()) { Text("SAVE") }
                     OutlinedButton(onClick = onDocument) { Text("IMPORT TEXT") }
                 }
                 Spacer(Modifier.height(20.dp))
                 Text("SAVED NOTES", color = Violet, fontSize = 12.sp)
+                if(controller.notes.isEmpty()) Text("No saved notes yet.",color=Muted)
                 controller.notes.asReversed().take(30).forEach { memory ->
                     GlassCard { Text(memory, color = Color.White, fontSize = 13.sp) }
                     Spacer(Modifier.height(8.dp))
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("Notification summaries: " + runCatching { controller.vault.notificationCount() }.getOrDefault(0),
+                Text("Notification summaries: " + runCatching { controller.notificationSummaryCount() }.getOrDefault(0),
                     color = Muted)
                 OutlinedButton(onClick = { controller.clearHistory() }) { Text("ERASE CHAT HISTORY") }
             }
@@ -224,7 +258,8 @@ fun ShivInterface(
             "Settings" -> ShivSettings(controller, onNotificationPermission)
         }
         Text(controller.notice, color = Muted, fontSize = 10.sp, maxLines = 2,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp))
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
+                .semantics { liveRegion=LiveRegionMode.Polite })
     }
     if (pending != null) AlertDialog(
         onDismissRequest = controller::reject,

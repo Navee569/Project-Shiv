@@ -6,6 +6,27 @@ import org.junit.Test
 import java.io.File
 
 class InferenceQueueReliabilityTest {
+    @Test fun streamingFragmentsReachCallerInOrder() = runBlocking {
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String)="hello world"
+            override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
+                onFragment("hello ")
+                onFragment("world")
+                return "hello world"
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            val chunks=mutableListOf<String>()
+            val reply=queue.submit(InferenceRequest("stream","prompt",InferencePriority.INTERACTIVE,
+                onFragment={ synchronized(chunks) { chunks.add(it) } }))
+            assertEquals("hello world",reply)
+            assertEquals(listOf("hello ","world"),chunks)
+        } finally { queue.shutdown() }
+    }
     private class FakeBrain : Brain {
         val entered = CompletableDeferred<Unit>()
         val gate = CompletableDeferred<Unit>()
@@ -52,6 +73,123 @@ class InferenceQueueReliabilityTest {
                 } catch (_: IllegalArgumentException) {}
             }
             assertTrue(fake.executed.isEmpty())
+        } finally { queue.shutdown() }
+    }
+    @Test fun cancelingActiveCallerStopsCooperativeInferenceAndFreesQueue() = runBlocking {
+        val entered=CompletableDeferred<Unit>()
+        val canceled=CompletableDeferred<Unit>()
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String):String {
+                if(prompt=="active") {
+                    entered.complete(Unit)
+                    try { awaitCancellation() }
+                    finally { canceled.complete(Unit) }
+                }
+                return "reply:"+prompt
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            val first=async { queue.submit(InferenceRequest("active","active",InferencePriority.INTERACTIVE)) }
+            withTimeout(3000) { entered.await() }
+            first.cancelAndJoin()
+            withTimeout(3000) { canceled.await() }
+            assertEquals("reply:next",withTimeout(4000) {
+                queue.submit(InferenceRequest("next","next",InferencePriority.URGENT))
+            })
+        } finally { queue.shutdown() }
+    }
+
+    @Test fun queuedRequestsRunByPriorityAndCapacityIncludesActiveWork() = runBlocking {
+        val entered=CompletableDeferred<Unit>()
+        val gate=CompletableDeferred<Unit>()
+        val calls=mutableListOf<String>()
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String):String {
+                synchronized(calls) { calls.add(prompt) }
+                if(prompt=="first") { entered.complete(Unit);gate.await() }
+                return prompt
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake,4)
+        try {
+            val first=async { queue.submit(InferenceRequest("1","first",InferencePriority.INTERACTIVE)) }
+            withTimeout(3000) { entered.await() }
+            val background=async { queue.submit(InferenceRequest("2","background",InferencePriority.BACKGROUND)) }
+            val interactive=async { queue.submit(InferenceRequest("3","interactive",InferencePriority.INTERACTIVE)) }
+            val urgent=async { queue.submit(InferenceRequest("4","urgent",InferencePriority.URGENT)) }
+            withTimeout(3000) { while(queue.pendingCount()!=3) delay(10) }
+            try {
+                queue.submit(InferenceRequest("5","overflow",InferencePriority.URGENT))
+                fail("Active work must count against capacity")
+            } catch (_:IllegalStateException) {}
+            gate.complete(Unit)
+            listOf(first,background,interactive,urgent).forEach { withTimeout(3000) { it.await() } }
+            assertEquals(listOf("first","urgent","interactive","background"),calls)
+        } finally { queue.shutdown() }
+    }
+
+    @Test fun cancellationWaitsForInferenceCleanupBeforeNextStarts() = runBlocking {
+        val entered=CompletableDeferred<Unit>()
+        val cleaned=CompletableDeferred<Unit>()
+        val cleanupGate=CompletableDeferred<Unit>()
+        val nextEntered=CompletableDeferred<Unit>()
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String):String {
+                if(prompt=="first") {
+                    entered.complete(Unit)
+                    try { awaitCancellation() }
+                    finally { withContext(NonCancellable) {
+                        cleanupGate.await()
+                        cleaned.complete(Unit)
+                    } }
+                }
+                nextEntered.complete(Unit)
+                return prompt
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            val first=async { queue.submit(InferenceRequest("1","first",InferencePriority.INTERACTIVE)) }
+            withTimeout(3000) { entered.await() }
+            val next=async { queue.submit(InferenceRequest("2","next",InferencePriority.URGENT)) }
+            first.cancelAndJoin()
+            assertFalse("Next request must wait for native cleanup",nextEntered.isCompleted)
+            cleanupGate.complete(Unit)
+            withTimeout(3000) { cleaned.await() }
+            assertEquals("next",withTimeout(3000) { next.await() })
+            assertTrue(nextEntered.isCompleted)
+        } finally { cleanupGate.complete(Unit);queue.shutdown() }
+    }
+
+    @Test fun failedInferenceDoesNotPoisonLaterRequests() = runBlocking {
+        val fake=object:Brain {
+            override suspend fun load(model:File) {}
+            override suspend fun infer(prompt:String):String {
+                if(prompt=="fail") throw IllegalStateException("native failure")
+                return "ok"
+            }
+            override suspend fun unload() {}
+            override fun status()=BrainStatus(true,"fake",0)
+        }
+        val queue=InferenceQueue(fake)
+        try {
+            try {
+                queue.submit(InferenceRequest("1","fail",InferencePriority.INTERACTIVE))
+                fail("Failure must reach caller")
+            } catch (_:IllegalStateException) {}
+            assertEquals("ok",withTimeout(3000) {
+                queue.submit(InferenceRequest("2","next",InferencePriority.INTERACTIVE))
+            })
         } finally { queue.shutdown() }
     }
 }

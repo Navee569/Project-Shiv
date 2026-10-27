@@ -2,7 +2,8 @@
 
 ## Automated CI evidence — verified
 
-**Latest source commit: `8e48ed0`.**
+**Historical verified CI source commit: `8e48ed0`.** The current development
+batch has separate local checks and requires fresh API 26/35 CI results.
 
 - Debug APK, static checks, JVM unit suite and Android lint: **PASS**, [run 40259210693](https://github.com/Navee569/Project-Shiv/actions/runs/40259210693).
 - Instrumented Android 8.0 (API26): **14/14 PASS** and Android 15 (API35): **14/14 PASS**, [run 40259210606](https://github.com/Navee569/Project-Shiv/actions/runs/40259210606).
@@ -21,14 +22,40 @@
 ## Additional tests required before release
 
 1. Expand existing successful compile/unit/lint, SQLCipher wrong-key and encrypted-header checks to real device and additional failure modes.
-2. Add real legacy-data migration interruption, Keystore invalidation, reboot, expiry cleanup and WAL/integrity failure tests. Correction, concurrency and rollback are already covered.
+2. Execute new legacy migration interruption, encrypted schema upgrade and corruption tests on API 26/35; then verify real Keystore loss, reboot, expiry cleanup and WAL recovery on a device. Correction, concurrency and rollback already have tests.
 3. Fake Brain: malformed/unknown tools, rejected authority override, queue priority, cancellation, 64-size cap, restart/retry/once behavior.
 4. Unit scenarios: commitment -> confirm before calendar write, Kannada/Telugu missing voice, denylisted bank app zero stored data, quiet hours, duplicate proactive suppression, owner correction takes precedence.
 5. Emulator scenarios: no permissions, user-denied notifications, app data restore, process death, background limits, reboot WorkManager reschedule.
 6. Review merged manifest permissions, native model libraries, hashes, certificate, network endpoints, secrets and model weights before releasing.
 7. Device E2E for phone intents, private model import, model load/unload, storage conditions and thermal fallback.
 
+Current added instrumentation source covers all 12 primary tabs and selected
+semantics, recreation, empty/error and permission states, owner-confirmed
+storage recovery control, atomic legacy-copy rollback/restart, encrypted
+schema v1→v2 migration, and damaged ciphertext rejection. The app checks
+SQLCipher integrity at startup and provides retry before an explicit erase.
+Test package execution on API 26/35 is still required; an assembled test APK
+is not an executed test.
+
 ## OWNER-VERIFY — Galaxy S23 (none measured yet)
+
+Before Phase 1 acceptance, import the actual 1B and E2B model files, select
+CPU then GPU/NPU in AI Status one at a time, press LOAD after each change,
+and record which combinations load and respond. Check the displayed output
+token cap, first-text-fragment time and routing time. Record LiteRT's decode
+tokens/s when its conversation benchmark reports a valid value, or record
+"unavailable" on the owner phone.
+For voice, use the Chat mic with local mode and an installed offline speech
+pack; confirm partial text, sentence-by-sentence speech and STOP/barge-in.
+Then start a 10-minute offline mic session, test the optional “Shiv” phrase,
+cover both proximity and light sensors, and test sleep hours with and without
+the explicit override. Record failures rather than treating CI as phone proof.
+
+For awareness, opt into notification summaries and confirm the ongoing Shiv
+notification offers PAUSE. While paused, post a permitted meeting notice and
+try a screen preview; neither may be captured. Tap RESUME: notification
+awareness may resume, but screen inspection must need a new 15-second arm.
+Block Shiv notifications or its awareness channel and confirm capture stops.
 
 | Feature | How to check on phone | Result |
 | --- | --- | --- |
@@ -76,6 +103,12 @@ Start from the **successful final SHA's** CI APK, not an artifact from main.
 6. Repeat the latest APK build, JUnit/lint, and instrumented Android API26 and
    API35 suites. Emulator passes do not prove Galaxy S23 background behavior,
    Kannada/Telugu speech, real LiteRT model performance or power consumption.
+7. Permissions > PER-APP SOURCE CONTROL: choose NOTIFICATIONS ONLY for a harmless
+   test app and verify its notification fact may be queued while a separately
+   armed screen preview is blocked. Choose EXCLUDE and verify neither source
+   creates a signal. Choose INCLUDE and verify Android permission plus the
+   15-second owner screen arm are still required. A banking/OTP app must remain
+   blocked in every mode.
 
 
 ## New owner-controlled privacy, neural and retention tests

@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MicrophoneSessionPolicyTest {
+    @Test fun wakePhraseIsOnlyACommandGateAndPocketNeedsBothSignals() {
+        assertEquals("meet Raj tomorrow",MicrophoneSessionPolicy.wakeCommand(
+            "Shiv, meet Raj tomorrow",true))
+        assertNull(MicrophoneSessionPolicy.wakeCommand("meet Raj tomorrow",true))
+        assertNull(MicrophoneSessionPolicy.wakeCommand("Shiv, my OTP is 123456",true))
+        assertTrue(MicrophoneSessionPolicy.pocketed(0f,5f,2f))
+        assertFalse(MicrophoneSessionPolicy.pocketed(0f,5f,40f))
+        assertFalse(MicrophoneSessionPolicy.pocketed(null,5f,2f))
+        assertTrue(MicrophoneSessionPolicy.sleepHours(23))
+        assertTrue(MicrophoneSessionPolicy.sleepHours(6))
+        assertFalse(MicrophoneSessionPolicy.sleepHours(12))
+    }
     @Test fun sessionExpiresOrStopsForLowPowerHeatErrorsAndMissingLocalSpeech() {
         val start=1_000_000L
         assertTrue(MicrophoneSessionPolicy.mayContinue(start,start+1000,70,0,true,0))

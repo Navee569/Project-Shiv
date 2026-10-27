@@ -8,6 +8,7 @@ import com.shiv.assistant.data.ShivRepository
 import com.shiv.assistant.automation.SignalWorker
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
+import com.shiv.assistant.domain.AppSourceAccess
 import com.shiv.assistant.data.ShivVault
 import kotlinx.coroutines.*
 
@@ -23,7 +24,7 @@ class ShivAwareness : AccessibilityService() {
         if(event.eventType!=AccessibilityEvent.TYPE_VIEW_CLICKED &&
             event.eventType!=AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)return
         val name=event.packageName?.toString()?:return
-        if(SourceExclusions.shouldBlock(applicationContext,name))return
+        if(!AppSourceAccess.mayRead(applicationContext,name,"accessibility"))return
         // Owner explicitly types the ONE package being inspected. Other apps are
         // never traversed even when the Accessibility service is system-enabled.
         val vault=try { ShivVault(applicationContext) } catch (_:Exception) { return }
@@ -31,6 +32,7 @@ class ShivAwareness : AccessibilityService() {
             SourceExclusions.fromString(vault.get("app_denied_packages"))))return
         val prefs=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
         if(!prefs.getBoolean("owner_enabled",false) || prefs.getBoolean("paused",true))return
+        if(!AwarenessControl.mayCapture(this))return
         // A capture token is issued only by an owner tap, expires after 15 seconds,
         // and is consumed before any node is traversed.
         val until=prefs.getLong("capture_until",0L)
@@ -45,6 +47,8 @@ class ShivAwareness : AccessibilityService() {
                 source.packageName?.toString().orEmpty(),
                 vault.get("screen_allowed_package"),
                 SourceExclusions.fromString(vault.get("app_denied_packages"))))return
+            if(!AppSourceAccess.mayRead(applicationContext,
+                source.packageName?.toString().orEmpty(),"accessibility"))return
             val facts=mutableListOf<String>()
             extractFacts(source,facts,0)
             if(facts.isEmpty())return
@@ -53,6 +57,7 @@ class ShivAwareness : AccessibilityService() {
                 val active=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
                 if(!active.getBoolean("owner_enabled",false) ||
                     active.getBoolean("paused",true))return@launch
+                if(!AwarenessControl.mayCapture(applicationContext))return@launch
                 val id=ShivRepository(applicationContext).incoming("accessibility",facts.distinct().take(5).joinToString("; "),
                     priority=3,packageName=name)
                 if(id!=null)SignalWorker.schedule(applicationContext)

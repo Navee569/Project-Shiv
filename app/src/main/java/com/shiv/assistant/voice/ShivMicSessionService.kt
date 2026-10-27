@@ -19,6 +19,10 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -47,6 +51,8 @@ class ShivMicSessionService : Service() {
         const val ACTION_START = "com.shiv.assistant.action.START_LOCAL_MIC"
         const val ACTION_STOP = "com.shiv.assistant.action.STOP_LOCAL_MIC"
         const val EXTRA_LOCALE = "language"
+        const val EXTRA_REQUIRE_WAKE = "require_wake_phrase"
+        const val EXTRA_ALLOW_SLEEP = "allow_sleep_hours"
         private const val CHANNEL = "shiv_local_mic"
         private const val NOTIFICATION_ID = 5160
     }
@@ -57,10 +63,28 @@ class ShivMicSessionService : Service() {
     private var active=false
     private var locale="en-IN"
     private var recognizer: SpeechRecognizer?=null
+    private var listening=false
+    private var requireWake=false
+    private var allowSleep=false
+    private var proximityCm:Float?=null
+    private var proximityMaxCm:Float?=null
+    private var lux:Float?=null
+    private var sensors:SensorManager?=null
+    private val sensorListener=object:SensorEventListener {
+        override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) {}
+        override fun onSensorChanged(event:SensorEvent) {
+            when(event.sensor.type) {
+                Sensor.TYPE_PROXIMITY->proximityCm=event.values.firstOrNull()
+                Sensor.TYPE_LIGHT->lux=event.values.firstOrNull()
+            }
+            updateCaptureGate()
+        }
+    }
     private val monitor = object : Runnable {
         override fun run() {
             if(!active)return
             if(!allowed()) { stopSession();return }
+            updateCaptureGate()
             main.postDelayed(this,10_000L)
         }
     }
@@ -85,6 +109,8 @@ class ShivMicSessionService : Service() {
             return START_NOT_STICKY
         }
         locale=requested
+        requireWake=intent.getBooleanExtra(EXTRA_REQUIRE_WAKE,false)
+        allowSleep=intent.getBooleanExtra(EXTRA_ALLOW_SLEEP,false)
         startedAt=SystemClock.elapsedRealtime()
         active=true
         errors=0
@@ -97,7 +123,7 @@ class ShivMicSessionService : Service() {
         val notification:Notification=NotificationCompat.Builder(this,CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Shiv • Local microphone active")
-            .setContentText("Owner-started offline listening. Stops automatically within 10 minutes.")
+            .setContentText("Offline session; pauses in pocket/sleep hours, stops within 10 minutes.")
             .setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel,"STOP",stopAction)
             .build()
@@ -107,6 +133,14 @@ class ShivMicSessionService : Service() {
             else startForeground(NOTIFICATION_ID,notification)
             if(!allowed()) {stopSession();return START_NOT_STICKY}
             recognizer=SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+            sensors=getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            sensors?.getDefaultSensor(Sensor.TYPE_PROXIMITY)?.let { sensor ->
+                proximityMaxCm=sensor.maximumRange
+                sensors?.registerListener(sensorListener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
+            }
+            sensors?.getDefaultSensor(Sensor.TYPE_LIGHT)?.let { sensor ->
+                sensors?.registerListener(sensorListener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
+            }
             recognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params:Bundle?) {}
                 override fun onBeginningOfSpeech() {}
@@ -115,16 +149,20 @@ class ShivMicSessionService : Service() {
                 override fun onEndOfSpeech() {}
                 override fun onError(error:Int) {
                     if(!active)return
+                    listening=false
+                    if(!captureAllowed())return
                     errors++
                     if(errors>=MicrophoneSessionPolicy.MAX_ERRORS) stopSession()
                     else scheduleNext()
                 }
                 override fun onResults(results:Bundle?) {
                     if(!active)return
+                    listening=false
+                    if(!captureAllowed()) { scheduleNext();return }
                     errors=0
-                    val utterance=MicrophoneSessionPolicy.safeUtterance(
+                    val utterance=MicrophoneSessionPolicy.wakeCommand(
                         results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            ?.firstOrNull().orEmpty())
+                            ?.firstOrNull().orEmpty(),requireWake)
                     if(utterance!=null) {
                         scope.launch {
                             // Only owner's explicitly started mic can produce this source.
@@ -161,15 +199,29 @@ class ShivMicSessionService : Service() {
         checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED &&
         powerOk()
 
+    private fun captureAllowed():Boolean=allowed() &&
+        !MicrophoneSessionPolicy.pocketed(proximityCm,proximityMaxCm,lux) &&
+        (allowSleep || !MicrophoneSessionPolicy.sleepHours(java.time.LocalTime.now().hour))
+    private fun updateCaptureGate() {
+        if(!active)return
+        if(!captureAllowed()) {
+            if(listening) {
+                listening=false
+                runCatching { recognizer?.cancel() }
+            }
+        } else if(!listening) startRecognizing()
+    }
+
     private fun startRecognizing() {
         if(!allowed()) {stopSession();return}
+        if(!captureAllowed() || listening)return
         val intent=Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE,locale)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false)
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true)
-        try { recognizer?.startListening(intent) }
+        try { recognizer?.startListening(intent); listening=true }
         catch (_:Exception) {stopSession()}
     }
     private fun scheduleNext() {
@@ -177,7 +229,10 @@ class ShivMicSessionService : Service() {
     }
     private fun stopSession() {
         active=false
+        listening=false
         main.removeCallbacksAndMessages(null)
+        sensors?.unregisterListener(sensorListener)
+        sensors=null
         runCatching {recognizer?.cancel()}
         runCatching {recognizer?.destroy()}
         recognizer=null
@@ -186,7 +241,10 @@ class ShivMicSessionService : Service() {
     }
     override fun onDestroy() {
         active=false
+        listening=false
         main.removeCallbacksAndMessages(null)
+        sensors?.unregisterListener(sensorListener)
+        sensors=null
         runCatching {recognizer?.destroy()}
         recognizer=null
         scope.cancel()

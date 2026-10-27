@@ -9,19 +9,31 @@
 | Milestone | Status | Actual evidence | Remaining requirement(s) |
 |---|---|---|---|
 | M0 clean Android baseline | WIRED, CI-tested | Gradle wrapper, launcher manifest, `shiv-native.yml`, Android API35 emulator | Android Studio beginner run-config & Galaxy S23 physical install OWNER-VERIFY |
-| M1 architecture | PARTIAL | domain contracts, `ShivRepository`, `ShivDatabase`, `Brain`, WorkManager, policy classes | no complete ViewModel/domain/UI separation; many controllers own persistence |
-| M2 app shell | PARTIAL | native Compose Core, Chat, Automate, Memory, Memories, Models, Events, AI Status, Permissions, Decisions | all-screen navigation/rotation/accessibility/permission-denied UI coverage incomplete |
-| M3 encrypted persistence | PARTIAL | 14 Room entities, SQLCipher wrapped key, encrypted vault migration; emulator encryption test | imported legacy interrupted migration, wrong-key, corruption, concurrency, schema evolution, export/restore and data-loss tests |
+| M1 architecture | SOURCE BUILT | `ShivViewModel` owns presentation state; typed owner, Phase 1 read/write and decision repositories own encrypted data; Brain and Android adapters remain separate | CI and device behavior still need verification; controllers coordinate platform actions |
+| M2 app shell | SOURCE BUILT | native Compose screens, saved selected tab, loading/empty/error/permission messages, accessible tab and heading semantics, 12-screen navigation/recreation instrumentation source | API 26/35 execution and owner accessibility review pending |
+| M3 encrypted persistence | SOURCE BUILT | SQLCipher wrapped key, atomic legacy migration with restart marker, encrypted v1→v2 Room migration, startup integrity check and owner-confirmed recovery, wrong-key/corruption/rollback/concurrency tests | API 26/35 execution, real Keystore-loss and Galaxy S23 recovery observations pending |
 | M4 model AI | PARTIAL | real LiteRT-LM Brain load/infer, import, SHA-256 recheck, bounded priority queue, structured tool parser | exact model files not tested; delegate selection, cancel *active* inference, time-first-token, token budget, real 1B/E2B routing, strict schema per tool |
 | M5 memory | PARTIAL | save, search, correction, delete, expiry filtering, provenance/confidence, encrypted snapshot | export/restore, semantic graph, dedupe/expiry garbage collection, full owner facts UI |
 | M6 language/voice | PARTIAL | push-to-talk offline Android STT (where available), explicit Google TTS, kn-IN / te-IN / en-IN | language packs/quality OWNER-VERIFY; streaming speech/VAD/mic foreground sessions and optional speaker recognition missing |
 | M7 proactive system | PARTIAL | encrypted save-first signal queue, WorkManager, commitment parser, configurable quiet rules, PowerPolicy, charging-only hypothesis job | all trigger sources, interrupt budget persistence, response reactions, reboot/staleness/dedup edge cases, full routine learn/act |
-| M8 Android integrations | PARTIAL | notification listener, opt-in one-shot Accessibility, calendar read, post-call metadata, relative reminders, settings/app handoffs, local image labels | contacts, calendar write with permission, foreground listening service, per-app include/exclude UI, owner tier edit/undo, full action result verification |
+| M8 Android integrations | PARTIAL | notification listener, opt-in one-shot Accessibility, calendar read and owner-confirmed write, post-call metadata, relative reminders, settings/app handoffs, local image labels | calendar provider/device verification; remaining integration and action result edge cases |
 | M9 privacy hardening | PARTIAL | SQLCipher, Keystore, denylist before storage, manual app awareness, extra owner approval, no silent calls/payments | secure encrypted export/restore, full data erasure, all native libs/network audit, private no-INTERNET flavor not implemented; cloud exception is opt-in |
-| M10 measurements | PARTIAL | model load/reply elapsed time, RAM/thermal admission and queue count | reliable TTFT/tokens/s, measured energy/speech cost and Galaxy S23 baseline |
+| M10 measurements | PARTIAL | model load/reply elapsed time, LiteRT TTFT/decode count/tokens/s, STT and TTS engine timing, conditional whole-device battery energy drop | audible first-word timing, attributable power cost and Galaxy S23 baseline |
 | M11 acceptance | NOT ACCEPTED | earlier compilation + JVM/lint + API35 emulator tests green on `713112f` | current changes must pass CI; device verification, full scenarios, release acceptance and owner sign-off |
 
 ## Binding owner decisions [N] — explicit review
+
+The first five previously partial source rows (IDs 04, 07, 08, 11 and 12)
+were developed together after commit `e71543e`. The ViewModel and typed
+repositories separate controller state from encrypted data operations. The
+Activity checks SQLCipher integrity and legacy migration on an I/O thread
+before private screens open. Legacy copying is one transaction with a
+committed restart marker; a failed read rolls the entire copy back. A lost
+key or damaged database shows retry and a separately confirmed recovery
+path. The saved navigation tab contains no private draft. Compose tests cover
+navigation, recreation, empty states, permission errors and recovery gating;
+encrypted tests cover v1→v2 migration and corruption. These tests still
+require CI execution on API 26 and 35. No owner/device acceptance is inferred.
 
 | Decision | Status | Concrete evidence / gap |
 |---|---|---|
@@ -151,3 +163,96 @@ In particular, source-displayed feature labels must not imply that Android
 privileged behavior is available without the owner's runtime grant, nor that
 AI-text tool proposals can self-authorize irreversible actions. CLOUD/HYBRID
 intelligence was not changed and the Phase 2 requirements remain gated.
+
+## 26 October 2026 follow-up at merge baseline `6c114476`
+
+The branch was checked at PR #8's exact merge SHA, rather than `main`.
+`ShivIntelligence.kt` already implements opt-in OpenAI-compatible cloud chat
+and selected-image requests; `ShivController` saves mode, HTTPS endpoint,
+model, encrypted API secret and explicit consent. This is an existing Phase 1
+owner exception to the original local-only rule, not a new Phase 2 provider
+integration. No live provider call or device behavior has been verified here.
+
+One source defect was found in chat: literal `\\n` text inside a `//` comment
+commented out the refresh of the in-memory notes list. A corrected or deleted
+fact could therefore remain in the next chat's `notes` argument. The refresh
+is restored and covered by an Android regression that adds then removes a note
+between two chat submissions. The in-app capability list now describes the
+existing Contacts name preview and scoped Accessibility preview with their
+permission and access limits, instead of marking both as entirely planned.
+Approved actions now log the observed result: invalid reminder time, an opened
+external handoff, or a failed handoff, rather than logging every approval as
+if the action succeeded. A regression covers invalid reminder approval.
+
+This closes only those audited defects. The milestone table and owner/device
+limitations above remain open; M11 has not been accepted and Phase 2 is gated.
+
+### Pending local follow-up
+
+The inference queue previously removed canceled waiting requests but did not
+cancel cooperative active requests. The follow-up adds active
+coroutine cancellation, a Chat STOP control, and a late-reply guard. A focused
+JVM regression covers the queue handoff. Native build and API 26/35 validation
+must run before this can be treated as verified or merged. The owner's M11
+acceptance is still pending, so the Phase 2 gate remains closed.
+
+Phase 1 N7 per-app source modes now permit owner configuration for notification
+facts and one-shot screen facts separately. A sensitive app cannot be restored
+by an INCLUDE rule, and policy is enforced at both read and encrypted-queue
+ingress. Exact on-phone Accessibility behavior remains OWNER-VERIFY.
+
+M5 explicit owner facts now use transactional exact deduplication with their
+encrypted note index, including concurrent repeat-save regression coverage.
+This does not supply a semantic people/place graph or measured embedding gain.
+
+M0/M2 local verification found a malformed Gradle wrapper distribution URL
+and seven inert Compose click handlers. Both source defects were repaired;
+the final SHA still needs build/JVM/lint and API 26/35 instrumentation before
+these repairs can be marked verified.
+
+M5 local model inference now uses the previously unconnected bounded context
+snapshot. It includes approved events, facts, rules, recent chat and action
+outcomes, but not action arguments. The cloud implementation remains unchanged
+and does not receive this snapshot. Model output quality with real imported
+weights still requires Galaxy S23 owner verification.
+
+### Five-item source follow-up (IDs 18, 23, 34, 35, 36 in owner audit files)
+
+ID 18 now has owner-selected CPU/GPU/NPU loading, a LiteRT output-token cap,
+and reuse of the model cache/conversation while loaded. The chosen delegate
+is reported and never silently substituted; actual GPU/NPU compatibility is
+OWNER-VERIFY. ID 23 now reports measured first text fragment and routing
+latency. LiteRT conversation benchmark stats now supply decode token count,
+TTFT and tokens/s after local inference. ID 34 has partial STT preview, local fragment-to-TTS
+sentence streaming, and barge-in cancellation; spoken timing and real-device
+behavior need verification. ID 35 now gates the bounded owner-started session
+by sleep hours and pocket sensors, but continuous VAD/always-ready operation
+remains absent. ID 36 has only an optional session-local “Shiv” command phrase;
+speaker identification and autonomous wake word remain absent. These are
+source distinctions, not five completed features.
+
+### Calendar export and measured diagnostics follow-up
+
+Shiv can export a locally approved event to an owner-selected writable Android
+calendar after separate read/write permission and an event/destination review.
+It rechecks the event and calendar before insertion, blocks events imported from
+the external calendar, and stores an encrypted duplicate guard. Calendar provider
+behavior still needs owner-device verification. AI Status reads LiteRT's measured
+TTFT, decode token count and decode rate; push-to-talk records speech-end to
+transcription, TTS engine start and first audio-buffer delay. When Android exposes a discharging
+battery energy counter, it shows the whole-device energy drop during a reply.
+That drop cannot be attributed to Shiv or converted into an accepted battery
+budget. Actual audible first word, Galaxy S23 power and model fit remain
+OWNER-VERIFY.
+
+ID 46 now has an ongoing PAUSE/RESUME awareness notification. Both source
+services deny capture while paused or if the control cannot be shown; resume
+never restores a one-shot screen token. Galaxy S23 behavior is OWNER-VERIFY.
+
+Failed encrypted signals now remain visible as a count in AI Status, with an
+owner-triggered retry that resets attempts. Android regression covers this
+recovery path. The final local debug build, JVM suite, lint, instrumentation
+APK compilation, and static checks passed; emulator execution on the final
+SHA and Galaxy S23 acceptance are separate gates.
+
+Audit IDs 17 and 19 now have source implementations for selected-router restoration, large-model idle eviction, low-memory and measured slow-reply fallback, and a usable bounded priority queue. Queue tests cover active capacity, priority, cancellation cleanup, and recovery after a failed request. Real LiteRT model fit, native cancellation timing, API 26/35 runs, and Galaxy S23 behavior remain verification work; Phase 2 entry is still gated by M11.

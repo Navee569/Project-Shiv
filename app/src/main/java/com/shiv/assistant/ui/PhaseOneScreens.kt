@@ -9,14 +9,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
-import com.shiv.assistant.data.PortableOwnerArchive
 import com.shiv.assistant.data.OwnerNudgeReaction
+import com.shiv.assistant.domain.AppSourceMode
+import com.shiv.assistant.ai.LocalBackend
 import kotlinx.coroutines.launch
 
 /**
@@ -27,26 +32,55 @@ import kotlinx.coroutines.launch
 fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
     var contactQuery by remember { mutableStateOf("") }
+    var pendingCalendarExport by remember {
+        mutableStateOf<Pair<com.shiv.assistant.data.EventRecord,Long>?>(null)
+    }
+    var micWakePhrase by remember { mutableStateOf(false) }
+    var micSleepOverride by remember { mutableStateOf(false) }
     val screenContext=LocalContext.current
+    var calendarMonitorEnabled by remember {
+        mutableStateOf(com.shiv.assistant.data.ShivVault(screenContext).get(
+            com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN)=="yes")
+    }
+    val calendarMonitorPermission=rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) {
+            com.shiv.assistant.data.ShivVault(screenContext).put(
+                com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN,"yes")
+            calendarMonitorEnabled=true
+            com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(screenContext,true)
+        } else controller.reportIssue("Calendar permission denied; change monitoring remains off")
+    }
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
+        else controller.reportIssue("Calendar permission denied; no phone events were read")
+    }
+    val permissionCalendarWrite=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if(grants[Manifest.permission.READ_CALENDAR]==true &&
+            grants[Manifest.permission.WRITE_CALENDAR]==true)
+            scope.launch { controller.loadWritableCalendars() }
+        else controller.reportIssue("Calendar permission denied; no external event was written")
     }
     val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
+        else controller.reportIssue("Contacts permission denied; no contact was read")
     }
     val permissionMicSession=rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()) { granted ->
-        if(granted)controller.startOfflineMicSession(owner.speechLocale)
-        else owner.showNotice("Microphone access denied: offline session not started")
+        if(granted)controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
+        else controller.reportIssue("Microphone permission denied; offline session was not started")
     }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         controller.enablePostCallCheckIn(granted)
+        if(!granted)controller.reportIssue("Phone state permission denied; post-call check-ins stay off")
     }
     var role by remember { mutableStateOf("router") }
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
     var revised by remember { mutableStateOf("") }
     var allowedScreenPackage by remember { mutableStateOf("") }
     var newDeniedPackage by remember { mutableStateOf("") }
+    var sourcePackage by remember { mutableStateOf("") }
+    var sourceMode by remember { mutableStateOf(AppSourceMode.NOTIFICATIONS_ONLY) }
     var confirmErase by remember { mutableStateOf(false) }
     var erasePhrase by remember { mutableStateOf("") }
     var portableDialog by remember { mutableStateOf<String?>(null) }
@@ -62,7 +96,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         else scope.launch {
             portableBusy=true
             try {
-                val size=PortableOwnerArchive(screenContext).exportTo(uri,secret)
+                val size=owner.exportOwnerArchive(uri,secret)
                 portableResult="Encrypted backup saved ("+size+" bytes). Keep its passphrase safe."
             } catch (_:Exception) {
                 portableResult="Backup export failed. No personal data was sent online."
@@ -77,8 +111,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         else scope.launch {
             portableBusy=true
             try {
-                val count=PortableOwnerArchive(screenContext).restoreFrom(uri,secret)
-                owner.afterPortableRestore(count)
+                val count=owner.restoreOwnerArchive(uri,secret)
                 portableResult="Archive restored. Old reminders, permissions and cloud transmission remain off."
             } catch (_:Exception) {
                 portableResult="Restore refused (wrong passphrase, unsupported archive or invalid records). Existing data remains unchanged."
@@ -86,14 +119,38 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         }
     }
     val accent=Color(0xFF65F5F0)
-    LaunchedEffect(page) { runCatching { controller.reload() } }
+    pendingCalendarExport?.let { (event,calendarId) ->
+        val calendar=controller.writableCalendars.firstOrNull { it.id==calendarId }
+        AlertDialog(onDismissRequest={pendingCalendarExport=null},
+            title={Text("Export to phone calendar?")},
+            text={Text("${event?.title ?: "Event unavailable"}\n${event?.startAt?.let { java.time.Instant.ofEpochMilli(it) }}\n${calendar?.name ?: "Calendar unavailable"}\nThis writes an external event.")},
+            confirmButton={TextButton(onClick={
+                pendingCalendarExport=null
+                if(calendar!=null) scope.launch { controller.exportEvent(event,calendarId) }
+            }) { Text("CONFIRM EXPORT") }},
+            dismissButton={TextButton(onClick={pendingCalendarExport=null}) { Text("CANCEL") }})
+    }
+    LaunchedEffect(page) {
+        controller.clearIssue()
+        runCatching { controller.reload() }
+            .onFailure { controller.reportIssue("Could not load this screen from encrypted storage") }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        Text(page.uppercase(),style=MaterialTheme.typography.headlineSmall,color=accent)
-        controller.issue?.let { Text(it,color=Color(0xFFFF9191)) }
-        Text(controller.progress,color=Color.LightGray,fontSize=11.sp)
+        Text(page.uppercase(),style=MaterialTheme.typography.headlineSmall,color=accent,
+            modifier=Modifier.semantics { heading() })
+        controller.issue?.let { Text(it,color=Color(0xFFFF9191),
+            modifier=Modifier.semantics { liveRegion=LiveRegionMode.Assertive }) }
+        if(controller.loading || controller.refreshing) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("Loading encrypted Shiv data…",color=Color.LightGray)
+        }
+        Text(controller.progress,color=Color.LightGray,fontSize=11.sp,
+            modifier=Modifier.semantics { liveRegion=LiveRegionMode.Polite })
         when(page) {
             "Models" -> {
+                if(controller.models.isEmpty() && !controller.refreshing)
+                    Text("No models imported. Select a model file to begin.",color=Color.LightGray)
                 Text("Choose a .litertlm file in Files. LiteRT needs an app-private copy even if the original is in Downloads. Importing E2B may require about 4 GB extra free storage; no model is bundled.",
                     color=Color.LightGray)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -106,7 +163,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Button(enabled=!controller.loading,onClick={scope.launch{controller.importModel(role)}}) {
                         Text("CONFIRM APP-PRIVATE COPY")
                     }
-                    TextButton(onClick={controller::cancelModel}){Text("CANCEL")}
+                    TextButton(onClick=controller::cancelModel){Text("CANCEL")}
                 }
                 Text(controller.progress,color=Color.LightGray)
                 controller.issue?.let{Text(it,color=Color(0xFFFF9191))}
@@ -124,9 +181,32 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
             }
             "AI Status" -> {
+                if(controller.models.isEmpty())
+                    Text("No local model is loaded. Runtime measurements appear after a local reply.",
+                        color=Color.LightGray)
                 Text(controller.modelStatus(),color=Color.White)
-                Text("Observed on this device, where available. TTFT, tokens/s, battery cost, NPU delegate and thermal impact are not measured yet.",
+                Text("LiteRT reports runtime first-token time, decode tokens and tokens/s after a local reply. Battery energy, when supported while discharging, is a whole-device change during that reply and cannot be attributed to Shiv. TTS audio-buffer timing is not audible first-word timing; Galaxy S23 fit needs owner-device measurement.",
                     color=Color.LightGray)
+                Text("LOCAL MODEL BACKEND",color=accent)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    LocalBackend.entries.forEach { backend ->
+                        FilterChip(selected=controller.localBackend==backend,
+                            onClick={scope.launch { controller.chooseLocalBackend(backend) }},
+                            label={Text(backend.name)})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Text("GPU/NPU only work when this phone, runtime and model support them. A failed load does not silently change backend. Reload each model after changing settings.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Text("MAX LOCAL OUTPUT TOKENS",color=accent)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    listOf(128,256,384,512,1024).forEach { count ->
+                        FilterChip(selected=controller.localOutputTokens==count,
+                            onClick={scope.launch { controller.chooseLocalOutputTokens(count) }},
+                            label={Text(count.toString())})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
                 Text("OWNER LOCAL COMPUTE ALLOWANCE",color=accent)
                 Text(controller.localComputeReport(),color=Color.LightGray,fontSize=11.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -141,6 +221,13 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     "native cancellation may be delayed. Owner-requested reminders do not consume it.",
                     color=Color.LightGray,fontSize=11.sp)
                 Text("Pending encrypted signals: "+controller.notificationCount)
+                Text("Failed signals retained for owner review: "+controller.failedSignalCount,
+                    color=Color.LightGray,fontSize=11.sp)
+                if(controller.failedSignalCount>0) {
+                    OutlinedButton(onClick={scope.launch { controller.retryFailedSignals() }}) {
+                        Text("RETRY FAILED SIGNALS")
+                    }
+                }
                 Button(onClick={scope.launch{controller.reload()}}){Text("REFRESH")}
             }
             "Events" -> {
@@ -150,7 +237,23 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 controller.upcoming.forEach { event ->
                     Text(event.title+" • "+java.time.Instant.ofEpochMilli(event.startAt).toString(),
                         color=Color.White)
+                    if(event.source!="owner-reviewed-calendar") {
+                        controller.writableCalendars.forEach { calendar ->
+                            TextButton(onClick={pendingCalendarExport=event to calendar.id}) {
+                                Text("EXPORT TO "+calendar.name.take(40))
+                            }
+                        }
+                    }
                 }
+                OutlinedButton(onClick={
+                    if(screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                        screenContext.checkSelfPermission(Manifest.permission.WRITE_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        scope.launch { controller.loadWritableCalendars() }
+                    else permissionCalendarWrite.launch(arrayOf(Manifest.permission.READ_CALENDAR,
+                        Manifest.permission.WRITE_CALENDAR))
+                }) { Text("CHOOSE PHONE CALENDAR FOR EXPORT") }
                 Text("ENCRYPTED OPEN TASKS",color=accent)
                 if(controller.upcomingTasks.isEmpty())
                     Text("No unfinished tasks in Shiv's private agenda.",color=Color.LightGray)
@@ -195,6 +298,8 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 if(controller.memories.isEmpty()) Text("No stored facts yet",color=Color.LightGray)
             }
             "Decisions" -> {
+                if(controller.decisions.isEmpty())
+                    Text("No decisions need review.",color=Color.LightGray)
                 Text("Evidence traces from the durable signal queue. ASK requires owner confirmation and does not create a calendar entry automatically.",
                     color=Color.LightGray)
                 controller.decisions.forEach { t ->
@@ -224,8 +329,23 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
             }
             "Permissions" -> {
+                val denied=listOf(Manifest.permission.READ_CALENDAR to "Calendar",
+                    Manifest.permission.READ_CONTACTS to "Contacts",
+                    Manifest.permission.RECORD_AUDIO to "Microphone").filter { (name,_) ->
+                    screenContext.checkSelfPermission(name)!=android.content.pm.PackageManager.PERMISSION_GRANTED
+                }.map { it.second }
+                if(denied.isNotEmpty()) Text("Optional access not granted: "+denied.joinToString()+
+                    ". Related actions remain unavailable until you choose to grant them.",
+                    color=Color.LightGray)
                 Text("Notification access, Accessibility, contacts, calls, microphone and calendar each require explicit permission. Do not grant permissions unless you want the associated feature.",
                     color=Color.LightGray)
+                Text("APP AWARENESS PAUSE",color=accent)
+                Text("When awareness is enabled, Shiv shows a persistent notification with PAUSE or RESUME. Pausing blocks notification and screen facts before they are read. Resuming never rearms a screen preview.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick=controller::pauseAwareness) { Text("PAUSE ALL AWARENESS") }
+                    OutlinedButton(onClick=controller::resumeAwareness) { Text("RESUME") }
+                }
                 Text("To enable optional Accessibility: Settings > Accessibility > Installed apps > Shiv. On some Galaxy phones, first open Settings > Apps > Shiv > three dots > Allow restricted settings.",
                     color=Color.White)
                 OutlinedButton(onClick={controller.openAccessibilitySettings()}) { Text("OPEN ACCESSIBILITY SETTINGS") }
@@ -245,6 +365,24 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         scope.launch { controller.readPhoneCalendar() }
                     else permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
                 }) { Text("PREVIEW CALENDAR — DON'T IMPORT YET") }
+                Text("Optional calendar change monitoring reads the next 48 hours about every 15 minutes and saves changes to the encrypted review queue.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("MONITOR CALENDAR CHANGES")
+                    Switch(checked=calendarMonitorEnabled,onCheckedChange={ enabled ->
+                        if(enabled && screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)!=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            calendarMonitorPermission.launch(Manifest.permission.READ_CALENDAR)
+                        else {
+                            com.shiv.assistant.data.ShivVault(screenContext).put(
+                                com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN,
+                                if(enabled)"yes" else "no")
+                            calendarMonitorEnabled=enabled
+                            com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(
+                                screenContext,enabled)
+                        }
+                    })
+                }
                 controller.calendarCandidates.forEach { candidate ->
                     Surface(shape=MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth().padding(10.dp)) {
@@ -258,7 +396,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     }
                 }
                 if(controller.calendarCandidates.isNotEmpty())
-                    TextButton(onClick={controller::discardCalendarPreview}) {
+                    TextButton(onClick=controller::discardCalendarPreview) {
                         Text("DISCARD ALL PREVIEWS")
                     }
                 Text("APP USAGE • OWNER-REQUESTED PREVIEW",color=accent)
@@ -266,7 +404,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     "Android Usage Access. Sensitive apps are excluded. Results are temporary, " +
                     "never entered into memory or an AI prompt.",
                     color=Color.LightGray,fontSize=11.sp)
-                OutlinedButton(onClick={controller::openUsageAccessSettings}) {
+                OutlinedButton(onClick=controller::openUsageAccessSettings) {
                     Text("OPEN USAGE ACCESS SETTINGS")
                 }
                 OutlinedButton(onClick={scope.launch{controller.previewUsage()}}) {
@@ -277,7 +415,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         color=Color.LightGray,fontSize=11.sp)
                 }
                 if(controller.usagePreview.isNotEmpty()) {
-                    OutlinedButton(onClick={controller::clearUsagePreview}) {
+                    OutlinedButton(onClick=controller::clearUsagePreview) {
                         Text("CLEAR USAGE PREVIEW")
                     }
                 }
@@ -296,25 +434,35 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                     Text(match,color=Color.White)
                 }
                 if(controller.contactNameMatches.isNotEmpty())
-                    TextButton(onClick={controller::clearContactNames}) { Text("CLEAR CONTACT RESULTS") }
+                    TextButton(onClick=controller::clearContactNames) { Text("CLEAR CONTACT RESULTS") }
                 OutlinedButton(onClick={permissionPhone.launch(Manifest.permission.READ_PHONE_STATE)}) {
                     Text("OPT INTO POST-CALL CHECK-INS")
                 }
                 Text("USER-STARTED OFFLINE MIC SESSION",color=accent)
-                Text("On-device recognition only; no cloud STT or wake-word listener. " +
+                Text("On-device recognition only; no cloud STT or autonomous wake-word listener. " +
                     "Android shows a persistent microphone notification with STOP. " +
                     "The session ends within 10 minutes or earlier if the device gets hot, " +
                     "battery falls below 25%, or offline recognition is unavailable. " +
                     "Only non-sensitive recognized commitments go to Shiv's encrypted ASK_FIRST queue.",
                     color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=micWakePhrase,onCheckedChange={micWakePhrase=it})
+                    Text("Require 'Shiv' before each recognized command",color=Color.LightGray,fontSize=11.sp)
+                }
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=micSleepOverride,onCheckedChange={micSleepOverride=it})
+                    Text("Allow this session during 10 PM–9 AM",color=Color.LightGray,fontSize=11.sp)
+                }
+                Text("Proximity plus darkness pauses recognition while pocketed. The phrase check is not speaker identification.",
+                    color=Color.LightGray,fontSize=11.sp)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Button(onClick={
                         if(screenContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==
                             android.content.pm.PackageManager.PERMISSION_GRANTED)
-                            controller.startOfflineMicSession(owner.speechLocale)
+                            controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
                         else permissionMicSession.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text("START OFFLINE MIC") }
-                    OutlinedButton(onClick={controller::stopOfflineMicSession}) { Text("STOP MIC") }
+                    OutlinedButton(onClick=controller::stopOfflineMicSession) { Text("STOP MIC") }
                 }
                 Text("OPT-IN PROACTIVE AGENDA",color=accent)
                 Text("Private, approximate hourly checks of events you approved. " +
@@ -340,7 +488,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         }
                     }
                 }
-                OutlinedButton(onClick={controller::refreshProactiveFeedback}) {
+                OutlinedButton(onClick=controller::refreshProactiveFeedback) {
                     Text("REFRESH OPTIONAL-NOTICE FEEDBACK")
                 }
                 Text("OWNER REMINDER AUTHORITY",color=accent)
@@ -381,6 +529,37 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         Text(denied,Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
                         TextButton(onClick={scope.launch { controller.removeDeniedPackage(denied) }}) {
                             Text("UNBLOCK")
+                        }
+                    }
+                }
+                Text("PER-APP SOURCE CONTROL",color=accent)
+                Text("Include allows opt-in notification facts and a separately armed 15-second screen preview. Notifications only blocks screen reading. Exclude blocks both. Android grants and the built-in sensitive-app denylist always take priority.",
+                    color=Color.LightGray,fontSize=11.sp)
+                OutlinedTextField(value=sourcePackage,
+                    onValueChange={sourcePackage=it.take(160)},
+                    label={Text("Android package to configure")},singleLine=true)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    AppSourceMode.entries.forEach { mode ->
+                        FilterChip(selected=sourceMode==mode,
+                            onClick={sourceMode=mode},
+                            label={Text(mode.name.replace('_',' '))})
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+                Button(enabled=sourcePackage.isNotBlank(),onClick={
+                    val name=sourcePackage
+                    scope.launch {
+                        runCatching { controller.setAppSourceMode(name,sourceMode) }
+                            .onFailure { owner.showNotice(it.message ?: "App policy could not be saved") }
+                    }
+                    sourcePackage=""
+                }) { Text("SAVE APP POLICY") }
+                controller.appSourceModes.toSortedMap().forEach { (app,mode) ->
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("$app • ${mode.name.replace('_',' ')}",
+                            Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
+                        TextButton(onClick={scope.launch { controller.removeAppSourceMode(app) }}) {
+                            Text("RESET")
                         }
                     }
                 }

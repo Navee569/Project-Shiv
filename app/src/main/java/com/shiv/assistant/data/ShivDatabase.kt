@@ -31,7 +31,7 @@ data class RuleRecord(@PrimaryKey val id: String, val description: String, val k
 @Entity(tableName = "chat_history", indices = [Index("createdAt")])
 data class ChatRecord(@PrimaryKey val id: String, val role: String, val body: String,
     val createdAt: Long = System.currentTimeMillis())
-@Entity(tableName = "action_log", indices = [Index("createdAt")])
+@Entity(tableName = "action_log", indices = [Index("createdAt"),Index("type")])
 data class ActionLogRecord(@PrimaryKey val id: String, val type: String, val argsRedacted: String, val tier: String,
     val permission: String, val confirmed: Boolean, val result: String, val undo: String?,
     val createdAt: Long = System.currentTimeMillis())
@@ -62,6 +62,9 @@ interface ShivDao {
 
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putProfile(value: ProfileRecord)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putMemory(value: MemoryRecord)
+    @Query("SELECT * FROM events WHERE id=:id") suspend fun event(id:String):EventRecord?
+    @Query("SELECT * FROM memories WHERE text=:text AND category=:category AND source='owner' AND explicit=1 LIMIT 1")
+    suspend fun matchingOwnerMemory(text:String,category:String):MemoryRecord?
     @Query("SELECT * FROM memories WHERE (expiresAt IS NULL OR expiresAt > :now) ORDER BY explicit DESC, updatedAt DESC LIMIT :limit")
     suspend fun recentMemories(now: Long, limit: Int = 50): List<MemoryRecord>
     @Query("SELECT * FROM memories WHERE id=:id") suspend fun memory(id: String): MemoryRecord?
@@ -127,7 +130,16 @@ interface ShivDao {
     @Query("SELECT id FROM signals WHERE source=:source AND fact=:fact AND receivedAt >= :since AND status != 'FAILED' ORDER BY receivedAt DESC LIMIT 1")
     suspend fun recentMatchingSignal(source:String,fact:String,since:Long):String?
     @Transaction suspend fun enqueueIfNew(value:SignalRecord,since:Long):Boolean {
-        if(recentMatchingSignal(value.source,value.fact,since)!=null)return false
+        if(!SignalDedupePolicy.mayMerge(value)) {
+            enqueue(value)
+            return true
+        }
+        if(recentMatchingSignal(value.source,value.fact,since)!=null) {
+            logAction(ActionLogRecord(java.util.UUID.randomUUID().toString(),
+                "SIGNAL_MERGED","[REDACTED]","FREE","LOW_PRIORITY_POLICY",
+                false,"STALE_DUPLICATE_MERGED",null))
+            return false
+        }
         enqueue(value)
         return true
     }
@@ -138,6 +150,11 @@ interface ShivDao {
     suspend fun claim(id: String): Int
     @Query("UPDATE signals SET status='PROCESSED', processedAt=:now, lastError=NULL WHERE id=:id")
     suspend fun markProcessed(id: String, now: Long)
+    @Transaction suspend fun finishSignal(id:String,decision:DecisionTraceRecord,now:Long) {
+        require(signal(id)?.status=="PROCESSING") { "Signal was not claimed" }
+        trace(decision)
+        markProcessed(id,now)
+    }
     @Query("UPDATE signals SET status=CASE WHEN attempts >= 8 THEN 'FAILED' ELSE 'RETRY' END, lastError=:error WHERE id=:id")
     suspend fun markRetry(id: String, error: String)
     @Query("SELECT * FROM signals WHERE id=:id") suspend fun signal(id:String): SignalRecord?
@@ -147,6 +164,9 @@ interface ShivDao {
     @Query("UPDATE signals SET status='RETRY' WHERE status='PROCESSING'")
     suspend fun recoverInFlight()
     @Query("SELECT COUNT(*) FROM signals WHERE status IN ('PENDING','RETRY') AND attempts < 8") suspend fun pendingCount(): Int
+    @Query("SELECT COUNT(*) FROM signals WHERE status='FAILED'") suspend fun failedSignalCount():Int
+    @Query("UPDATE signals SET status='RETRY', attempts=0, lastError=NULL WHERE status='FAILED'")
+    suspend fun retryFailedSignals():Int
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putBelief(value: BeliefRecord)
     @Query("SELECT * FROM beliefs ORDER BY updatedAt DESC") suspend fun beliefs(): List<BeliefRecord>
     @Query("DELETE FROM beliefs WHERE id=:id") suspend fun deleteBelief(id: String)
@@ -177,7 +197,7 @@ interface ShivDao {
         ReminderRecord::class, RuleRecord::class, ChatRecord::class, ActionLogRecord::class,
         PermissionTierRecord::class, ModelRecord::class, SignalRecord::class, BeliefRecord::class,
         DecisionTraceRecord::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class ShivDatabase : RoomDatabase() {

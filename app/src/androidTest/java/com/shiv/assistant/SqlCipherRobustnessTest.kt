@@ -15,6 +15,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
+import java.io.RandomAccessFile
 
 @RunWith(AndroidJUnit4::class)
 class SqlCipherRobustnessTest {
@@ -60,5 +61,42 @@ class SqlCipherRobustnessTest {
         }
         ids.forEach { assertNotNull(dao.memory(it)) }
         ids.forEach { dao.removeMemory(it) }
+    }
+
+    @Test fun damagedCiphertextFailsClosedWithoutReplacingDatabase() = runBlocking {
+        System.loadLibrary("sqlcipher")
+        val name="corruption-${UUID.randomUUID()}.db"
+        val key=ByteArray(32) { (it+23).toByte() }
+        val file=context.getDatabasePath(name)
+        val original=Room.databaseBuilder(context,ShivDatabase::class.java,name)
+            .openHelperFactory(SupportOpenHelperFactory(key.copyOf())).build()
+        try {
+            original.dao().putMemory(MemoryRecord("proof","private data","FACT","owner"))
+        } finally { original.close() }
+        try {
+            RandomAccessFile(file,"rw").use { it.seek(0);it.write(ByteArray(32) { 0x5a }) }
+            val damaged=file.readBytes()
+            val reopened=Room.databaseBuilder(context,ShivDatabase::class.java,name)
+                .openHelperFactory(SupportOpenHelperFactory(key.copyOf())).build()
+            try {
+                try {
+                    EncryptedDatabase.checkIntegrity(reopened)
+                    fail("Corrupted encrypted header must be rejected")
+                } catch (_:Exception) {}
+            } finally { reopened.close() }
+            assertArrayEquals("No plaintext or replacement database is created",damaged,file.readBytes())
+        } finally { context.deleteDatabase(name) }
+    }
+
+    @Test fun recoveryRequiresExactOwnerPhraseBeforeAnyDeletion() = runBlocking {
+        val file=context.getDatabasePath("shiv-private-v1.db")
+        EncryptedDatabase.open(context).dao().pendingCount() // force existing file
+        val before=file.length()
+        try {
+            EncryptedDatabase.resetAfterOwnerConfirmation(context,"wrong phrase")
+            fail("Recovery must require owner confirmation")
+        } catch (_:IllegalArgumentException) {}
+        assertTrue(file.exists())
+        assertEquals(before,file.length())
     }
 }

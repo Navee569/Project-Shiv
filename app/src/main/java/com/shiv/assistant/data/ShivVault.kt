@@ -11,6 +11,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import androidx.room.withTransaction
 
 /**
  * Encrypted local persistence. AES key never leaves the Android Keystore.
@@ -110,11 +111,10 @@ class ShivVault(private val context: Context) {
             val legacyStore = context.getSharedPreferences("shiv_encrypted_v1", Context.MODE_PRIVATE)
             if (legacyStore.all.isNotEmpty()) {
                 val original = LegacyShivVault(context)
-                for (key in original.keys()) {
-                    val value = original.get(key)
-                        ?: error("Legacy entry missing; migration stopped without deleting data")
-                    dao.putVault(VaultEntry(key,value))
-                }
+                LegacyVaultMigration.copyAtomically(EncryptedDatabase.open(context),
+                    original.keys(),original::get)
+                // The transaction committed before erasure. A crash here leaves
+                // the marker in SQLCipher so a restart never overwrites newer edits.
                 original.erase()
             }
         }
@@ -131,7 +131,10 @@ class ShivVault(private val context: Context) {
     }
     fun addNote(note:String) {
         require(note.isNotBlank() && note.length <= 8192)
-        put("notes",org.json.JSONArray((notes()+note.trim()).takeLast(250)).toString())
+        val compact=note.trim()
+        val existing=notes()
+        if(existing.any { it.equals(compact,ignoreCase=true) })return
+        put("notes",org.json.JSONArray((existing+compact).takeLast(250)).toString())
     }
     fun history():List<Pair<String,String>> {
         val json = org.json.JSONArray(get("history")?:"[]")
@@ -156,4 +159,21 @@ class ShivVault(private val context: Context) {
     }
     fun notificationCount()=org.json.JSONArray(get("notifications")?:"[]").length()
     fun clearNotifications()=put("notifications","[]")
+}
+
+/** A committed marker makes migration safe across crash/restart boundaries. */
+internal object LegacyVaultMigration {
+    const val MARKER="__legacy_vault_migrated_v1"
+    suspend fun copyAtomically(database:ShivDatabase, keys:Set<String>,read:(String)->String?) {
+        database.withTransaction {
+            val dao=database.dao()
+            if(dao.vault(MARKER)!=null)return@withTransaction
+            for(name in keys.sorted()) {
+                require(name!=MARKER) { "Legacy marker name is reserved" }
+                val value=read(name) ?: error("Legacy entry missing; original retained")
+                dao.putVault(VaultEntry(name,value))
+            }
+            dao.putVault(VaultEntry(MARKER,"complete"))
+        }
+    }
 }
