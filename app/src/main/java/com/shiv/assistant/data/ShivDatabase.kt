@@ -130,7 +130,16 @@ interface ShivDao {
     @Query("SELECT id FROM signals WHERE source=:source AND fact=:fact AND receivedAt >= :since AND status != 'FAILED' ORDER BY receivedAt DESC LIMIT 1")
     suspend fun recentMatchingSignal(source:String,fact:String,since:Long):String?
     @Transaction suspend fun enqueueIfNew(value:SignalRecord,since:Long):Boolean {
-        if(recentMatchingSignal(value.source,value.fact,since)!=null)return false
+        if(!SignalDedupePolicy.mayMerge(value)) {
+            enqueue(value)
+            return true
+        }
+        if(recentMatchingSignal(value.source,value.fact,since)!=null) {
+            logAction(ActionLogRecord(java.util.UUID.randomUUID().toString(),
+                "SIGNAL_MERGED","[REDACTED]","FREE","LOW_PRIORITY_POLICY",
+                false,"STALE_DUPLICATE_MERGED",null))
+            return false
+        }
         enqueue(value)
         return true
     }
@@ -141,6 +150,11 @@ interface ShivDao {
     suspend fun claim(id: String): Int
     @Query("UPDATE signals SET status='PROCESSED', processedAt=:now, lastError=NULL WHERE id=:id")
     suspend fun markProcessed(id: String, now: Long)
+    @Transaction suspend fun finishSignal(id:String,decision:DecisionTraceRecord,now:Long) {
+        require(signal(id)?.status=="PROCESSING") { "Signal was not claimed" }
+        trace(decision)
+        markProcessed(id,now)
+    }
     @Query("UPDATE signals SET status=CASE WHEN attempts >= 8 THEN 'FAILED' ELSE 'RETRY' END, lastError=:error WHERE id=:id")
     suspend fun markRetry(id: String, error: String)
     @Query("SELECT * FROM signals WHERE id=:id") suspend fun signal(id:String): SignalRecord?

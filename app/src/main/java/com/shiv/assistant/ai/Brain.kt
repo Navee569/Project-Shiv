@@ -69,7 +69,7 @@ object LocalPromptBuilder {
  * LiteRT-LM 0.18.0 real inference: single-owner executor, no UI thread work,
  * no model weights in assets; failures propagate rather than inventing a reply.
  */
-class LiteRtBrain(private val context: Context) : Brain, Closeable {
+class LiteRtBrain(private val context: Context,private val role:String="conversation") : Brain, Closeable {
     private val executor = Executors.newSingleThreadExecutor()
     private val dispatcher = executor.asCoroutineDispatcher()
     private var engine: Engine? = null
@@ -94,7 +94,8 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
         val started = SystemClock.elapsedRealtime()
         val vault=ShivVault(context)
         val backend=LocalInferenceSettings.backend(vault.get(LocalInferenceSettings.BACKEND_KEY))
-        val outputLimit=LocalInferenceSettings.outputTokens(vault.get(LocalInferenceSettings.OUTPUT_TOKENS_KEY))
+        val outputLimit=if(role=="router") 64 else
+            LocalInferenceSettings.outputTokens(vault.get(LocalInferenceSettings.OUTPUT_TOKENS_KEY))
         val candidate = Engine(EngineConfig(modelPath = model.absolutePath,
             backend=LocalInferenceSettings.backendApi(backend),
             cacheDir = context.cacheDir.absolutePath))
@@ -294,8 +295,8 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
  * and RAM are rechecked for every request, not merely when loading weights.
  */
 class ShivBrainHub(private val context: Context) {
-    val router: Brain = LiteRtBrain(context)
-    val conversation: Brain = LiteRtBrain(context)
+    val router: Brain = LiteRtBrain(context,"router")
+    val conversation: Brain = LiteRtBrain(context,"conversation")
     private val lifecycle = Mutex()
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     private val idleScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -316,7 +317,25 @@ class ShivBrainHub(private val context: Context) {
             val small = governor.lease("router")
             val selectedBrain:Brain
             val maxSeconds:Int
+            var routed=RouterDecision.CONVERSATION
+            if(router.status().ready && small.allowed && conversation.status().ready && heavy.allowed) {
+                // Classification has no tool authority and emits nothing to the owner.
+                // Fail closed to the conversation model if output is ambiguous.
+                routed=try {
+                    val reply=withTimeout(minOf(8,small.maxModelSeconds).toLong()*1000L) {
+                        router.infer(RouterDecision.classificationPrompt(prompt))
+                    }
+                    RouterDecision.parse(reply) ?: RouterDecision.CONVERSATION
+                } catch (cancelled:kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_:Exception) { RouterDecision.CONVERSATION }
+            }
             when {
+                routed==RouterDecision.ROUTER && router.status().ready && small.allowed -> {
+                    selectedBrain=router
+                    maxSeconds=small.maxModelSeconds
+                    lastRoutedRole="router"
+                }
                 conversation.status().ready && heavy.allowed -> {
                     selectedBrain=conversation
                     maxSeconds=heavy.maxModelSeconds

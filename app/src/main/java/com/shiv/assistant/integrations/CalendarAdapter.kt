@@ -90,10 +90,12 @@ class CalendarAdapter(private val context: Context) {
         android.content.ContentUris.appendId(builder, start)
         android.content.ContentUris.appendId(builder, end)
         val items = mutableListOf<CalendarCandidate>()
-        context.contentResolver.query(builder.build(),
+        val result=context.contentResolver.query(builder.build(),
             arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.TITLE,
                 CalendarContract.Instances.BEGIN, CalendarContract.Instances.END),
-            null, null, CalendarContract.Instances.BEGIN + " ASC")?.use { cursor ->
+            null, null, CalendarContract.Instances.BEGIN + " ASC")
+            ?: error("Calendar provider unavailable")
+        result.use { cursor ->
             while (cursor.moveToNext() && items.size < 50) {
                 val id = cursor.getLong(0)
                 val title = CalendarImportPolicy.sanitizeTitle(cursor.getString(1)) ?: continue

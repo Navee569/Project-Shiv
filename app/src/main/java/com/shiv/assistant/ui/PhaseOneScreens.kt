@@ -38,6 +38,19 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     var micWakePhrase by remember { mutableStateOf(false) }
     var micSleepOverride by remember { mutableStateOf(false) }
     val screenContext=LocalContext.current
+    var calendarMonitorEnabled by remember {
+        mutableStateOf(com.shiv.assistant.data.ShivVault(screenContext).get(
+            com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN)=="yes")
+    }
+    val calendarMonitorPermission=rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { granted ->
+        if(granted) {
+            com.shiv.assistant.data.ShivVault(screenContext).put(
+                com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN,"yes")
+            calendarMonitorEnabled=true
+            com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(screenContext,true)
+        } else controller.reportIssue("Calendar permission denied; change monitoring remains off")
+    }
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
         else controller.reportIssue("Calendar permission denied; no phone events were read")
@@ -352,6 +365,24 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                         scope.launch { controller.readPhoneCalendar() }
                     else permissionCalendar.launch(Manifest.permission.READ_CALENDAR)
                 }) { Text("PREVIEW CALENDAR — DON'T IMPORT YET") }
+                Text("Optional calendar change monitoring reads the next 48 hours about every 15 minutes and saves changes to the encrypted review queue.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Text("MONITOR CALENDAR CHANGES")
+                    Switch(checked=calendarMonitorEnabled,onCheckedChange={ enabled ->
+                        if(enabled && screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)!=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            calendarMonitorPermission.launch(Manifest.permission.READ_CALENDAR)
+                        else {
+                            com.shiv.assistant.data.ShivVault(screenContext).put(
+                                com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN,
+                                if(enabled)"yes" else "no")
+                            calendarMonitorEnabled=enabled
+                            com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(
+                                screenContext,enabled)
+                        }
+                    })
+                }
                 controller.calendarCandidates.forEach { candidate ->
                     Surface(shape=MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth().padding(10.dp)) {

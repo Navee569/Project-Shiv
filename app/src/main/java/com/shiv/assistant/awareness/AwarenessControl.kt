@@ -10,6 +10,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** A visible, owner-controlled global pause for notification and screen awareness. */
 object AwarenessControl {
@@ -78,6 +81,11 @@ class AwarenessControlReceiver:BroadcastReceiver() {
                 context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
                     .edit().remove("capture_until").commit()
                 AwarenessControl.show(context)
+                val pending=goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try { com.shiv.assistant.automation.SignalWorker.recoverPending(context.applicationContext) }
+                    finally { pending.finish() }
+                }
             }
         }
     }

@@ -10,6 +10,7 @@ import java.time.Instant
 import java.util.UUID
 import org.json.JSONArray
 import androidx.room.withTransaction
+import com.shiv.assistant.automation.SignalWorker
 
 class ShivRepository(private val context: Context) {
     private val database = EncryptedDatabase.open(context)
@@ -27,19 +28,20 @@ class ShivRepository(private val context: Context) {
             val safeSource = if(normalized!=null) source+":"+normalized else source
             val saved=SignalRecord(id,safeSource,compact,priority)
             // User-typed commands are intentional and should not be deduplicated.
-            // Background notification and opt-in mic retries are deduped in the
-            // encrypted DB so worker restarts cannot flood owner ASK decisions.
+            // Only explicitly safe, low-priority background facts may merge.
             val window=when {
                 normalized!=null -> 10 * 60_000L
-                source=="owner_mic_session" -> 30_000L
                 else -> 0L
             }
-            if(window==0L) {
+            val result=if(window==0L) {
                 dao.enqueue(saved)
                 id
             } else {
                 if(dao.enqueueIfNew(saved,saved.receivedAt-window))id else null
             }
+            // Recovery on app start and boot covers a crash between these calls.
+            if(result!=null) SignalWorker.schedule(context.applicationContext)
+            result
         }
     suspend fun contextSnapshot(now: Long = System.currentTimeMillis()): ContextSnapshot =
         ContextSnapshot(Instant.ofEpochMilli(now).toString(),

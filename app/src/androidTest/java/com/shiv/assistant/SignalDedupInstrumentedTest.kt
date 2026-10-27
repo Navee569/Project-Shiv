@@ -25,7 +25,7 @@ class SignalDedupInstrumentedTest {
         try {
             val dao=db.dao()
             val now=System.currentTimeMillis()
-            val first=SignalRecord("first","notification:com.example.one","meeting",2,receivedAt=now)
+            val first=SignalRecord("first","notification:com.example.one","weather",2,receivedAt=now)
             assertTrue(dao.enqueueIfNew(first,now-60000))
             assertFalse(dao.enqueueIfNew(first.copy(id="duplicate"),now-60000))
             assertTrue(dao.enqueueIfNew(first.copy(id="otherapp",
@@ -36,6 +36,12 @@ class SignalDedupInstrumentedTest {
             assertNull(dao.signal("duplicate"))
             assertNotNull(dao.signal("otherapp"))
             assertNotNull(dao.signal("later"))
+            assertEquals(1,dao.actions(20).count { it.type=="SIGNAL_MERGED" })
+            val important=first.copy(id="commitment",fact="meeting Raj Thursday 5 pm")
+            val retry=important.copy(id="commitment-retry")
+            assertTrue(dao.enqueueIfNew(important,now-60000))
+            assertTrue(dao.enqueueIfNew(retry,now-60000))
+            assertNotNull(dao.signal(retry.id))
         } finally { db.close();context.deleteDatabase(name) }
     }
 }

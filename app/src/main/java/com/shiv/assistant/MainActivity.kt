@@ -73,10 +73,16 @@ class MainActivity : ComponentActivity() {
                 return@setContent
             }
             LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    com.shiv.assistant.automation.SignalWorker.recoverPending(applicationContext)
+                }
                 com.shiv.assistant.awareness.AwarenessControl.show(applicationContext)
                 com.shiv.assistant.automation.ShivRetentionWorker.schedule(applicationContext)
                 com.shiv.assistant.automation.ShivAgendaNudgeWorker.updateRegistration(
                     applicationContext,ShivVault(applicationContext).get("proactive_opt_in")=="yes")
+                com.shiv.assistant.automation.CalendarChangeWorker.updateRegistration(
+                    applicationContext,ShivVault(applicationContext).get(
+                        com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN)=="yes")
             }
             val controller = viewModel<ShivViewModel>().controller
             var voiceJob by remember { mutableStateOf<Job?>(null) }
