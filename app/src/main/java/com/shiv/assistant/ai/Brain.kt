@@ -67,7 +67,7 @@ object LocalPromptBuilder {
             "SAVE_MEMORY(text,category), SAVE_RULE(rule,value), ASK_USER(question), " +
             "SEND_NOTIFICATION(text), STAY_QUIET(). Times must be ISO 8601 with UTC offset. " +
             "A JSON proposal never authorizes execution; the owner reviews it.\n" +
-            "<local_context>\n" + snapshot.take(4000) + "\n</local_context>\n" +
+            "<local_context>\n" + snapshot.take(3500) + "\n</local_context>\n" +
             "Owner request: " + request.take(8000)
 }
 

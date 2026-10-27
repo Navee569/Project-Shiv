@@ -1,6 +1,8 @@
 package com.shiv.assistant.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -24,7 +26,7 @@ fun StorageCheckingScreen() {
 fun StorageRecoveryScreen(message:String,onRetry:()->Unit,onErase:(String)->Unit) {
     var phrase by remember { mutableStateOf("") }
     MaterialTheme {
-        Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.Center) {
             Text("SHIV STORAGE NEEDS ATTENTION",style=MaterialTheme.typography.headlineSmall,
                 modifier=Modifier.semantics { heading() })
             Spacer(Modifier.height(16.dp))
