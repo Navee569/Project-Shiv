@@ -1,0 +1,74 @@
+name: FinResearch Android MVP APK + tests
+on:
+  push:
+    branches:
+      - prototype/finrobot-mobile-20261027
+    paths:
+      - 'finrobot-mobile/**'
+      - '.github/workflows/finresearch-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android API 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Test core, lint and assemble APK
+        run: gradle -p finrobot-mobile :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: finresearch-mobile-debug-apk
+          path: finrobot-mobile/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload unit test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: finresearch-unit-tests
+          path: finrobot-mobile/app/build/reports/tests/
+          if-no-files-found: ignore
+
+  emulator-smoke-test:
+    needs: build-and-unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android API 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Launch APK on emulator and test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: gradle -p finrobot-mobile :app:connectedDebugAndroidTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: finresearch-emulator-test-reports
+          path: finrobot-mobile/app/build/reports/androidTests/
+          if-no-files-found: ignore
