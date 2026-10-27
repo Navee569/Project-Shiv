@@ -53,4 +53,11 @@ can require the word “Shiv” before each command, pauses during sleep hours
 unless overridden, and pauses when proximity plus darkness indicates a pocket.
 This phrase gate does not identify the speaker and is not an always-on listener.
 
+When notification summaries or a short screen preview are enabled, Shiv shows
+an ongoing awareness notification. Tap PAUSE to stop both sources before
+content is read. RESUME restores notification summaries but never rearms a
+screen preview. The same controls are in Shiv > Permissions. Allow Shiv
+notifications so the control can appear; capture stays off if Android blocks
+the notification permission or channel.
+
 Neither Shizuku nor root/kernel tooling is part of the current implementation. Shiv does not intercept cellular call audio.

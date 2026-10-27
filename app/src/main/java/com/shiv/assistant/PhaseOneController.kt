@@ -20,6 +20,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
 import com.shiv.assistant.awareness.ScreenInspectionPolicy
+import com.shiv.assistant.awareness.AwarenessControl
 import androidx.compose.runtime.*
 import com.shiv.assistant.ai.*
 import com.shiv.assistant.automation.SignalWorker
@@ -95,6 +96,10 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
     fun requestOneShotAwareness(packageName:String) {
+        if(!AwarenessControl.canShow(context)) {
+            issue="Allow Shiv notifications to show its persistent awareness pause control first"
+            return
+        }
         val allowed=packageName.trim().lowercase()
         if(!ScreenInspectionPolicy.permits(allowed, allowed)) {
             issue="Enter one non-sensitive, fully qualified Android package"
@@ -106,15 +111,17 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",true).putBoolean("paused",false)
             .putLong("capture_until",System.currentTimeMillis()+15_000L).commit())
+        AwarenessControl.show(context)
         issue=null
         progress="One-shot capture armed for 15 seconds, ONLY for "+allowed
     }
     fun stopOneShotAwareness() {
-        context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
-            .remove("capture_until").putBoolean("paused",true).commit()
+        AwarenessControl.pause(context)
         ShivVault(context).put("screen_allowed_package","")
         progress="One-shot screen inspection stopped"
     }
+    fun pauseAwareness() { AwarenessControl.pause(context);progress="All app awareness paused" }
+    fun resumeAwareness() { AwarenessControl.resume(context);progress="Notification awareness resumed; screen needs a new 15-second arm" }
     suspend fun readPhoneCalendar() {
         calendarCandidates.clear()
         try {

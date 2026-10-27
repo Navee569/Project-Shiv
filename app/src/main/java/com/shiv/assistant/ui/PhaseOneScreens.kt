@@ -259,6 +259,13 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             "Permissions" -> {
                 Text("Notification access, Accessibility, contacts, calls, microphone and calendar each require explicit permission. Do not grant permissions unless you want the associated feature.",
                     color=Color.LightGray)
+                Text("APP AWARENESS PAUSE",color=accent)
+                Text("When awareness is enabled, Shiv shows a persistent notification with PAUSE or RESUME. Pausing blocks notification and screen facts before they are read. Resuming never rearms a screen preview.",
+                    color=Color.LightGray,fontSize=11.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick=controller::pauseAwareness) { Text("PAUSE ALL AWARENESS") }
+                    OutlinedButton(onClick=controller::resumeAwareness) { Text("RESUME") }
+                }
                 Text("To enable optional Accessibility: Settings > Accessibility > Installed apps > Shiv. On some Galaxy phones, first open Settings > Apps > Shiv > three dots > Allow restricted settings.",
                     color=Color.White)
                 OutlinedButton(onClick={controller.openAccessibilitySettings()}) { Text("OPEN ACCESSIBILITY SETTINGS") }

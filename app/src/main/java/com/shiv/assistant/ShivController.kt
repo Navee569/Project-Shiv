@@ -378,6 +378,7 @@ class ShivController(private val context: Context) {
         vault.put("notification_opt_in", if (on) "yes" else "no")
         context.getSharedPreferences("shiv_awareness_control", Context.MODE_PRIVATE).edit()
             .putBoolean("notifications_enabled", on).apply()
+        com.shiv.assistant.awareness.AwarenessControl.show(context)
         if (!on) vault.clearNotifications()
     }
     fun chooseImage(uri: Uri?) {

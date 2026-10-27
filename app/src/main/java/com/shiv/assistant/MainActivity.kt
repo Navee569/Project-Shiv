@@ -24,6 +24,7 @@ import com.shiv.assistant.voice.SpeechChunker
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.shiv.assistant.awareness.AwarenessControl.show(applicationContext)
         com.shiv.assistant.automation.ShivRetentionWorker.schedule(applicationContext)
         com.shiv.assistant.automation.ShivAgendaNudgeWorker.updateRegistration(
             applicationContext,

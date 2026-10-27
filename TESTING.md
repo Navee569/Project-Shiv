@@ -41,6 +41,12 @@ Then start a 10-minute offline mic session, test the optional “Shiv” phrase,
 cover both proximity and light sensors, and test sleep hours with and without
 the explicit override. Record failures rather than treating CI as phone proof.
 
+For awareness, opt into notification summaries and confirm the ongoing Shiv
+notification offers PAUSE. While paused, post a permitted meeting notice and
+try a screen preview; neither may be captured. Tap RESUME: notification
+awareness may resume, but screen inspection must need a new 15-second arm.
+Block Shiv notifications or its awareness channel and confirm capture stops.
+
 | Feature | How to check on phone | Result |
 | --- | --- | --- |
 | Router .litertlm import | Files > browse local model > Models > select router > confirm copy > LOAD | Not checked |

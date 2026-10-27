@@ -6,6 +6,7 @@ import com.shiv.assistant.data.ShivRepository
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.AppSourceAccess
 import com.shiv.assistant.automation.SignalWorker
+import com.shiv.assistant.awareness.AwarenessControl
 import kotlinx.coroutines.*
 
 /**
@@ -19,9 +20,11 @@ class ShivNotificationListener:NotificationListenerService() {
         if(sbn==null || SensitiveAppDenylist.excluded(sbn.packageName))return
         if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE)
                 .getBoolean("notifications_enabled",false))return
+        if(!AwarenessControl.mayCapture(this))return
         scope.launch {
             if(!getSharedPreferences("shiv_awareness_control",MODE_PRIVATE)
                     .getBoolean("notifications_enabled",false))return@launch
+            if(!AwarenessControl.mayCapture(applicationContext))return@launch
             if(!AppSourceAccess.mayRead(applicationContext,sbn.packageName,"notification"))
                 return@launch
             val title=sbn.notification.extras.getCharSequence("android.title")?.toString()

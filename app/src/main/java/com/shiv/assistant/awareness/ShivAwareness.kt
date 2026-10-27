@@ -32,6 +32,7 @@ class ShivAwareness : AccessibilityService() {
             SourceExclusions.fromString(vault.get("app_denied_packages"))))return
         val prefs=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
         if(!prefs.getBoolean("owner_enabled",false) || prefs.getBoolean("paused",true))return
+        if(!AwarenessControl.mayCapture(this))return
         // A capture token is issued only by an owner tap, expires after 15 seconds,
         // and is consumed before any node is traversed.
         val until=prefs.getLong("capture_until",0L)
@@ -56,6 +57,7 @@ class ShivAwareness : AccessibilityService() {
                 val active=getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
                 if(!active.getBoolean("owner_enabled",false) ||
                     active.getBoolean("paused",true))return@launch
+                if(!AwarenessControl.mayCapture(applicationContext))return@launch
                 val id=ShivRepository(applicationContext).incoming("accessibility",facts.distinct().take(5).joinToString("; "),
                     priority=3,packageName=name)
                 if(id!=null)SignalWorker.schedule(applicationContext)

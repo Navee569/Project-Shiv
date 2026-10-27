@@ -301,3 +301,12 @@ suggests the phone is pocketed. A session-only optional "Shiv" phrase gate
 filters recognized commands. This is not speaker recognition and does not
 create an autonomous always-on wake-word listener. Those capabilities still
 require separate on-device model, enrollment and Galaxy S23 evaluation.
+
+## Awareness pause control (audit ID 46)
+
+An ongoing Android notification now has PAUSE/RESUME for owner-enabled app
+awareness. Notification and screen services check the global pause before
+reading and again before storage. PAUSE revokes a screen token; RESUME never
+restores it. If notification permission or this notification channel is
+blocked, source capture fails closed. Reboot restores the notification only,
+not a screen token. API 26/35 execution remains pending on the new commit.

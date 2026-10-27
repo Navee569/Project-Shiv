@@ -219,6 +219,10 @@ remains absent. ID 36 has only an optional session-local “Shiv” command phra
 speaker identification and autonomous wake word remain absent. These are
 source distinctions, not five completed features.
 
+ID 46 now has an ongoing PAUSE/RESUME awareness notification. Both source
+services deny capture while paused or if the control cannot be shown; resume
+never restores a one-shot screen token. Galaxy S23 behavior is OWNER-VERIFY.
+
 Failed encrypted signals now remain visible as a count in AI Status, with an
 owner-triggered retry that resets attempts. Android regression covers this
 recovery path. The final local debug build, JVM suite, lint, instrumentation
