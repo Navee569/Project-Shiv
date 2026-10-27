@@ -63,6 +63,7 @@ public final class MainActivity extends Activity {
     private TextView quoteResult, sentimentResult, aiResult;
     private Spinner roleSpinner;
     private volatile String latestQuote = "";
+    private volatile String latestQuoteSymbol = "";
     private volatile boolean running = false;
 
     @Override public void onCreate(Bundle state) {
@@ -233,9 +234,11 @@ public final class MainActivity extends Activity {
                     fmt(ResearchMath.sma(prices, 50)), fmt(ResearchMath.rsi(prices,14)),
                     prices.size());
                 latestQuote = output;
+                latestQuoteSymbol = symbol;
                 runOnUiThread(() -> quoteResult.setText(output));
             } catch (Exception ex) {
                 latestQuote = "";
+                latestQuoteSymbol = "";
                 runOnUiThread(() -> quoteResult.setText(
                     "Price request failed (" + ex.getClass().getSimpleName() +
                     "). Yahoo may block unauthenticated requests or the ticker may be invalid. No price was invented."));
@@ -302,7 +305,7 @@ public final class MainActivity extends Activity {
             "Do not invent prices, dates, filings, financial ratios, or numerical valuations. " +
             "Do not recommend trades without verified evidence; explain risks and sources. " +
             "Ticker: " + symbolInput.getText().toString().trim() + "\n" +
-            "Fetched price/indicators: " + (latestQuote.isEmpty() ? "Not available" : latestQuote) + "\n" +
+            "Fetched price/indicators: " + QuoteContext.forRequestedSymbol(symbolInput.getText().toString(), latestQuoteSymbol, latestQuote) + "\n" +
             "User-supplied headlines/posts (unverified): " + manualText + "\n" +
             "Provide concise findings, missing information and a verification checklist.";
         running = true;
