@@ -23,7 +23,7 @@ Start with [FEATURE_BY_FEATURE_AUDIT.md](FEATURE_BY_FEATURE_AUDIT.md). It audits
 
 **Audited baseline `6c114476` (PR #8):** [APK, JVM, lint](https://github.com/Navee569/Project-Shiv/actions/runs/40324381275) and [API26/API35 emulator tests](https://github.com/Navee569/Project-Shiv/actions/runs/40324381064). Check the latest CI evidence for any newer changes before installing an APK.
 
-Use **Shiv > Memories** to inspect, correct or delete encrypted facts. Use **Shiv > Decisions** to review candidate commitments; an unambiguous future date/time can be explicitly approved into an encrypted Shiv event and local reminder. This does **not** write to your external Google/Samsung calendar without a separate permission-backed integration.
+Use **Shiv > Memories** to inspect, correct or delete encrypted facts. Use **Shiv > Decisions** to review candidate commitments; an unambiguous future date/time can be explicitly approved into an encrypted Shiv event and local reminder. In **Events**, the owner can separately grant calendar read/write access, select a writable phone calendar and confirm export of a local event. No external event is written by the commitment approval alone.
 
 ## Core modules added in this development branch
 

@@ -10,6 +10,8 @@ import android.content.Intent
 import com.shiv.assistant.integrations.CalendarAdapter
 import com.shiv.assistant.integrations.CalendarCandidate
 import com.shiv.assistant.integrations.CalendarImportPolicy
+import com.shiv.assistant.integrations.WritableCalendar
+import com.shiv.assistant.integrations.CalendarExportPolicy
 import com.shiv.assistant.integrations.ContactsAdapter
 import com.shiv.assistant.domain.SensitiveAppDenylist
 import com.shiv.assistant.domain.SourceExclusions
@@ -34,11 +36,14 @@ import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Live developer panels are honest about imported, loaded, and missing models. */
 class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     private val repository=ShivRepository(context)
     private val dao=EncryptedDatabase.open(context).dao()
+    private val calendarExportMutex=Mutex()
     val models=mutableStateListOf<ModelRecord>()
     val memories=mutableStateListOf<MemoryRecord>()
     val upcoming=mutableStateListOf<EventRecord>()
@@ -46,6 +51,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     val beliefs=mutableStateListOf<BeliefRecord>()
     val decisions=mutableStateListOf<DecisionTraceRecord>()
     val calendarCandidates=mutableStateListOf<CalendarCandidate>()
+    val writableCalendars=mutableStateListOf<WritableCalendar>()
     val contactNameMatches=mutableStateListOf<String>()
     val deniedPackages=mutableStateListOf<String>()
     val appSourceModes=mutableStateMapOf<String,AppSourceMode>()
@@ -159,6 +165,40 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
     }
     fun discardCalendarPreview() { calendarCandidates.clear();progress="Calendar preview discarded" }
+    suspend fun loadWritableCalendars() {
+        writableCalendars.clear()
+        try {
+            writableCalendars.addAll(CalendarAdapter(context).writableCalendars())
+            issue=null
+            progress=if(writableCalendars.isEmpty()) "No writable calendar found or permission missing"
+                else "Choose an event and calendar, then review the export"
+        } catch (_:Exception) { issue="Could not read writable calendars" }
+    }
+    suspend fun exportEvent(reviewed:EventRecord,calendarId:Long) = calendarExportMutex.withLock {
+        try {
+            val event=dao.event(reviewed.id) ?: error("Event no longer exists")
+            require(event==reviewed) { "Event changed after review; refresh before exporting" }
+            require(CalendarExportPolicy.approved(event,System.currentTimeMillis())) {
+                "Event is expired, sensitive, or already imported from a calendar"
+            }
+            val vault=ShivVault(context)
+            val key="calendar_export_"+event.id
+            require(vault.get(key).isNullOrBlank()) { "This event was already exported" }
+            // Keep the provider write and duplicate guard serialized for this controller.
+            val externalId=CalendarAdapter(context).writeApprovedEvent(event,calendarId)
+            vault.put(key,"$calendarId:$externalId")
+            try {
+                dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),"EXPORT_CALENDAR",
+                    "[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,"EXTERNAL_EVENT_CREATED",null))
+            } catch (_:Exception) {
+                issue="Phone calendar event was created, but Shiv could not record the audit entry"
+                progress="External calendar event ID $externalId created; inspect the calendar"
+                return@withLock
+            }
+            issue=null
+            progress="Event created in your selected phone calendar (ID $externalId)"
+        } catch(e:Exception) { issue=e.message ?: "Calendar export failed; inspect phone calendar before retrying" }
+    }
     suspend fun lookupContactNames(query:String) {
         contactNameMatches.clear()
         try {
@@ -469,6 +509,12 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             " | Load ms: "+(chat.lastLoadMs?.toString()?:"not measured")+
             " | Reply ms: "+(chat.lastReplyMs?.toString()?:"not measured")+
             " | First text fragment ms: "+(chat.firstFragmentMs?.toString()?:"not measured")+
+            " | Runtime TTFT ms: "+(chat.runtimeTtftMs?.toString()?:"unavailable")+
+            " | Decode tokens: "+(chat.decodeTokens?.toString()?:"unavailable")+
+            " | Decode tokens/s: "+(chat.decodeTokensPerSecond?.let { String.format(java.util.Locale.ROOT,"%.1f",it) }?:"unavailable")+
+            " | Whole-device energy drop during reply mWh: "+
+                (chat.deviceEnergyDropNwh?.let { String.format(java.util.Locale.ROOT,"%.3f",it/1_000_000.0) }?:"unavailable")+
+            " | "+com.shiv.assistant.voice.SpeechDiagnostics.report()+
             " | Output chars: "+(chat.lastOutputCharacters?.toString()?:"not measured")+
             " | Backend: "+(chat.backend?:"not loaded")+
             " | Max output tokens: "+(chat.maxOutputTokens?.toString()?:"not loaded")+

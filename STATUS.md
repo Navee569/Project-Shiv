@@ -17,7 +17,7 @@
 | M7 proactive | WorkManager encrypted signal processing, quiet-hour/cap/power decision rules, basic charging-only hypotheses | full trigger registration, reactions, idempotence test and reminder UX |
 | M8 integrations | notification listener filter, reviewed Android intents, one-shot Accessibility, bundled local image labels | contacts/calendar/call-end adapters, robust mic session, app per-source configuration |
 | M9 privacy | denylist enforced before model/storage, no plaintext fallback, explicit cloud exception, hardened action policies | threat model, export/restore, merged manifest permission inspection |
-| M10 measurements | elapsed load/reply time, queue count and memory admission inputs | TTFT, tokens/s, real thermal/battery/speech measurements ON OWNER DEVICE |
+| M10 measurements | elapsed load/reply time, LiteRT TTFT/decode stats, speech engine timing and conditional whole-device battery energy delta | Audible speech and attributable power/thermal baseline ON OWNER DEVICE |
 | M11 release | documentation and source staging | Build/JVM/lint and 14 tests each on API26/API35 passed; owner/real-model/real-device verification, remaining feature gaps and release acceptance remain |
 
 ## Owner-confirmed decisions tracking
@@ -288,7 +288,9 @@ The runtime cache directory and loaded conversation are reused. A requested
 delegate may fail to load on a given phone/model; Shiv reports that failure
 without claiming acceleration. AI Status exposes observed first-fragment and
 routing times. LiteRT's current response type exposes no exact generated-token
-count, so tokens/s remains unavailable rather than estimated from characters.
+count in the response fragment. The conversation benchmark API now supplies
+actual decode count, TTFT and tokens/s after local inference. The status panel
+shows these measurements when the runtime supplies valid values.
 
 Push-to-talk now shows partial recognized text, can cancel an active reply when
 the owner starts speaking again, and feeds local LiteRT text fragments into

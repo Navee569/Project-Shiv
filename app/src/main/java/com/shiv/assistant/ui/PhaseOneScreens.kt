@@ -29,11 +29,20 @@ import kotlinx.coroutines.launch
 fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivController, onModelPick:()->Unit) {
     val scope=rememberCoroutineScope()
     var contactQuery by remember { mutableStateOf("") }
+    var pendingCalendarExport by remember {
+        mutableStateOf<Pair<com.shiv.assistant.data.EventRecord,Long>?>(null)
+    }
     var micWakePhrase by remember { mutableStateOf(false) }
     var micSleepOverride by remember { mutableStateOf(false) }
     val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
+    }
+    val permissionCalendarWrite=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if(grants[Manifest.permission.READ_CALENDAR]==true &&
+            grants[Manifest.permission.WRITE_CALENDAR]==true)
+            scope.launch { controller.loadWritableCalendars() }
+        else owner.showNotice("Calendar read and write grants are required for export")
     }
     val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
@@ -92,6 +101,17 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         }
     }
     val accent=Color(0xFF65F5F0)
+    pendingCalendarExport?.let { (event,calendarId) ->
+        val calendar=controller.writableCalendars.firstOrNull { it.id==calendarId }
+        AlertDialog(onDismissRequest={pendingCalendarExport=null},
+            title={Text("Export to phone calendar?")},
+            text={Text("${event?.title ?: "Event unavailable"}\n${event?.startAt?.let { java.time.Instant.ofEpochMilli(it) }}\n${calendar?.name ?: "Calendar unavailable"}\nThis writes an external event.")},
+            confirmButton={TextButton(onClick={
+                pendingCalendarExport=null
+                if(calendar!=null) scope.launch { controller.exportEvent(event,calendarId) }
+            }) { Text("CONFIRM EXPORT") }},
+            dismissButton={TextButton(onClick={pendingCalendarExport=null}) { Text("CANCEL") }})
+    }
     LaunchedEffect(page) { runCatching { controller.reload() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -131,7 +151,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             }
             "AI Status" -> {
                 Text(controller.modelStatus(),color=Color.White)
-                Text("First text fragment is measured locally. The LiteRT response does not expose an exact generated-token count, so tokens/s is unavailable. Battery cost and NPU performance need owner-device measurements.",
+                Text("LiteRT reports runtime first-token time, decode tokens and tokens/s after a local reply. Battery energy, when supported while discharging, is a whole-device change during that reply and cannot be attributed to Shiv. TTS audio-buffer timing is not audible first-word timing; Galaxy S23 fit needs owner-device measurement.",
                     color=Color.LightGray)
                 Text("LOCAL MODEL BACKEND",color=accent)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -183,7 +203,23 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 controller.upcoming.forEach { event ->
                     Text(event.title+" • "+java.time.Instant.ofEpochMilli(event.startAt).toString(),
                         color=Color.White)
+                    if(event.source!="owner-reviewed-calendar") {
+                        controller.writableCalendars.forEach { calendar ->
+                            TextButton(onClick={pendingCalendarExport=event to calendar.id}) {
+                                Text("EXPORT TO "+calendar.name.take(40))
+                            }
+                        }
+                    }
                 }
+                OutlinedButton(onClick={
+                    if(screenContext.checkSelfPermission(Manifest.permission.READ_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                        screenContext.checkSelfPermission(Manifest.permission.WRITE_CALENDAR)==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED)
+                        scope.launch { controller.loadWritableCalendars() }
+                    else permissionCalendarWrite.launch(arrayOf(Manifest.permission.READ_CALENDAR,
+                        Manifest.permission.WRITE_CALENDAR))
+                }) { Text("CHOOSE PHONE CALENDAR FOR EXPORT") }
                 Text("ENCRYPTED OPEN TASKS",color=accent)
                 if(controller.upcomingTasks.isEmpty())
                     Text("No unfinished tasks in Shiv's private agenda.",color=Color.LightGray)

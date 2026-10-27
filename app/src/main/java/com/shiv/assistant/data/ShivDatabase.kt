@@ -62,6 +62,7 @@ interface ShivDao {
 
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putProfile(value: ProfileRecord)
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun putMemory(value: MemoryRecord)
+    @Query("SELECT * FROM events WHERE id=:id") suspend fun event(id:String):EventRecord?
     @Query("SELECT * FROM memories WHERE text=:text AND category=:category AND source='owner' AND explicit=1 LIMIT 1")
     suspend fun matchingOwnerMemory(text:String,category:String):MemoryRecord?
     @Query("SELECT * FROM memories WHERE (expiresAt IS NULL OR expiresAt > :now) ORDER BY explicit DESC, updatedAt DESC LIMIT :limit")

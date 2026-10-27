@@ -2,6 +2,7 @@ package com.shiv.assistant.ai
 
 import android.content.Context
 import android.os.SystemClock
+import android.os.BatteryManager
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Conversation
@@ -23,7 +24,9 @@ data class BrainStatus(
     val ready: Boolean, val modelName: String?, val queueLength: Int,
     val lastLoadMs: Long? = null, val lastReplyMs: Long? = null, val error: String? = null,
     val firstFragmentMs: Long? = null, val lastOutputCharacters: Int? = null,
-    val backend:String?=null, val maxOutputTokens:Int?=null
+    val backend:String?=null, val maxOutputTokens:Int?=null,
+    val runtimeTtftMs:Long?=null,val decodeTokens:Int?=null,
+    val decodeTokensPerSecond:Double?=null,val deviceEnergyDropNwh:Long?=null
 )
 
 enum class LocalBackend { CPU, GPU, NPU }
@@ -79,6 +82,10 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
     @Volatile private var outputCharacters: Int? = null
     @Volatile private var activeBackend:String?=null
     @Volatile private var activeOutputTokens:Int?=null
+    @Volatile private var runtimeTtftMs:Long?=null
+    @Volatile private var decodeTokens:Int?=null
+    @Volatile private var decodeTokensPerSecond:Double?=null
+    @Volatile private var deviceEnergyDropNwh:Long?=null
 
     override suspend fun load(model: File) = withContext(dispatcher) {
         require(model.isFile && model.length() > 1024) { "Import a real LiteRT model before loading" }
@@ -108,13 +115,26 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
         }
     }
     override suspend fun infer(prompt: String): String = inferStreaming(prompt) {}
+    @OptIn(com.google.ai.edge.litertlm.ExperimentalApi::class)
     override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = withContext(dispatcher) {
         require(prompt.length <= 20_000)
         val session = conversation ?: throw IllegalStateException("No local model loaded")
         val started = SystemClock.elapsedRealtime()
+        val battery=context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        val discharging=runCatching { context.registerReceiver(null,
+            android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(BatteryManager.EXTRA_STATUS,-1)==BatteryManager.BATTERY_STATUS_DISCHARGING
+        }.getOrDefault(false)
+        val energyBefore=if(discharging) runCatching { battery?.getLongProperty(
+            BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER) }.getOrNull() ?: Long.MIN_VALUE
+            else Long.MIN_VALUE
         try {
             val output = StringBuilder()
             firstFragment = null
+            runtimeTtftMs=null
+            decodeTokens=null
+            decodeTokensPerSecond=null
+            deviceEnergyDropNwh=null
             session.sendMessageAsync(prompt).collect { fragment ->
                 currentCoroutineContext().ensureActive()
                 if (firstFragment == null) firstFragment = SystemClock.elapsedRealtime() - started
@@ -126,6 +146,17 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
             }
             lastReply = SystemClock.elapsedRealtime() - started
             outputCharacters = output.length
+            // Diagnostics must never turn an otherwise successful reply into a failure.
+            runCatching { session.getBenchmarkInfo() }.getOrNull()?.let { benchmark ->
+                runtimeTtftMs=LocalDiagnostics.positiveFinite(benchmark.timeToFirstTokenInSecond)
+                    ?.let { (it*1000.0).toLong() }
+                decodeTokens=LocalDiagnostics.tokenCount(benchmark.lastDecodeTokenCount)
+                decodeTokensPerSecond=LocalDiagnostics.positiveFinite(
+                    benchmark.lastDecodeTokensPerSecond)
+            }
+            if(discharging) deviceEnergyDropNwh=LocalDiagnostics.deviceEnergyDropNwh(
+                energyBefore,runCatching { battery?.getLongProperty(
+                    BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER) }.getOrNull() ?: Long.MIN_VALUE,true)
             error = null
             output.toString().ifBlank { throw IllegalStateException("Model returned empty text") }
         } catch (e: Exception) {
@@ -147,7 +178,9 @@ class LiteRtBrain(private val context: Context) : Brain, Closeable {
         ready = engine != null, modelName = model?.substringAfterLast('/'),
         queueLength = 0, lastLoadMs = lastLoad, lastReplyMs = lastReply, error = error,
         firstFragmentMs = firstFragment, lastOutputCharacters = outputCharacters,
-        backend=activeBackend,maxOutputTokens=activeOutputTokens
+        backend=activeBackend,maxOutputTokens=activeOutputTokens,
+        runtimeTtftMs=runtimeTtftMs,decodeTokens=decodeTokens,
+        decodeTokensPerSecond=decodeTokensPerSecond,deviceEnergyDropNwh=deviceEnergyDropNwh
     )
     override fun close() {
         // Close on owner dispatcher before shutting it down.

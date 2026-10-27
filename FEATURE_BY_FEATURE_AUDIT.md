@@ -16,9 +16,9 @@
 | M5 memory | PARTIAL | save, search, correction, delete, expiry filtering, provenance/confidence, encrypted snapshot | export/restore, semantic graph, dedupe/expiry garbage collection, full owner facts UI |
 | M6 language/voice | PARTIAL | push-to-talk offline Android STT (where available), explicit Google TTS, kn-IN / te-IN / en-IN | language packs/quality OWNER-VERIFY; streaming speech/VAD/mic foreground sessions and optional speaker recognition missing |
 | M7 proactive system | PARTIAL | encrypted save-first signal queue, WorkManager, commitment parser, configurable quiet rules, PowerPolicy, charging-only hypothesis job | all trigger sources, interrupt budget persistence, response reactions, reboot/staleness/dedup edge cases, full routine learn/act |
-| M8 Android integrations | PARTIAL | notification listener, opt-in one-shot Accessibility, calendar read, post-call metadata, relative reminders, settings/app handoffs, local image labels | contacts, calendar write with permission, foreground listening service, per-app include/exclude UI, owner tier edit/undo, full action result verification |
+| M8 Android integrations | PARTIAL | notification listener, opt-in one-shot Accessibility, calendar read and owner-confirmed write, post-call metadata, relative reminders, settings/app handoffs, local image labels | calendar provider/device verification; remaining integration and action result edge cases |
 | M9 privacy hardening | PARTIAL | SQLCipher, Keystore, denylist before storage, manual app awareness, extra owner approval, no silent calls/payments | secure encrypted export/restore, full data erasure, all native libs/network audit, private no-INTERNET flavor not implemented; cloud exception is opt-in |
-| M10 measurements | PARTIAL | model load/reply elapsed time, RAM/thermal admission and queue count | reliable TTFT/tokens/s, measured energy/speech cost and Galaxy S23 baseline |
+| M10 measurements | PARTIAL | model load/reply elapsed time, LiteRT TTFT/decode count/tokens/s, STT and TTS engine timing, conditional whole-device battery energy drop | audible first-word timing, attributable power cost and Galaxy S23 baseline |
 | M11 acceptance | NOT ACCEPTED | earlier compilation + JVM/lint + API35 emulator tests green on `713112f` | current changes must pass CI; device verification, full scenarios, release acceptance and owner sign-off |
 
 ## Binding owner decisions [N] — explicit review
@@ -210,14 +210,28 @@ ID 18 now has owner-selected CPU/GPU/NPU loading, a LiteRT output-token cap,
 and reuse of the model cache/conversation while loaded. The chosen delegate
 is reported and never silently substituted; actual GPU/NPU compatibility is
 OWNER-VERIFY. ID 23 now reports measured first text fragment and routing
-latency. Exact tokens/s remains unavailable because the runtime response has
-no generated-token count. ID 34 has partial STT preview, local fragment-to-TTS
+latency. LiteRT conversation benchmark stats now supply decode token count,
+TTFT and tokens/s after local inference. ID 34 has partial STT preview, local fragment-to-TTS
 sentence streaming, and barge-in cancellation; spoken timing and real-device
 behavior need verification. ID 35 now gates the bounded owner-started session
 by sleep hours and pocket sensors, but continuous VAD/always-ready operation
 remains absent. ID 36 has only an optional session-local “Shiv” command phrase;
 speaker identification and autonomous wake word remain absent. These are
 source distinctions, not five completed features.
+
+### Calendar export and measured diagnostics follow-up
+
+Shiv can export a locally approved event to an owner-selected writable Android
+calendar after separate read/write permission and an event/destination review.
+It rechecks the event and calendar before insertion, blocks events imported from
+the external calendar, and stores an encrypted duplicate guard. Calendar provider
+behavior still needs owner-device verification. AI Status reads LiteRT's measured
+TTFT, decode token count and decode rate; push-to-talk records speech-end to
+transcription, TTS engine start and first audio-buffer delay. When Android exposes a discharging
+battery energy counter, it shows the whole-device energy drop during a reply.
+That drop cannot be attributed to Shiv or converted into an accepted battery
+budget. Actual audible first word, Galaxy S23 power and model fit remain
+OWNER-VERIFY.
 
 ID 46 now has an ongoing PAUSE/RESUME awareness notification. Both source
 services deny capture while paused or if the control cannot be shown; resume

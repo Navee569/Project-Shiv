@@ -20,7 +20,7 @@ mic=[s for s in services if s.attrib.get(ns+"name")==".voice.ShivMicSessionServi
 assert len(mic)==1 and mic[0].attrib.get(ns+"exported")=="false"
 assert mic[0].attrib.get(ns+"foregroundServiceType")=="microphone"
 permissions={p.attrib.get(ns+"name") for p in x.findall("uses-permission")}
-assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.READ_CALENDAR","android.permission.READ_PHONE_STATE","android.permission.READ_CONTACTS",
+assert permissions=={"android.permission.INTERNET","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.READ_CALENDAR","android.permission.WRITE_CALENDAR","android.permission.READ_PHONE_STATE","android.permission.READ_CONTACTS",
 "android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MICROPHONE",
 "android.permission.RECEIVE_BOOT_COMPLETED",
 "android.permission.PACKAGE_USAGE_STATS"},permissions
