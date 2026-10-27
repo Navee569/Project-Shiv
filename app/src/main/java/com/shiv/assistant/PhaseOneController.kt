@@ -389,7 +389,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             }) {
                 "Imported model checksum or size changed. Reimport a trusted model file."
             }
-            hub.load(record.role, File(record.uri), lease.freeRamBytes)
+            hub.load(record.role, File(record.uri), lease.freeRamBytes,record.id)
             progress="Model loaded: "+record.name
         } catch(e:Exception) { issue=e.message?:"LiteRT failed to load model" }
         finally { loading=false }
@@ -459,6 +459,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             " | Backend: "+(chat.backend?:"not loaded")+
             " | Max output tokens: "+(chat.maxOutputTokens?.toString()?:"not loaded")+
             " | Last route: "+(hub.lastRoutedRole?:"none")+
-            " in "+(hub.lastRoutingMs?.toString()?:"not measured")+" ms"
+            " in "+(hub.lastRoutingMs?.toString()?:"not measured")+" ms"+
+            " | Fallback: "+(hub.lastFallbackReason?:"none")
     }
 }

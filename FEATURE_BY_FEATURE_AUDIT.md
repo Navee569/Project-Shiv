@@ -254,3 +254,5 @@ owner-triggered retry that resets attempts. Android regression covers this
 recovery path. The final local debug build, JVM suite, lint, instrumentation
 APK compilation, and static checks passed; emulator execution on the final
 SHA and Galaxy S23 acceptance are separate gates.
+
+Audit IDs 17 and 19 now have source implementations for selected-router restoration, large-model idle eviction, low-memory and measured slow-reply fallback, and a usable bounded priority queue. Queue tests cover active capacity, priority, cancellation cleanup, and recovery after a failed request. Real LiteRT model fit, native cancellation timing, API 26/35 runs, and Galaxy S23 behavior remain verification work; Phase 2 entry is still gated by M11.

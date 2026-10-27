@@ -201,12 +201,15 @@ data class InferenceRequest(val id: String, val prompt: String,
  * Priority queue is bounded and errors are returned to the caller.
  */
 class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
-    private data class Pending(val request: InferenceRequest, val result: CompletableDeferred<Result<String>>)
+    private data class Pending(val request: InferenceRequest,
+        val result: CompletableDeferred<Result<String>>,val order:Long)
     private val lock = Any()
     private val waiting = java.util.PriorityQueue<Pending>(
-        compareByDescending<Pending> { it.request.priority.value }.thenBy { it.request.createdAt })
+        compareByDescending<Pending> { it.request.priority.value }.thenBy { it.order })
     private var active: Pending? = null
     private var activeTask: Deferred<String>? = null
+    private var nextOrder=0L
+    private var closed=false
     private val signal = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     init { workerScope.launch { for (ignored in signal) drain() } }
@@ -216,10 +219,11 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
         }
         val promise = CompletableDeferred<Result<String>>()
         synchronized(lock) {
-            if (waiting.size >= maxSize) {
+            check(!closed) { "Inference queue is closed" }
+            if (waiting.size + (if(active==null) 0 else 1) >= maxSize) {
                 throw IllegalStateException("Inference queue full; request not discarded")
             }
-            waiting.add(Pending(request, promise))
+            waiting.add(Pending(request, promise,nextOrder++))
         }
         signal.trySend(Unit)
         return try {
@@ -249,7 +253,9 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
                 val task = workerScope.async(start = CoroutineStart.LAZY) {
                     withTimeout(120_000L) {
                         if(next.request.onFragment==null) brain.infer(next.request.prompt)
-                        else brain.inferStreaming(next.request.prompt,next.request.onFragment)
+                        else brain.inferStreaming(next.request.prompt) { fragment ->
+                            if(next.result.isActive) next.request.onFragment.invoke(fragment)
+                        }
                     }
                 }
                 synchronized(lock) {
@@ -266,6 +272,11 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
             } catch (e: Exception) {
                 next.result.complete(Result.failure(e))
             } finally {
+                // Cancellation can return to the caller before a native-backed
+                // inference has finished cleanup. Never start another request
+                // until that task has actually completed.
+                val running=synchronized(lock) { if(active===next) activeTask else null }
+                if(running!=null) withContext(NonCancellable) { running.join() }
                 synchronized(lock) {
                     if (active === next) {
                         active = null
@@ -276,6 +287,7 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
         }
     }
     fun pendingCount() = synchronized(lock) { waiting.size }
+    fun isBusy() = synchronized(lock) { active!=null || waiting.isNotEmpty() }
     fun cancelWaiting(id: String): Boolean = synchronized(lock) {
         val target = waiting.firstOrNull { it.request.id == id } ?: return@synchronized false
         waiting.remove(target)
@@ -283,8 +295,14 @@ class InferenceQueue(private val brain: Brain, private val maxSize: Int = 64) {
         true
     }
     fun shutdown() {
+        synchronized(lock) {
+            closed=true
+            waiting.forEach { it.result.cancel() }
+            waiting.clear()
+            active?.result?.cancel()
+            activeTask?.cancel()
+        }
         workerScope.cancel()
-        synchronized(lock) { waiting.forEach { it.result.cancel() }; waiting.clear() }
         signal.close()
     }
 }
@@ -305,20 +323,31 @@ class ShivBrainHub(private val context: Context) {
         private set
     @Volatile var lastRoutedRole:String?=null
         private set
+    @Volatile var lastFallbackReason:String?=null
+        private set
+    private var slowConversationUntil=0L
+    private val selectedRouterKey="resident_router_model_id"
 
     private val selected = object : Brain {
         override suspend fun load(model: File): Unit =
             throw UnsupportedOperationException("Import models through Model Manager")
         override suspend fun infer(prompt: String): String = inferStreaming(prompt) {}
-        override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
+        override suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = lifecycle.withLock {
             val routingStarted=SystemClock.elapsedRealtime()
             val governor = ModelGovernor(context)
             val heavy = governor.lease("conversation")
             val small = governor.lease("router")
+            if(!router.status().ready && small.allowed &&
+                (!conversation.status().ready || !heavy.allowed)) restoreRouterLocked(small.freeRamBytes)
             val selectedBrain:Brain
             val maxSeconds:Int
             var routed=RouterDecision.CONVERSATION
-            if(router.status().ready && small.allowed && conversation.status().ready && heavy.allowed) {
+            val slowFallback=SystemClock.elapsedRealtime()<slowConversationUntil &&
+                router.status().ready && small.allowed
+            if(slowFallback) {
+                routed=RouterDecision.ROUTER
+                lastFallbackReason="Previous conversation reply exceeded local speed budget"
+            } else if(router.status().ready && small.allowed && conversation.status().ready && heavy.allowed) {
                 // Classification has no tool authority and emits nothing to the owner.
                 // Fail closed to the conversation model if output is ambiguous.
                 routed=try {
@@ -340,11 +369,13 @@ class ShivBrainHub(private val context: Context) {
                     selectedBrain=conversation
                     maxSeconds=heavy.maxModelSeconds
                     lastRoutedRole="conversation"
+                    lastFallbackReason=null
                 }
                 router.status().ready && small.allowed -> {
                     selectedBrain=router
                     maxSeconds=small.maxModelSeconds
                     lastRoutedRole="router"
+                    if(!heavy.allowed) lastFallbackReason=heavy.reason
                 }
                 conversation.status().ready && !heavy.allowed ->
                     throw IllegalStateException("Conversation model blocked: " + heavy.reason)
@@ -358,9 +389,19 @@ class ShivBrainHub(private val context: Context) {
                 val localPrompt=LocalPromptBuilder.build(prompt,localContext)
                 // Only a best-effort coroutine limit; a native runtime may
                 // finish cancellation after this window.
-                return withTimeout(maxSeconds.toLong()*1000L) {
-                    selectedBrain.inferStreaming(localPrompt,onFragment)
+                val reply=try {
+                    withTimeout(maxSeconds.toLong()*1000L) {
+                        selectedBrain.inferStreaming(localPrompt,onFragment)
+                    }
+                } catch (timedOut:TimeoutCancellationException) {
+                    if(selectedBrain===conversation)
+                        slowConversationUntil=SystemClock.elapsedRealtime()+10*60_000L
+                    throw timedOut
                 }
+                if(selectedBrain===conversation &&
+                    ModelResidencyPolicy.slowConversation(conversation.status().lastReplyMs))
+                    slowConversationUntil=SystemClock.elapsedRealtime()+10*60_000L
+                return@withLock reply
             } finally {
                 computeLedger.record(SystemClock.elapsedRealtime()-started)
             }
@@ -373,21 +414,45 @@ class ShivBrainHub(private val context: Context) {
     }
 
     val inference = InferenceQueue(selected)
-    suspend fun load(role: String, file: File, availableRam: Long) = lifecycle.withLock {
+    suspend fun load(role: String, file: File, availableRam: Long, modelId:String?=null) = lifecycle.withLock {
         require(role in setOf("router","conversation"))
         idleRelease?.cancel()
         // A small router and large conversation should not coexist under pressure.
-        if (role=="conversation" && availableRam<4_000_000_000L) router.unload()
-        if (role=="router" && availableRam<4_000_000_000L) conversation.unload()
+        if (role=="conversation" && !ModelResidencyPolicy.canCoexist(availableRam)) router.unload()
+        if (role=="router" && !ModelResidencyPolicy.canCoexist(availableRam)) conversation.unload()
         val target = if (role=="router") router else conversation
         val started=SystemClock.elapsedRealtime()
         try { target.load(file) }
         finally { computeLedger.record(SystemClock.elapsedRealtime()-started) }
+        if(role=="router" && modelId!=null) ShivVault(context).put(selectedRouterKey,modelId)
         armIdleRelease()
+    }
+    suspend fun restoreRouterIfSelected() = lifecycle.withLock {
+        val lease=ModelGovernor(context).lease("router")
+        if(lease.allowed && !router.status().ready && !conversation.status().ready)
+            restoreRouterLocked(lease.freeRamBytes)
+    }
+    private suspend fun restoreRouterLocked(availableRam:Long) {
+        val id=ShivVault(context).get(selectedRouterKey) ?: return
+        val record=com.shiv.assistant.data.EncryptedDatabase.open(context).dao().models()
+            .firstOrNull { it.id==id && it.role=="router" } ?: return
+        val file=File(record.uri)
+        if(!ModelIntegrity.valid(file,record.bytes,record.sha256)) {
+            lastFallbackReason="Saved router model integrity check failed"
+            return
+        }
+        if(!ModelResidencyPolicy.canCoexist(availableRam) && conversation.status().ready)
+            conversation.unload()
+        val started=SystemClock.elapsedRealtime()
+        try { router.load(file) }
+        catch (cancelled:CancellationException) { throw cancelled }
+        catch (_:Exception) { lastFallbackReason="Saved router model could not load" }
+        finally { computeLedger.record(SystemClock.elapsedRealtime()-started) }
     }
     suspend fun unloadForRemoval(role: String, filename: String) = lifecycle.withLock {
         if (role=="router" && router.status().modelName==filename) router.unload()
         if (role=="conversation" && conversation.status().modelName==filename) conversation.unload()
+        if(role=="router") ShivVault(context).put(selectedRouterKey,"")
     }
     private fun armIdleRelease() {
         idleRelease?.cancel()
@@ -395,22 +460,29 @@ class ShivBrainHub(private val context: Context) {
         idleRelease = idleScope.launch {
             delay(120_000L)
             lifecycle.withLock {
+                if(inference.isBusy()) {
+                    armIdleRelease()
+                    return@withLock
+                }
                 // This is best-effort idle eviction, not a measured energy saving.
                 if (conversation.status().ready) conversation.unload()
+                val lease=ModelGovernor(context).lease("router")
+                if(lease.allowed && !router.status().ready && !inference.isBusy())
+                    restoreRouterLocked(lease.freeRamBytes)
             }
         }
     }
-    suspend fun infer(prompt: String): String = lifecycle.withLock {
+    suspend fun infer(prompt: String): String {
         idleRelease?.cancel()
         try {
-            inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
+            return inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
                 prompt, InferencePriority.INTERACTIVE))
         } finally { armIdleRelease() }
     }
-    suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String = lifecycle.withLock {
+    suspend fun inferStreaming(prompt:String,onFragment:suspend (String)->Unit):String {
         idleRelease?.cancel()
         try {
-            inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
+            return inference.submit(InferenceRequest(java.util.UUID.randomUUID().toString(),
                 prompt,InferencePriority.INTERACTIVE,onFragment=onFragment))
         } finally { armIdleRelease() }
     }

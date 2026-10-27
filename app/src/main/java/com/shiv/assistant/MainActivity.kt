@@ -85,6 +85,9 @@ class MainActivity : ComponentActivity() {
                         com.shiv.assistant.automation.CalendarChangeWorker.OPT_IN)=="yes")
             }
             val controller = viewModel<ShivViewModel>().controller
+            LaunchedEffect(controller) {
+                withContext(Dispatchers.IO) { controller.phase.hub.restoreRouterIfSelected() }
+            }
             var voiceJob by remember { mutableStateOf<Job?>(null) }
             val speech = remember { ShivVoice(applicationContext).also {
                 it.initSpeech { ready, error ->

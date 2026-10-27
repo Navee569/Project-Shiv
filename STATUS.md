@@ -322,3 +322,9 @@ reading and again before storage. PAUSE revokes a screen token; RESUME never
 restores it. If notification permission or this notification channel is
 blocked, source capture fails closed. Reboot restores the notification only,
 not a screen token. API 26/35 execution remains pending on the new commit.
+
+## Local model residency and inference queue (audit IDs 17 and 19)
+
+The selected router model ID is retained in encrypted owner data. On app start and after the larger model's idle release, Shiv verifies the private model file before restoring the router. Low available RAM prevents both models from being loaded together; a measured slow conversation reply biases later requests to the router for ten minutes when that model is admitted. AI Status displays the fallback reason. These thresholds are conservative software policy, not measured Galaxy S23 model-fit or speed acceptance.
+
+Concurrent callers now enter the bounded priority queue before the model lifecycle lock. The queue counts active work toward capacity, orders equal-priority requests by arrival, suppresses late fragments after cancellation, and waits for inference cleanup before starting another request. Focused JVM tests cover priority, capacity, cancellation cleanup, and failure recovery. Native LiteRT cancellation latency remains best effort and needs device tests.
