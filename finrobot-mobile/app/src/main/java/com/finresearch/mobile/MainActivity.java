@@ -202,10 +202,14 @@ public final class MainActivity extends Activity {
                 JSONArray raw = result.getJSONObject("indicators").getJSONArray("quote")
                     .getJSONObject(0).getJSONArray("close");
                 List<Double> prices = new ArrayList<>();
+                int latestCloseIndex = -1;
                 for (int i = 0; i < raw.length(); i++) {
                     if (!raw.isNull(i)) {
                         double value = raw.getDouble(i);
-                        if (!Double.isNaN(value) && value > 0) prices.add(value);
+                        if (Double.isFinite(value) && value > 0) {
+                            prices.add(value);
+                            latestCloseIndex = i;
+                        }
                     }
                 }
                 if (prices.size() < 2) throw new IllegalStateException("Not enough valid prices.");
@@ -213,10 +217,12 @@ public final class MainActivity extends Activity {
                 JSONArray timestamps = result.optJSONArray("timestamp");
                 String priceDate = "unavailable";
                 if (timestamps != null && timestamps.length() > 0) {
-                    long latestTimestamp = timestamps.optLong(timestamps.length()-1,0);
+                    long latestTimestamp = timestamps.optLong(latestCloseIndex,0);
                     if (latestTimestamp > 0) {
-                        priceDate = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm 'UTC'",Locale.US)
-                            .format(new java.util.Date(latestTimestamp * 1000L));
+                        java.text.SimpleDateFormat utcFormat =
+                            new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm 'UTC'", Locale.US);
+                        utcFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                        priceDate = utcFormat.format(new java.util.Date(latestTimestamp * 1000L));
                     }
                 }
                 final String historyDate = priceDate;
