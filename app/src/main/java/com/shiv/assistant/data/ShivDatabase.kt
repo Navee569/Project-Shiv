@@ -31,7 +31,7 @@ data class RuleRecord(@PrimaryKey val id: String, val description: String, val k
 @Entity(tableName = "chat_history", indices = [Index("createdAt")])
 data class ChatRecord(@PrimaryKey val id: String, val role: String, val body: String,
     val createdAt: Long = System.currentTimeMillis())
-@Entity(tableName = "action_log", indices = [Index("createdAt")])
+@Entity(tableName = "action_log", indices = [Index("createdAt"),Index("type")])
 data class ActionLogRecord(@PrimaryKey val id: String, val type: String, val argsRedacted: String, val tier: String,
     val permission: String, val confirmed: Boolean, val result: String, val undo: String?,
     val createdAt: Long = System.currentTimeMillis())
@@ -183,7 +183,7 @@ interface ShivDao {
         ReminderRecord::class, RuleRecord::class, ChatRecord::class, ActionLogRecord::class,
         PermissionTierRecord::class, ModelRecord::class, SignalRecord::class, BeliefRecord::class,
         DecisionTraceRecord::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class ShivDatabase : RoomDatabase() {

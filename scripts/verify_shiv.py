@@ -29,6 +29,11 @@ awareness_receivers=[r for r in a.findall("receiver") if
 assert len(awareness_receivers)==1 and awareness_receivers[0].attrib.get(ns+"exported")=="false"
 gradle=(app/"build.gradle").read_text(encoding="utf-8")
 assert 'applicationId "com.shiv.assistant"' in gradle and "namespace = 'com.shiv.assistant'" in gradle
+db_source=(app/"src/main/java/com/shiv/assistant/data/EncryptedDatabase.kt").read_text(encoding="utf-8")
+assert "fallbackToDestructiveMigration" not in db_source
+assert "MIGRATION_1_2" in db_source and "checkIntegrity" in db_source
+assert (app/"schemas/com.shiv.assistant.data.ShivDatabase/1.json").is_file()
+assert (app/"schemas/com.shiv.assistant.data.ShivDatabase/2.json").is_file()
 sources=list((app/"src/main/java").rglob("*.kt"))
 assert len(sources)>=7
 for path in sources:

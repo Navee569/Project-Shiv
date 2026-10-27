@@ -1,6 +1,6 @@
 # Shiv status — development-only checkpoint
 
-**Branch:** feature/shiv-phase1-implementation  
+**Current development branch:** `development/shiv-phase1-audit-fixes-20261026`. The CI results below are historical and do not cover the current batch.
 **Automated verification:** latest application source commit `8e48ed0`: clean APK/build, unit tests, Android lint and static checks PASS (run [40259210693](https://github.com/Navee569/Project-Shiv/actions/runs/40259210693)); API 26 and API 35 emulator: **14/14 each PASS** (run [40259210606](https://github.com/Navee569/Project-Shiv/actions/runs/40259210606)). 68.2 MB `shiv-native-debug-apk` artifact verified. This is an automated test report, not device acceptance.
 **Owner/device verification:** NOT RUN on Samsung Galaxy S23. Phase 1 M11 is NOT accepted.  
 **Result:** partial Phase 1 implementation, NOT accepted M11. Never report complete feature parity from a status label.
@@ -8,9 +8,9 @@
 | Requirement | Implemented source | Remaining before accepting |
 | --- | --- | --- |
 | M0 baseline | Original Shiv launcher, Gradle and CI kept; Gradle/Rom deps added | Full CI passed on tested commit; Galaxy S23 owner checks outstanding |
-| M1 architecture | Interfaces, Room, Brain, queue, decisions and separation documented | ViewModels/repositories need complete modularization |
-| M2 shell | Chat, Memory, Automation, Model Manager, AI Status, Events, Beliefs, Decisions, permissions | Launch/recreate Android instrumentation passed on API35; broader navigation/rotation/device QA pending |
-| M3 persistence | Room+SQLCipher, wrapped key, 14 entity families, encrypted vault migration | API26/35 encrypted file/round-trip, wrong-key rejection, rollback, 24 concurrent writes passed; real legacy migration/key invalidation/restart test pending |
+| M1 architecture | ViewModel, typed owner/Phase 1 repositories, Room, Brain, Android adapters and queue | Verify new boundaries in API 26/35 CI; controller still coordinates approved platform actions |
+| M2 shell | All primary screens, saved navigation, loading/empty/error/permission messages and accessible tabs/headings | Run new 12-screen navigation/recreation/accessibility tests on API 26/35; owner TalkBack review pending |
+| M3 persistence | Room+SQLCipher, wrapped key, 14 entity families, atomic legacy vault migration, encrypted v1→v2 upgrade, integrity-gated startup and confirmed recovery | Run new migration/corruption tests on API 26/35; real key-loss and owner backup recovery pending |
 | M4 local AI | Real LiteRT-LM 0.18.0 Brain, two role imports, queue, status and strict JSON parser | model format/engine compatibility, latency, tokens/s, cancellation active inference, output budget |
 | M5 memory | explicit facts, corrections, source/confidence, retrieval and context snapshot | export/restore, semantic links, expiry cleanup, full dedup and concurrency |
 | M6 voice | on-device STT, Google TTS engine, three language locales | owner language packs, speaker recognition, session mic FGS/VAD, stream/barge-in |
@@ -19,6 +19,16 @@
 | M9 privacy | denylist enforced before model/storage, no plaintext fallback, explicit cloud exception, hardened action policies | threat model, export/restore, merged manifest permission inspection |
 | M10 measurements | elapsed load/reply time, LiteRT TTFT/decode stats, speech engine timing and conditional whole-device battery energy delta | Audible speech and attributable power/thermal baseline ON OWNER DEVICE |
 | M11 release | documentation and source staging | Build/JVM/lint and 14 tests each on API26/API35 passed; owner/real-model/real-device verification, remaining feature gaps and release acceptance remain |
+
+### Current five-row source batch
+
+IDs 04, 07, 08, 11 and 12 now have source paths for presentation/data/Brain/
+Android boundaries, per-screen states, saved accessible navigation, atomic
+legacy migration, encrypted v1→v2 migration and owner-driven storage recovery.
+The Activity checks storage on an I/O thread and does not open private screens
+on an integrity or key failure. Focused JVM and instrumentation tests were
+added. API 26/35 CI and Galaxy S23 owner checks remain outstanding; M11 is
+not accepted.
 
 ## Owner-confirmed decisions tracking
 

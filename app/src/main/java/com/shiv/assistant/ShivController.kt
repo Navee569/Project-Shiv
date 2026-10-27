@@ -9,6 +9,7 @@ import com.shiv.assistant.ai.ShivIntelligence
 import com.shiv.assistant.automation.ShivActions
 import com.shiv.assistant.automation.ShivReminders
 import com.shiv.assistant.data.ShivVault
+import com.shiv.assistant.data.OwnerStateRepository
 import com.shiv.assistant.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +17,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import androidx.room.withTransaction
-import org.json.JSONArray
 
 data class ChatEntry(val role: String, val text: String)
 
@@ -26,6 +26,7 @@ data class ChatEntry(val role: String, val text: String)
  */
 class ShivController(private val context: Context) {
     val vault = ShivVault(context)
+    private val ownerState=OwnerStateRepository(context)
     private val brain = ShivIntelligence(context)
     val phase = PhaseOneController(context, brain.localBrain)
     var speechLocale by mutableStateOf("en-IN")
@@ -33,9 +34,17 @@ class ShivController(private val context: Context) {
     fun updateSpeechLocale(value: String) {
         require(value in setOf("kn-IN","te-IN","en-IN"))
         speechLocale = value
-        vault.put("speech_locale",value)
+        ownerState.saveSpeechLocale(value)
     }
     fun showNotice(text: String) { notice = text }
+    fun notificationSummaryCount():Int=ownerState.notificationCount()
+    suspend fun exportOwnerArchive(uri:Uri,secret:CharArray):Int =
+        com.shiv.assistant.data.PortableOwnerArchive(context).exportTo(uri,secret)
+    suspend fun restoreOwnerArchive(uri:Uri,secret:CharArray):Int {
+        val count=com.shiv.assistant.data.PortableOwnerArchive(context).restoreFrom(uri,secret)
+        afterPortableRestore(count)
+        return count
+    }
     val messages = mutableStateListOf<ChatEntry>()
     val notes = mutableStateListOf<String>()
     val macros = mutableStateListOf<String>()
@@ -61,76 +70,54 @@ class ShivController(private val context: Context) {
     var speechDraft by mutableStateOf("")
     init {
         runCatching {
-            config = AssistantConfiguration(
-                mode = runCatching { IntelligenceMode.valueOf(vault.get("brain_mode") ?: "LOCAL") }.getOrDefault(IntelligenceMode.LOCAL),
-                endpoint = vault.get("endpoint") ?: "https://api.openai.com/v1/chat/completions",
-                model = vault.get("model") ?: "gpt-4.1-mini",
-                allowCloudTransmission = vault.get("cloud_consent") == "yes"
-            )
-            apiKey = vault.get("api_secret").orEmpty()
-            speechLocale = vault.get("speech_locale") ?: "en-IN"
-            notificationSummaries = vault.get("notification_opt_in") == "yes"
-            reminderTier = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                runCatching {
-                    AuthorityTier.valueOf(com.shiv.assistant.data.EncryptedDatabase.open(context)
-                        .dao().tier("REMINDER")?.tier ?: "ASK_FIRST")
-                }.getOrDefault(AuthorityTier.ASK_FIRST)
-            }.let { if(it==AuthorityTier.ACT_THEN_TELL) it else AuthorityTier.ASK_FIRST }
-            messages.addAll(vault.history().map { ChatEntry(it.first, it.second) })
-            notes.addAll(vault.notes())
-            val persisted = JSONArray(vault.get("macros") ?: "[]")
-            for (i in 0 until persisted.length()) macros.add(persisted.getString(i))
+            val saved=ownerState.load()
+            config=saved.config
+            apiKey=saved.apiKey
+            speechLocale=saved.speechLocale
+            notificationSummaries=saved.notificationSummaries
+            reminderTier=saved.reminderTier
+            messages.addAll(saved.chat.map { ChatEntry(it.first,it.second) })
+            notes.addAll(saved.notes)
+            macros.addAll(saved.macros)
         }.onFailure { notice = "Encrypted data could not be loaded. No information was overwritten." }
         if (messages.isEmpty()) messages.add(ChatEntry("assistant", "SHIV ONLINE. Local intelligence is active. Choose cloud or hybrid mode in Settings if you want an API-powered assistant."))
     }
     fun settings(mode: IntelligenceMode, endpoint: String, model: String, secret: String, consent: Boolean) {
         require(CloudSafety.endpointAllowed(endpoint)) { "Use an HTTPS endpoint or explicit local loopback address" }
         require(model.isNotBlank()) { "Model name cannot be empty" }
-        config = AssistantConfiguration(mode, endpoint.trim(), model.trim(), consent)
-        vault.put("brain_mode", mode.name)
-        vault.put("endpoint", endpoint.trim())
-        vault.put("model", model.trim())
-        vault.put("cloud_consent", if (consent) "yes" else "no")
-        vault.put("api_secret", secret)
+        val proposed=AssistantConfiguration(mode, endpoint.trim(), model.trim(), consent)
+        ownerState.saveSettings(proposed,secret)
+        config=proposed
         apiKey = secret
         notice = "Intelligence configuration saved securely"
     }
     suspend fun changeReminderTier(tier:AuthorityTier) {
         require(tier in setOf(AuthorityTier.ASK_FIRST,AuthorityTier.ACT_THEN_TELL))
-        withContext(Dispatchers.IO) {
-            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putTier(
-                com.shiv.assistant.data.PermissionTierRecord("REMINDER",tier.name,System.currentTimeMillis()))
-        }
+        ownerState.setReminderTier(tier)
         reminderTier=tier
         notice=if(tier==AuthorityTier.ASK_FIRST) "Reminder approval required"
             else "Explicit reminders may be scheduled, with owner undo available"
     }
     suspend fun undoLatestReminder() {
-        val id=vault.get("last_reminder_id").orEmpty()
+        val id=ownerState.lastReminderId()
         if(id.isBlank()) {
             notice="No pending reminder to undo"
             return
         }
         val undone=ShivReminders.undo(context,id)
         if(undone) {
-            vault.put("last_reminder_id","")
-            withContext(Dispatchers.IO) {
-                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+            ownerState.setLastReminderId("")
+            ownerState.logAction(
                     com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
                     "REMINDER_UNDO","[REDACTED]","ASK_FIRST","OWNER_REQUESTED",
                     true,"CANCEL_REQUESTED",null))
-            }
         }
         notice=if(undone) "Pending reminder canceled; delivered notifications cannot be recalled"
             else "Reminder already delivered, canceled, or missing"
     }
     private fun append(role: String, text: String) {
+        ownerState.appendChat(role,text)
         messages.add(ChatEntry(role, text))
-        vault.addChat(role, text)
-        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putChat(
-                com.shiv.assistant.data.ChatRecord(java.util.UUID.randomUUID().toString(), role, text.take(12000)))
-        }
     }
     suspend fun submit(message: String,onLocalFragment:(suspend (String)->Unit)?=null) {
         val question = message.trim()
@@ -138,7 +125,7 @@ class ShivController(private val context: Context) {
         append("user", question)
         // Refresh after owner edits from the Memories screen; never use stale facts.
         notes.clear()
-        notes.addAll(vault.notes())
+        notes.addAll(ownerState.notes())
         // Durable, encrypted signal is saved BEFORE any model inference.
         phase.submitSignal("owner_input", question, 5)
         // Precise scheduling/DB questions never require model hallucination.
@@ -148,7 +135,7 @@ class ShivController(private val context: Context) {
             val zone=java.time.ZoneId.systemDefault()
             val begin=day.atStartOfDay(zone).toInstant().toEpochMilli()
             val end=day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()-1
-            val events=com.shiv.assistant.data.EncryptedDatabase.open(context).dao().events(begin,end)
+            val events=ownerState.events(begin,end)
             append("assistant", if(events.isEmpty())"There are no Shiv-recorded events tomorrow."
                 else events.joinToString("\n"){it.title+" at "+
                     java.time.Instant.ofEpochMilli(it.startAt).atZone(zone).toLocalTime()})
@@ -163,11 +150,7 @@ class ShivController(private val context: Context) {
             if(hour !in 0..23 || minute !in 0..59) {
                 append("assistant","Please use a valid time such as 9 AM.")
             } else {
-                val value=(hour*60+minute).toString()
-                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().putRule(
-                    com.shiv.assistant.data.RuleRecord("quiet-reminders-before",
-                        "Ignore reminders before "+hour+":"+minute.toString().padStart(2,'0'),
-                        "reminders_minute_of_day",value))
+                ownerState.saveQuietRule(hour,minute)
                 append("assistant","Saved. Reminders scheduled before that local time will be deferred.")
             }
             return
@@ -182,13 +165,11 @@ class ShivController(private val context: Context) {
             reminderTier == AuthorityTier.ACT_THEN_TELL &&
             ActionAuthorization.decide(proposal, reminderTier, false).permitted) {
             val id=ShivReminders.schedule(context,proposal.argument)
-            if(id!=null) vault.put("last_reminder_id",id.toString())
-            withContext(Dispatchers.IO) {
-                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
+            if(id!=null) ownerState.setLastReminderId(id.toString())
+            ownerState.logAction(
                     com.shiv.assistant.data.ActionLogRecord(java.util.UUID.randomUUID().toString(),
                         "REMINDER","[REDACTED]","ACT_THEN_TELL","OWNER_CONFIGURED",
                         id!=null,if(id!=null)"SCHEDULED" else "INVALID_DATE",null))
-            }
             append("assistant",if(id!=null) "Reminder scheduled. Use Permissions > Undo latest reminder to cancel it."
                 else "I couldn't parse the reminder time. Try 'remind me in 10 minutes'.")
             return
@@ -220,11 +201,8 @@ class ShivController(private val context: Context) {
         pending=null
         notice="Action cancelled"
         if(action!=null) {
-            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                val decision=ActionAuthorization.decide(action,null,false)
-                com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
-                    ActionAuthorization.log(action,decision,"NOT_REQUESTED","CANCELLED"))
-            }
+            val decision=ActionAuthorization.decide(action,null,false)
+            ownerState.logAction(ActionAuthorization.log(action,decision,"NOT_REQUESTED","CANCELLED"))
         }
     }
     fun approve() {
@@ -242,7 +220,7 @@ class ShivController(private val context: Context) {
             }
             ActionKind.REMINDER -> {
                 val id = ShivReminders.schedule(context, action.argument)
-                if(id!=null) vault.put("last_reminder_id",id.toString())
+                if(id!=null) ownerState.setLastReminderId(id.toString())
                 notice = if (id == null) "Use: remind me in 10 minutes to ..."
                     else "Reminder scheduled locally; undo is available in Permissions"
                 if(id==null) "INVALID_DATE" else "SCHEDULED"
@@ -254,24 +232,19 @@ class ShivController(private val context: Context) {
                 if(opened) "APP_HANDOFF_OPENED" else "APP_HANDOFF_FAILED"
             }
         }
-        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-            com.shiv.assistant.data.EncryptedDatabase.open(context).dao().logAction(
-                ActionAuthorization.log(action,authorization,"APP_HANDOFF",result))
-        }
+        ownerState.logAction(ActionAuthorization.log(action,authorization,"APP_HANDOFF",result))
     }
     fun saveNote(value: String) {
         if (value.trim().isEmpty()) return
-        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-            com.shiv.assistant.data.ShivRepository(context).remember(value.trim())
-        }
-        notes.clear(); notes.addAll(vault.notes())
+        ownerState.remember(value.trim())
+        notes.clear(); notes.addAll(ownerState.notes())
         notice = "Encrypted note saved"
     }
     fun saveMacro(goal: String) {
         if (goal.isBlank()) return
-        macros.add(goal.trim().take(512))
-        val json = JSONArray(); macros.takeLast(50).forEach { json.put(it) }
-        vault.put("macros", json.toString())
+        val next=(macros+goal.trim().take(512)).takeLast(50)
+        ownerState.saveMacros(next)
+        macros.clear();macros.addAll(next)
         notice = "Routine saved — execution always requires review"
     }
     /**
@@ -292,13 +265,7 @@ class ShivController(private val context: Context) {
                 .edit().clear().commit()) { "Could not revoke passive learning" }
             check(context.getSharedPreferences("shiv_call_check_in",Context.MODE_PRIVATE)
                 .edit().clear().commit()) { "Could not revoke call check-ins" }
-            val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
-            val ids=withContext(Dispatchers.IO) {
-                val dao=database.dao()
-                val pending=dao.reminderIds()
-                dao.eraseOwnerRecords()
-                pending
-            }
+            val ids=withContext(Dispatchers.IO) { ownerState.eraseAllOwnerRecords() }
             val wm=androidx.work.WorkManager.getInstance(context)
             for(id in ids) {
                 wm.cancelAllWorkByTag("shiv-reminder-"+id)
@@ -361,25 +328,16 @@ class ShivController(private val context: Context) {
     }
 
     fun clearHistory() {
-        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-            val database=com.shiv.assistant.data.EncryptedDatabase.open(context)
-            database.withTransaction {
-                database.dao().clearChats()
-                database.dao().clearOwnerChatSignals()
-                database.dao().clearOrphanDecisions()
-                database.dao().putVault(com.shiv.assistant.data.VaultEntry("history","[]"))
-            }
-        }
+        ownerState.clearChat()
         messages.clear()
         notice = "Chat history erased"
     }
     fun notifications(on: Boolean) {
         notificationSummaries = on
-        vault.put("notification_opt_in", if (on) "yes" else "no")
+        ownerState.setNotificationOptIn(on)
         context.getSharedPreferences("shiv_awareness_control", Context.MODE_PRIVATE).edit()
             .putBoolean("notifications_enabled", on).apply()
         com.shiv.assistant.awareness.AwarenessControl.show(context)
-        if (!on) vault.clearNotifications()
     }
     fun chooseImage(uri: Uri?) {
         visionCandidate = uri

@@ -36,13 +36,16 @@ import com.shiv.assistant.data.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Live developer panels are honest about imported, loaded, and missing models. */
 class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     private val repository=ShivRepository(context)
-    private val dao=EncryptedDatabase.open(context).dao()
+    private val data=PhaseOneDataRepository(context)
+    private val reads=PhaseOneReadRepository(context)
+    private val decisionsData=CommitmentDecisionRepository(context)
     private val calendarExportMutex=Mutex()
     val models=mutableStateListOf<ModelRecord>()
     val memories=mutableStateListOf<MemoryRecord>()
@@ -60,26 +63,24 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     private val computeLedger=LocalModelComputeLedger(ShivVault(context))
     var localBudgetSeconds by mutableIntStateOf(computeLedger.budgetSeconds())
         private set
-    var localBackend by mutableStateOf(LocalInferenceSettings.backend(
-        ShivVault(context).get(LocalInferenceSettings.BACKEND_KEY)))
+    var localBackend by mutableStateOf(data.localBackend())
         private set
-    var localOutputTokens by mutableIntStateOf(LocalInferenceSettings.outputTokens(
-        ShivVault(context).get(LocalInferenceSettings.OUTPUT_TOKENS_KEY)))
+    var localOutputTokens by mutableIntStateOf(data.localOutputTokens())
         private set
     suspend fun chooseLocalBackend(value:LocalBackend) {
         hub.clearSessions()
-        ShivVault(context).put(LocalInferenceSettings.BACKEND_KEY,value.name)
+        data.setLocalBackend(value)
         localBackend=value
         progress="Backend saved; models unloaded. Press LOAD for each model. Unsupported delegates report a load error."
     }
     suspend fun chooseLocalOutputTokens(value:Int) {
         require(value in 64..1024)
         hub.clearSessions()
-        ShivVault(context).put(LocalInferenceSettings.OUTPUT_TOKENS_KEY,value.toString())
+        data.setLocalOutputTokens(value)
         localOutputTokens=value
         progress="Output limit saved; models unloaded. Press LOAD for each model."
     }
-    var proactiveOptIn by mutableStateOf(ShivVault(context).get("proactive_opt_in")=="yes")
+    var proactiveOptIn by mutableStateOf(data.proactiveOptIn())
         private set
     var proactiveFeedback by mutableStateOf(nudgeLedger.report())
         private set
@@ -91,8 +92,12 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         private set
     var loading by mutableStateOf(false)
         private set
+    var refreshing by mutableStateOf(false)
+        private set
     var issue by mutableStateOf<String?>(null)
         private set
+    fun reportIssue(message:String) { issue=message }
+    fun clearIssue() { issue=null }
     var notificationCount by mutableIntStateOf(0)
         private set
     var failedSignalCount by mutableIntStateOf(0)
@@ -113,7 +118,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         }
         // The exact allowed source is persisted encrypted; a broad Accessibility
         // grant does not authorize Shiv to traverse other apps.
-        ShivVault(context).put("screen_allowed_package", allowed)
+        data.setScreenAllowedPackage(allowed)
         check(context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE).edit()
             .putBoolean("owner_enabled",true).putBoolean("paused",false)
             .putLong("capture_until",System.currentTimeMillis()+15_000L).commit())
@@ -123,7 +128,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     }
     fun stopOneShotAwareness() {
         AwarenessControl.pause(context)
-        ShivVault(context).put("screen_allowed_package","")
+        data.setScreenAllowedPackage("")
         progress="One-shot screen inspection stopped"
     }
     fun pauseAwareness() { AwarenessControl.pause(context);progress="All app awareness paused" }
@@ -153,13 +158,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
             issue="Invalid or expired calendar candidate"
             return
         }
-        withContext(Dispatchers.IO) {
-            val database=EncryptedDatabase.open(context)
-            database.dao().putEvent(approved)
-            database.dao().logAction(ActionLogRecord("calendar-"+approved.id,
-                "IMPORT_CALENDAR","[REDACTED]","ASK_FIRST","OWNER_APPROVED",
-                true,"ENCRYPTED_EVENT_IMPORTED",null))
-        }
+        data.importCalendar(approved)
         calendarCandidates.remove(candidate)
         progress="Owner-approved calendar event saved in encrypted Shiv storage"
         reload()
@@ -176,21 +175,16 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     }
     suspend fun exportEvent(reviewed:EventRecord,calendarId:Long) = calendarExportMutex.withLock {
         try {
-            val event=dao.event(reviewed.id) ?: error("Event no longer exists")
+            val event=data.currentEvent(reviewed.id) ?: error("Event no longer exists")
             require(event==reviewed) { "Event changed after review; refresh before exporting" }
             require(CalendarExportPolicy.approved(event,System.currentTimeMillis())) {
                 "Event is expired, sensitive, or already imported from a calendar"
             }
-            val vault=ShivVault(context)
-            val key="calendar_export_"+event.id
-            require(vault.get(key).isNullOrBlank()) { "This event was already exported" }
+            require(!data.exportedCalendarEvent(event.id)) { "This event was already exported" }
             // Keep the provider write and duplicate guard serialized for this controller.
             val externalId=CalendarAdapter(context).writeApprovedEvent(event,calendarId)
-            vault.put(key,"$calendarId:$externalId")
-            try {
-                dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),"EXPORT_CALENDAR",
-                    "[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,"EXTERNAL_EVENT_CREATED",null))
-            } catch (_:Exception) {
+            data.markCalendarExport(event.id,calendarId,externalId)
+            if(!data.logCalendarExport()) {
                 issue="Phone calendar event was created, but Shiv could not record the audit entry"
                 progress="External calendar event ID $externalId created; inspect the calendar"
                 return@withLock
@@ -211,15 +205,9 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     }
     fun clearContactNames() { contactNameMatches.clear() }
     suspend fun addDeniedPackage(packageName:String) = withContext(Dispatchers.IO) {
-        val value=packageName.trim().lowercase(java.util.Locale.ROOT)
-        require(SourceExclusions.validPackage(value)) { "Enter a full Android app package" }
-        val vault=ShivVault(context)
-        val old=SourceExclusions.fromString(vault.get("app_denied_packages"))
-        require(old.size < 100 || value in old) { "Denylist capacity reached" }
-        vault.put("app_denied_packages",(old+value).sorted().joinToString("\n"))
+        val revoked=data.addDeniedPackage(packageName)
         // Any currently armed window for this app is revoked immediately.
-        if(vault.get("screen_allowed_package")==value) {
-            vault.put("screen_allowed_package","")
+        if(revoked) {
             context.getSharedPreferences("shiv_awareness_control",Context.MODE_PRIVATE)
                 .edit().remove("capture_until").putBoolean("paused",true).commit()
         }
@@ -227,27 +215,17 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         progress="App source excluded before notification or screen capture"
     }
     suspend fun removeDeniedPackage(packageName:String) = withContext(Dispatchers.IO) {
-        val vault=ShivVault(context)
-        val old=SourceExclusions.fromString(vault.get("app_denied_packages"))
-        vault.put("app_denied_packages",
-            (old-packageName.trim().lowercase(java.util.Locale.ROOT)).sorted().joinToString("\n"))
+        data.removeDeniedPackage(packageName)
         reload()
         progress="Custom exclusion removed; built-in banking denylist remains enforced"
     }
     suspend fun setAppSourceMode(packageName:String,mode:AppSourceMode) = withContext(Dispatchers.IO) {
-        val name=packageName.trim().lowercase(java.util.Locale.ROOT)
-        require(SourceExclusions.validPackage(name)) { "Enter a full Android app package" }
-        val vault=ShivVault(context)
-        val current=AppSourceAccess.decode(vault.get(AppSourceAccess.VAULT_KEY))
-        require(current.size<100 || name in current) { "App policy capacity reached" }
-        vault.put(AppSourceAccess.VAULT_KEY,AppSourceAccess.encode(current+(name to mode)))
+        data.setAppSourceMode(packageName,mode)
         reload()
         progress="Source policy saved; Android permissions and one-shot screen review still apply"
     }
     suspend fun removeAppSourceMode(packageName:String) = withContext(Dispatchers.IO) {
-        val vault=ShivVault(context)
-        val current=AppSourceAccess.decode(vault.get(AppSourceAccess.VAULT_KEY))
-        vault.put(AppSourceAccess.VAULT_KEY,AppSourceAccess.encode(current-packageName))
+        data.removeAppSourceMode(packageName)
         reload()
         progress="App returned to default policy; built-in and owner denylists still apply"
     }
@@ -309,7 +287,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
     }
     fun localComputeReport():String=computeLedger.report()
     fun changeProactiveOptIn(enabled:Boolean) {
-        ShivVault(context).put("proactive_opt_in",if(enabled)"yes" else "no")
+        data.setProactiveOptIn(enabled)
         proactiveOptIn=enabled
         ShivAgendaNudgeWorker.updateRegistration(context,enabled)
         progress=if(enabled) "Owner-enabled, quiet-hour-limited optional agenda notices"
@@ -330,7 +308,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         proactiveFeedback=nudgeLedger.report()
     }
     fun refreshPrivacyAfterOwnerReset() {
-        proactiveOptIn=ShivVault(context).get("proactive_opt_in")=="yes"
+        proactiveOptIn=data.proactiveOptIn()
         refreshProactiveFeedback()
         clearUsagePreview()
     }
@@ -366,39 +344,27 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         val dueAt=proposal.date.atTime(time).atZone(ZoneId.systemDefault())
             .toInstant().toEpochMilli()
         require(dueAt>System.currentTimeMillis()) { "Task time must be in the future" }
-        withContext(Dispatchers.IO) {
-            val id=UUID.randomUUID().toString()
-            dao.putTask(TaskRecord(id,title.trim(),"OPEN",dueAt))
-            dao.logAction(ActionLogRecord(UUID.randomUUID().toString(),
-                "OCR_TASK","[REDACTED]","ASK_FIRST","OWNER_APPROVED",true,
-                "ENCRYPTED_TASK_SAVED",null))
-        }
+        data.saveReviewedTask(title,dueAt)
         progress="Owner-confirmed offline OCR task saved to encrypted Shiv agenda"
         reload()
     }
-    suspend fun reload() = withContext(Dispatchers.IO) {
-        val stored=dao.models()
-        val events=repository.upcoming(System.currentTimeMillis(),System.currentTimeMillis()+48*3600_000L)
-        val tasks=dao.pendingTasks()
-        val storedBeliefs=dao.beliefs()
-        val traces=dao.traces(30)
-        val count=dao.pendingCount()
-        val failed=dao.failedSignalCount()
-        val savedMemories=dao.recentMemories(System.currentTimeMillis(),100)
-        val excluded=SourceExclusions.fromString(ShivVault(context).get("app_denied_packages"))
-        val modes=AppSourceAccess.decode(ShivVault(context).get(AppSourceAccess.VAULT_KEY))
+    suspend fun reload() {
+        withContext(Dispatchers.Main) { refreshing=true }
+        try {
+        val snapshot=reads.snapshot()
         withContext(Dispatchers.Main) {
-            models.clear();models.addAll(stored)
-            memories.clear();memories.addAll(savedMemories)
-            upcoming.clear();upcoming.addAll(events)
-            upcomingTasks.clear();upcomingTasks.addAll(tasks)
-            beliefs.clear();beliefs.addAll(storedBeliefs)
-            decisions.clear();decisions.addAll(traces)
-            notificationCount=count
-            failedSignalCount=failed
-            deniedPackages.clear();deniedPackages.addAll(excluded.sorted())
-            appSourceModes.clear();appSourceModes.putAll(modes)
+            models.clear();models.addAll(snapshot.models)
+            memories.clear();memories.addAll(snapshot.memories)
+            upcoming.clear();upcoming.addAll(snapshot.events)
+            upcomingTasks.clear();upcomingTasks.addAll(snapshot.tasks)
+            beliefs.clear();beliefs.addAll(snapshot.beliefs)
+            decisions.clear();decisions.addAll(snapshot.decisions)
+            notificationCount=snapshot.pendingSignals
+            failedSignalCount=snapshot.failedSignals
+            deniedPackages.clear();deniedPackages.addAll(snapshot.deniedPackages)
+            appSourceModes.clear();appSourceModes.putAll(snapshot.appSourceModes)
         }
+        } finally { withContext(NonCancellable+Dispatchers.Main) { refreshing=false } }
     }
     suspend fun importModel(role:String) {
         val uri=candidate?:return
@@ -439,48 +405,24 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
     }
     suspend fun retryFailedSignals() {
-        val retried=withContext(Dispatchers.IO) { dao.retryFailedSignals() }
+        val retried=withContext(Dispatchers.IO) { data.retryFailedSignals() }
         if(retried>0)SignalWorker.schedule(context)
         progress="$retried preserved signal(s) returned to the encrypted queue"
         reload()
     }
     suspend fun approveCommitment(trace:DecisionTraceRecord) {
         try {
-            val current=dao.decision(trace.id)?:error("Decision no longer exists")
-            require(current.decision=="ASK") {"Already resolved"}
-            val incoming=dao.signal(trace.signalId?:error("Source signal missing"))
-                ?:error("Source signal missing")
-            require(incoming.status=="PROCESSED") {"Signal not safely processed"}
-            val proposal=com.shiv.assistant.automation.CommitmentParser.analyze(
-                incoming.fact,java.time.ZoneId.systemDefault())
-            require(proposal is com.shiv.assistant.automation.CommitmentProposal.Ready) {
-                "Commitment is ambiguous; provide day and time before approving."
-            }
-            val deadline=proposal.whenAt.toInstant().toEpochMilli()
-            require(deadline>System.currentTimeMillis()) {"Event time has passed"}
-            val event=EventRecord(incoming.id,proposal.title,deadline,null,incoming.source,
-                proposal.confidence)
-            val reminderId="event-"+incoming.id
-            val reminderAt=(deadline-15*60_000L).coerceAtLeast(System.currentTimeMillis()+1000L)
-            // The entire calendar/reminder decision is one encrypted transaction.
-            dao.confirmEvent(event,ReminderRecord(reminderId,
-                "Upcoming: "+proposal.title.take(180),reminderAt,event.id),
-                current.copy(decision="APPROVED",reason="Owner reviewed and approved event; "+
-                    "notification queued",policyTier="ASK_FIRST"),
-                ActionLogRecord("approval-"+incoming.id,"CREATE_EVENT","[REDACTED]",
-                    "ASK_FIRST","OWNER_APPROVED",true,"EVENT_AND_REMINDER_SAVED",null))
-            com.shiv.assistant.automation.ShivReminders.scheduleApprovedEvent(context,reminderId,reminderAt)
+            val reminder=decisionsData.approve(trace.id,trace.signalId)
+            com.shiv.assistant.automation.ShivReminders.scheduleApprovedEvent(
+                context,reminder.id,reminder.dueAt)
             progress="Approved event and scheduled reminder"
             reload()
         } catch(e:Exception) { issue=e.message?:"Approval failed" }
     }
     suspend fun undoApprovedCommitment(trace:DecisionTraceRecord) {
-        val current=dao.decision(trace.id) ?: run { issue="Decision not found";return }
-        val eventId=current.signalId ?: run { issue="Source event unavailable";return }
-        val audit=ActionLogRecord("undo-"+eventId,"UNDO_EVENT","[REDACTED]",
-            "ASK_FIRST","OWNER_REQUESTED",true,"EVENT_REMINDER_CANCELLED",null)
-        val success=dao.undoApprovedEvent(current.id,eventId,audit)
-        if(success) {
+        val eventId=runCatching { decisionsData.undo(trace.id) }
+            .getOrElse { issue=it.message?:"Decision unavailable";return }
+        if(eventId!=null) {
             androidx.work.WorkManager.getInstance(context).cancelUniqueWork(
                 "shiv-approved-event-"+eventId)
             progress="Local approved event and pending reminder reversed; delivered alerts remain"
@@ -488,9 +430,7 @@ class PhaseOneController(private val context: Context, val hub: ShivBrainHub) {
         reload()
     }
     suspend fun declineCommitment(trace:DecisionTraceRecord) {
-        val current=dao.decision(trace.id)?:return
-        if(current.decision=="ASK") dao.trace(current.copy(decision="DECLINED",
-            reason="Owner declined the suggested commitment"))
+        decisionsData.decline(trace.id)
         reload()
     }
     suspend fun correctMemory(id:String,replacement:String) {

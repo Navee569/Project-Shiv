@@ -43,6 +43,14 @@ The audited baseline passed native build, JVM tests, Android lint and API26/API3
 
 A number of Phase 1 requirements remain incomplete, notably always-ready wake-word support, fully tested per-source awareness, verified LiteRT formats and delegates, full third-party integration and reversible automation, complete scenario coverage, and a verified device battery/runtime baseline. Portable encrypted backup/restore and a user-started bounded microphone session exist, but need owner/device acceptance. They remain visible in STATUS. **Phase 2 is not started until M11 is accepted.**
 
+If Shiv opens a **storage needs attention** screen, tap **Retry opening** first.
+The app does not recreate an unreadable encrypted database silently. If its
+Android Keystore key was lost or the database is damaged, recover from a
+portable owner backup after starting fresh. **Erase and start fresh** requires
+typing `ERASE SHIV STORAGE` and permanently removes Shiv's private records on
+this phone; external phone calendar events are unaffected. Imported model
+files may remain but need to be selected again.
+
 AI Status lets the owner choose CPU, GPU or NPU for local model loading and a
 64–1024 output-token limit. Changing either unloads loaded models; press LOAD
 again in Model Manager. GPU/NPU compatibility is model/device dependent and

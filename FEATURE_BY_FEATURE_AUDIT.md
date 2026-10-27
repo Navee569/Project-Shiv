@@ -9,9 +9,9 @@
 | Milestone | Status | Actual evidence | Remaining requirement(s) |
 |---|---|---|---|
 | M0 clean Android baseline | WIRED, CI-tested | Gradle wrapper, launcher manifest, `shiv-native.yml`, Android API35 emulator | Android Studio beginner run-config & Galaxy S23 physical install OWNER-VERIFY |
-| M1 architecture | PARTIAL | domain contracts, `ShivRepository`, `ShivDatabase`, `Brain`, WorkManager, policy classes | no complete ViewModel/domain/UI separation; many controllers own persistence |
-| M2 app shell | PARTIAL | native Compose Core, Chat, Automate, Memory, Memories, Models, Events, AI Status, Permissions, Decisions | all-screen navigation/rotation/accessibility/permission-denied UI coverage incomplete |
-| M3 encrypted persistence | PARTIAL | 14 Room entities, SQLCipher wrapped key, encrypted vault migration; emulator encryption test | imported legacy interrupted migration, wrong-key, corruption, concurrency, schema evolution, export/restore and data-loss tests |
+| M1 architecture | SOURCE BUILT | `ShivViewModel` owns presentation state; typed owner, Phase 1 read/write and decision repositories own encrypted data; Brain and Android adapters remain separate | CI and device behavior still need verification; controllers coordinate platform actions |
+| M2 app shell | SOURCE BUILT | native Compose screens, saved selected tab, loading/empty/error/permission messages, accessible tab and heading semantics, 12-screen navigation/recreation instrumentation source | API 26/35 execution and owner accessibility review pending |
+| M3 encrypted persistence | SOURCE BUILT | SQLCipher wrapped key, atomic legacy migration with restart marker, encrypted v1→v2 Room migration, startup integrity check and owner-confirmed recovery, wrong-key/corruption/rollback/concurrency tests | API 26/35 execution, real Keystore-loss and Galaxy S23 recovery observations pending |
 | M4 model AI | PARTIAL | real LiteRT-LM Brain load/infer, import, SHA-256 recheck, bounded priority queue, structured tool parser | exact model files not tested; delegate selection, cancel *active* inference, time-first-token, token budget, real 1B/E2B routing, strict schema per tool |
 | M5 memory | PARTIAL | save, search, correction, delete, expiry filtering, provenance/confidence, encrypted snapshot | export/restore, semantic graph, dedupe/expiry garbage collection, full owner facts UI |
 | M6 language/voice | PARTIAL | push-to-talk offline Android STT (where available), explicit Google TTS, kn-IN / te-IN / en-IN | language packs/quality OWNER-VERIFY; streaming speech/VAD/mic foreground sessions and optional speaker recognition missing |
@@ -22,6 +22,18 @@
 | M11 acceptance | NOT ACCEPTED | earlier compilation + JVM/lint + API35 emulator tests green on `713112f` | current changes must pass CI; device verification, full scenarios, release acceptance and owner sign-off |
 
 ## Binding owner decisions [N] — explicit review
+
+The first five previously partial source rows (IDs 04, 07, 08, 11 and 12)
+were developed together after commit `e71543e`. The ViewModel and typed
+repositories separate controller state from encrypted data operations. The
+Activity checks SQLCipher integrity and legacy migration on an I/O thread
+before private screens open. Legacy copying is one transaction with a
+committed restart marker; a failed read rolls the entire copy back. A lost
+key or damaged database shows retry and a separately confirmed recovery
+path. The saved navigation tab contains no private draft. Compose tests cover
+navigation, recreation, empty states, permission errors and recovery gating;
+encrypted tests cover v1→v2 migration and corruption. These tests still
+require CI execution on API 26 and 35. No owner/device acceptance is inferred.
 
 | Decision | Status | Concrete evidence / gap |
 |---|---|---|

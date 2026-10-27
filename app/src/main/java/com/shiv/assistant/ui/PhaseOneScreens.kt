@@ -9,13 +9,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import com.shiv.assistant.PhaseOneController
 import com.shiv.assistant.ShivController
 import com.shiv.assistant.domain.AuthorityTier
-import com.shiv.assistant.data.PortableOwnerArchive
 import com.shiv.assistant.data.OwnerNudgeReaction
 import com.shiv.assistant.domain.AppSourceMode
 import com.shiv.assistant.ai.LocalBackend
@@ -37,23 +40,26 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
     val screenContext=LocalContext.current
     val permissionCalendar=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.readPhoneCalendar() }
+        else controller.reportIssue("Calendar permission denied; no phone events were read")
     }
     val permissionCalendarWrite=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if(grants[Manifest.permission.READ_CALENDAR]==true &&
             grants[Manifest.permission.WRITE_CALENDAR]==true)
             scope.launch { controller.loadWritableCalendars() }
-        else owner.showNotice("Calendar read and write grants are required for export")
+        else controller.reportIssue("Calendar permission denied; no external event was written")
     }
     val permissionContacts=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if(granted) scope.launch { controller.lookupContactNames(contactQuery) }
+        else controller.reportIssue("Contacts permission denied; no contact was read")
     }
     val permissionMicSession=rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()) { granted ->
         if(granted)controller.startOfflineMicSession(owner.speechLocale,micWakePhrase,micSleepOverride)
-        else owner.showNotice("Microphone access denied: offline session not started")
+        else controller.reportIssue("Microphone permission denied; offline session was not started")
     }
     val permissionPhone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         controller.enablePostCallCheckIn(granted)
+        if(!granted)controller.reportIssue("Phone state permission denied; post-call check-ins stay off")
     }
     var role by remember { mutableStateOf("router") }
     var editing by remember { mutableStateOf<com.shiv.assistant.data.MemoryRecord?>(null) }
@@ -77,7 +83,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         else scope.launch {
             portableBusy=true
             try {
-                val size=PortableOwnerArchive(screenContext).exportTo(uri,secret)
+                val size=owner.exportOwnerArchive(uri,secret)
                 portableResult="Encrypted backup saved ("+size+" bytes). Keep its passphrase safe."
             } catch (_:Exception) {
                 portableResult="Backup export failed. No personal data was sent online."
@@ -92,8 +98,7 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
         else scope.launch {
             portableBusy=true
             try {
-                val count=PortableOwnerArchive(screenContext).restoreFrom(uri,secret)
-                owner.afterPortableRestore(count)
+                val count=owner.restoreOwnerArchive(uri,secret)
                 portableResult="Archive restored. Old reminders, permissions and cloud transmission remain off."
             } catch (_:Exception) {
                 portableResult="Restore refused (wrong passphrase, unsupported archive or invalid records). Existing data remains unchanged."
@@ -112,14 +117,27 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
             }) { Text("CONFIRM EXPORT") }},
             dismissButton={TextButton(onClick={pendingCalendarExport=null}) { Text("CANCEL") }})
     }
-    LaunchedEffect(page) { runCatching { controller.reload() } }
+    LaunchedEffect(page) {
+        controller.clearIssue()
+        runCatching { controller.reload() }
+            .onFailure { controller.reportIssue("Could not load this screen from encrypted storage") }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        Text(page.uppercase(),style=MaterialTheme.typography.headlineSmall,color=accent)
-        controller.issue?.let { Text(it,color=Color(0xFFFF9191)) }
-        Text(controller.progress,color=Color.LightGray,fontSize=11.sp)
+        Text(page.uppercase(),style=MaterialTheme.typography.headlineSmall,color=accent,
+            modifier=Modifier.semantics { heading() })
+        controller.issue?.let { Text(it,color=Color(0xFFFF9191),
+            modifier=Modifier.semantics { liveRegion=LiveRegionMode.Assertive }) }
+        if(controller.loading || controller.refreshing) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("Loading encrypted Shiv data…",color=Color.LightGray)
+        }
+        Text(controller.progress,color=Color.LightGray,fontSize=11.sp,
+            modifier=Modifier.semantics { liveRegion=LiveRegionMode.Polite })
         when(page) {
             "Models" -> {
+                if(controller.models.isEmpty() && !controller.refreshing)
+                    Text("No models imported. Select a model file to begin.",color=Color.LightGray)
                 Text("Choose a .litertlm file in Files. LiteRT needs an app-private copy even if the original is in Downloads. Importing E2B may require about 4 GB extra free storage; no model is bundled.",
                     color=Color.LightGray)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -150,6 +168,9 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
             }
             "AI Status" -> {
+                if(controller.models.isEmpty())
+                    Text("No local model is loaded. Runtime measurements appear after a local reply.",
+                        color=Color.LightGray)
                 Text(controller.modelStatus(),color=Color.White)
                 Text("LiteRT reports runtime first-token time, decode tokens and tokens/s after a local reply. Battery energy, when supported while discharging, is a whole-device change during that reply and cannot be attributed to Shiv. TTS audio-buffer timing is not audible first-word timing; Galaxy S23 fit needs owner-device measurement.",
                     color=Color.LightGray)
@@ -264,6 +285,8 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 if(controller.memories.isEmpty()) Text("No stored facts yet",color=Color.LightGray)
             }
             "Decisions" -> {
+                if(controller.decisions.isEmpty())
+                    Text("No decisions need review.",color=Color.LightGray)
                 Text("Evidence traces from the durable signal queue. ASK requires owner confirmation and does not create a calendar entry automatically.",
                     color=Color.LightGray)
                 controller.decisions.forEach { t ->
@@ -293,6 +316,14 @@ fun PhaseOneScreen(page:String, controller:PhaseOneController, owner:ShivControl
                 }
             }
             "Permissions" -> {
+                val denied=listOf(Manifest.permission.READ_CALENDAR to "Calendar",
+                    Manifest.permission.READ_CONTACTS to "Contacts",
+                    Manifest.permission.RECORD_AUDIO to "Microphone").filter { (name,_) ->
+                    screenContext.checkSelfPermission(name)!=android.content.pm.PackageManager.PERMISSION_GRANTED
+                }.map { it.second }
+                if(denied.isNotEmpty()) Text("Optional access not granted: "+denied.joinToString()+
+                    ". Related actions remain unavailable until you choose to grant them.",
+                    color=Color.LightGray)
                 Text("Notification access, Accessibility, contacts, calls, microphone and calendar each require explicit permission. Do not grant permissions unless you want the associated feature.",
                     color=Color.LightGray)
                 Text("APP AWARENESS PAUSE",color=accent)
