@@ -7,6 +7,9 @@ on:
       - 'finrobot-mobile/**'
       - '.github/workflows/finresearch-android.yml'
   workflow_dispatch:
+concurrency:
+  group: finresearch-mobile-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 

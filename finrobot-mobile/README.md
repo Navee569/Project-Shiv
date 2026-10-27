@@ -3,8 +3,8 @@
 This is an independent Android MVP inspired by FinRobot's financial research workflows.
 It is **not** a full port of FinRobot V0/V2, and is not affiliated with the AI4Finance Foundation.
 
-Features: manual ticker lookup (best-effort Yahoo Finance chart endpoint), locally computed
-SMA20/SMA50/simple RSI14 and daily change, offline keyword-based sentiment from pasted text,
+Version 0.2.0. Features: manual ticker lookup (best-effort Yahoo Finance chart endpoint), locally computed
+SMA20/SMA50/simple RSI14 and historical-close change, timestamped quotes, offline keyword-based sentiment from pasted text, a five-year user-input DCF valuation,
 and opt-in NVIDIA AI analysis for six independently configurable analyst roles.
 AI calls require the user's own NVIDIA key and internet access. API credentials are encrypted
 using Android Keystore AES-GCM. No trading, brokerage integrations, live social feeds, or
@@ -19,8 +19,8 @@ The CI workflow builds a **debug signed** APK artifact. Install it on Android wi
 permissions enabled. Debug signature is not an audited production signing key.
 
 ## Testing
-Unit tests exercise deterministic indicators and keyword sentiment.
-CI builds/tests/lints and separately runs an emulator launch test on Android API 35.
+Unit tests exercise deterministic indicators, keyword sentiment and DCF edge cases.
+CI builds/tests/lints and separately attempts emulator installation, UI smoke test and instrumentation on Android API 33. A successful build is not proof of an emulator pass; check the run result.
 No physical Samsung S23 testing or live NVIDIA credentials are used in CI.
 
 ## Security caveats
