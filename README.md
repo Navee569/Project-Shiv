@@ -98,3 +98,12 @@ AI API, including the previously configured hybrid mode, is unchanged.
 Offline Latin OCR can now propose a task when the selected document contains an
 explicit ISO due date. The owner must supply the title and clock time, and
 accept the proposal; Shiv does not persist the source image or OCR text.
+
+
+## Open source and community contributions
+
+Shiv's original project source and documentation are available under the [MIT license](LICENSE). External dependencies, Android libraries and imported AI model weights remain subject to their own applicable licenses.
+
+We welcome focused, privacy-respecting contributions; see [CONTRIBUTING.md](CONTRIBUTING.md). Report potential security vulnerabilities using the private-disclosure guidance in [SECURITY.md](SECURITY.md). See [CHANGELOG.md](CHANGELOG.md) for an unreleased development summary.
+
+For the project's intended ecosystem gap, public development evidence, and **honest limits on verified adoption and downstream dependencies**, read [docs/ECOSYSTEM_IMPACT.md](docs/ECOSYSTEM_IMPACT.md). This is still an experimental app; no public download count or production user base is claimed.
